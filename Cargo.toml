@@ -1,0 +1,48 @@
+[package]
+name = "leanfin"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Web framework
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tower-http = { version = "0.6", features = ["fs"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }
+
+# Auth
+argon2 = "0.5"
+rand = "0.9"
+hex = "0.4"
+
+# Crypto (token encryption)
+aes-gcm = "0.10"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP client (Enable Banking API, Telegram)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Config
+dotenvy = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Cookie/session
+tower-cookies = "0.11"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
