@@ -8,6 +8,9 @@ pub struct Config {
     pub telegram_bot_token: Option<String>,
     pub telegram_chat_id: Option<String>,
     pub bind_addr: String,
+    /// URL prefix when served behind a reverse proxy subpath (e.g. "/leanfin").
+    /// Empty string means served at root.
+    pub base_path: String,
 }
 
 impl Config {
@@ -32,6 +35,7 @@ impl Config {
             telegram_bot_token: env::var("TELEGRAM_BOT_TOKEN").ok(),
             telegram_chat_id: env::var("TELEGRAM_CHAT_ID").ok(),
             bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".to_string()),
+            base_path: env::var("BASE_PATH").unwrap_or_default(),
         })
     }
 
