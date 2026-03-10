@@ -28,7 +28,7 @@ pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
         .merge(dashboard::routes())
         .merge(transactions::routes())
         .layer(middleware::from_fn_with_state(
-            pool,
+            state.clone(),
             crate::auth::require_auth,
         ));
 

@@ -31,6 +31,16 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load .env from the binary's directory (e.g. /opt/leanfin/.env),
+    // so commands work regardless of the caller's working directory.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let env_path = dir.join(".env");
+            if env_path.exists() {
+                dotenvy::from_path(&env_path).ok();
+            }
+        }
+    }
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt()
         .with_env_filter(

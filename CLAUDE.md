@@ -7,12 +7,12 @@ Personal expense management app that fetches bank transactions via Enable Bankin
 
 - **Backend**: Rust, Axum, SQLite (sqlx), Askama templates
 - **Frontend**: HTMX + server-rendered HTML
-- **Deploy target**: Raspberry Pi (aarch64), behind nginx + certbot
+- **Deploy target**: Odroid N2 (aarch64, Ubuntu Server 24.04), behind nginx
 
 ## Build & Run
 
 ```bash
-# Development
+# Development (local)
 cargo run -- serve              # Start HTTP server on 127.0.0.1:3000
 cargo run -- sync               # Run transaction sync manually
 cargo run -- create-user        # Create a user
@@ -20,11 +20,10 @@ cargo run -- create-user        # Create a user
 # Tests
 cargo test
 
-# Cross-compile for Raspberry Pi
-cross build --release --target aarch64-unknown-linux-gnu
-
-# Deploy
-./deploy.sh
+# Deploy to server (rsyncs source, builds on Odroid, installs + restarts)
+export LEANFIN_SERVER="user@odroid.local"
+./deploy.sh setup               # First time only
+./deploy.sh deploy              # Build + install + restart
 ```
 
 ## Project Conventions

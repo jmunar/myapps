@@ -91,13 +91,13 @@ pub async fn get_user_id_from_session(pool: &SqlitePool, token: &str) -> Result<
 /// Axum middleware that redirects to /login if the user is not authenticated.
 pub async fn require_auth(
     cookies: Cookies,
-    pool: axum::extract::State<SqlitePool>,
+    state: axum::extract::State<crate::routes::AppState>,
     mut request: Request,
     next: Next,
 ) -> Response {
     let authenticated = async {
         let cookie = cookies.get(SESSION_COOKIE)?;
-        let user_id = get_user_id_from_session(&pool, cookie.value())
+        let user_id = get_user_id_from_session(&state.pool, cookie.value())
             .await
             .ok()
             .flatten()?;
@@ -110,7 +110,10 @@ pub async fn require_auth(
             request.extensions_mut().insert(UserId(user_id));
             next.run(request).await
         }
-        None => Redirect::to("/login").into_response(),
+        None => {
+            let login_url = format!("{}/login", state.config.base_path);
+            Redirect::to(&login_url).into_response()
+        }
     }
 }
 
