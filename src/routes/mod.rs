@@ -1,6 +1,7 @@
 mod accounts;
 mod auth;
 mod dashboard;
+mod labels;
 mod transactions;
 
 use crate::config::Config;
@@ -29,6 +30,7 @@ pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
         .merge(dashboard::routes())
         .merge(transactions::routes())
         .merge(accounts::routes())
+        .merge(labels::routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_auth,
