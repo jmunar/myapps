@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 
 use crate::config::Config;
 use crate::models::Account;
-use crate::services::enable_banking;
+use super::enable_banking;
 
 pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
     tracing::info!("Starting transaction sync");
@@ -32,7 +32,7 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
                 account.bank_name,
                 account.id
             );
-            super::notify::send(
+            crate::services::notify::send(
                 config,
                 &format!(
                     "Bank session expired for '{}'. Please re-authorize.",
@@ -44,7 +44,7 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
         }
 
         if days_until_expiry <= 7 {
-            super::notify::send(
+            crate::services::notify::send(
                 config,
                 &format!(
                     "Bank session for '{}' expires in {} days. Re-authorize soon.",
@@ -120,7 +120,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
 
     // Run auto-labeling on newly fetched transactions
     if inserted > 0 {
-        match crate::services::labeling::apply_rules(pool, account.user_id).await {
+        match super::labeling::apply_rules(pool, account.user_id).await {
             Ok(labeled) => {
                 if labeled > 0 {
                     tracing::info!("Account '{}': auto-labeled {labeled} transactions", account.bank_name);

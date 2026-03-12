@@ -1,6 +1,12 @@
-# LeanFin — Requirements
+# MyApps — Requirements
 
 ## Overview
+
+MyApps is a multi-app personal platform. After login, users see an app launcher
+and can navigate into individual applications. All apps share authentication,
+database, layout/styling, and configuration.
+
+### LeanFin (first sub-application)
 
 LeanFin is a personal expense management application that automatically fetches
 bank transactions, allows the user to label and categorize them, and provides
@@ -8,7 +14,13 @@ visibility into spending patterns.
 
 ## Functional Requirements
 
-### Bank account integration
+### Platform
+
+- Single login for all applications (shared user accounts and sessions).
+- App launcher page after login showing available applications.
+- Shared navigation with brand ("MyApps"), app-level nav, and logout.
+
+### Bank account integration (LeanFin)
 
 - Connect multiple bank accounts via **Enable Banking** (PSD2 aggregator).
 - Each bank connection requires manual user authorization (SCA) through the
@@ -18,7 +30,7 @@ visibility into spending patterns.
 - When a bank consent expires (or is close to expiry), the system notifies the
   user so they can re-authorize.
 
-### Transaction management
+### Transaction management (LeanFin)
 
 - Transactions are stored locally and deduplicated by their external ID
   (provided by Enable Banking) scoped to the account.
@@ -26,7 +38,7 @@ visibility into spending patterns.
   counterparty name, and balance after transaction.
 - The system never modifies or deletes upstream bank data; it is append-only.
 
-### Labeling and allocations
+### Labeling and allocations (LeanFin)
 
 - Users can create labels (e.g. "Groceries", "Rent", "Salary") with a color.
 - Transactions are categorized via **allocations**: each allocation assigns a
@@ -99,3 +111,4 @@ visibility into spending patterns.
 - **Account management** — re-authorize expired bank sessions and delete
   accounts from the UI.
 - **Pagination** — paginate beyond the current 100-transaction limit.
+- **Additional apps** — new sub-applications on the platform.

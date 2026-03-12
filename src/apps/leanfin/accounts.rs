@@ -6,11 +6,12 @@ use axum::{
 };
 use chrono::NaiveDateTime;
 use serde::Deserialize;
-use sqlx::SqlitePool;
 
-use super::AppState;
+use crate::routes::AppState;
 use crate::auth::UserId;
-use crate::services::enable_banking;
+use super::services::enable_banking;
+use super::dashboard::leanfin_nav;
+use crate::layout::render_page;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -41,7 +42,7 @@ async fn list_accounts(
     let mut items = String::new();
     for a in &accounts {
         let expires = a.session_expires_at.format("%Y-%m-%d").to_string();
-        let iban = a.iban.as_deref().unwrap_or("—");
+        let iban = a.iban.as_deref().unwrap_or("\u{2014}");
         let expiry_class = if a.session_expires_at < today {
             "expiry-expired"
         } else if a.session_expires_at < warn_threshold {
@@ -70,41 +71,23 @@ async fn list_accounts(
         items = r#"<div class="empty-state"><p>No accounts linked yet.</p></div>"#.into();
     }
 
-    Html(format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LeanFin — Accounts</title>
-    <link rel="stylesheet" href="{base}/static/style.css">
-</head>
-<body>
-    <nav>
-        <span class="brand">LeanFin</span>
-        <a href="{base}/">Transactions</a>
-        <a href="{base}/accounts" class="active">Accounts</a>
-        <a href="{base}/labels">Labels</a>
-        <a href="{base}/logout" class="nav-right">Log out</a>
-    </nav>
-    <main>
-        <div class="page-header">
+    let body = format!(
+        r#"<div class="page-header">
             <h1>Bank Accounts</h1>
             <p>Manage your linked bank connections</p>
         </div>
         <div class="card">
             <div class="card-header">
                 <h2>Linked accounts</h2>
-                <a href="{base}/accounts/link" class="btn btn-primary">+ Link account</a>
+                <a href="{base}/leanfin/accounts/link" class="btn btn-primary">+ Link account</a>
             </div>
             <div class="card-body">
                 <div class="account-grid">{items}</div>
             </div>
-        </div>
-    </main>
-</body>
-</html>"#
-    ))
+        </div>"#
+    );
+
+    Html(render_page("LeanFin — Accounts", &leanfin_nav(base, "accounts"), &body, base))
 }
 
 #[derive(sqlx::FromRow)]
@@ -122,47 +105,28 @@ async fn link_form(
     state: axum::extract::State<AppState>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    Html(format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LeanFin — Link Bank</title>
-    <link rel="stylesheet" href="{base}/static/style.css">
-</head>
-<body>
-    <nav>
-        <span class="brand">LeanFin</span>
-        <a href="{base}/">Transactions</a>
-        <a href="{base}/accounts" class="active">Accounts</a>
-        <a href="{base}/labels">Labels</a>
-        <a href="{base}/logout" class="nav-right">Log out</a>
-    </nav>
-    <main>
-        <div class="page-header">
+    let body = format!(
+        r#"<div class="page-header">
             <h1>Link a bank account</h1>
             <p>Connect to your bank via Enable Banking (PSD2)</p>
         </div>
         <div class="card" style="max-width: 28rem;">
             <div class="card-body">
-                <form method="POST" action="{base}/accounts/link">
+                <form method="POST" action="{base}/leanfin/accounts/link">
                     <label for="country">Country code</label>
                     <input type="text" id="country" name="country" required maxlength="2"
                            pattern="[A-Z]{{2}}" placeholder="ES" style="text-transform:uppercase">
                     <label for="bank_name">Bank name</label>
                     <input type="text" id="bank_name" name="bank_name" required placeholder="e.g. Santander">
                     <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                        <a href="{base}/accounts" class="btn btn-secondary">Cancel</a>
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
                         <button type="submit" style="flex:1">Connect bank</button>
                     </div>
                 </form>
             </div>
-        </div>
-    </main>
-</body>
-</html>"#
-    ))
+        </div>"#
+    );
+    Html(render_page("LeanFin — Link Bank", &leanfin_nav(base, "accounts"), &body, base))
 }
 
 #[derive(Deserialize)]
@@ -298,7 +262,7 @@ async fn callback(
         pending.user_id
     );
 
-    Redirect::to(&format!("{base}/accounts")).into_response()
+    Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
 }
 
 #[derive(sqlx::FromRow)]

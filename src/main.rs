@@ -1,6 +1,8 @@
+mod apps;
 mod auth;
 mod config;
 mod db;
+mod layout;
 mod models;
 mod routes;
 mod services;
@@ -8,7 +10,7 @@ mod services;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "leanfin", about = "Personal expense tracker")]
+#[command(name = "myapps", about = "Multi-app platform")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -28,12 +30,16 @@ enum Command {
         password: String,
     },
     /// Populate database with demo data for local development
-    Seed,
+    Seed {
+        /// Which app to seed (currently only "leanfin")
+        #[arg(long, default_value = "leanfin")]
+        app: String,
+    },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Load .env from the binary's directory (e.g. /opt/leanfin/.env),
+    // Load .env from the binary's directory (e.g. /opt/myapps/.env),
     // so commands work regardless of the caller's working directory.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -47,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "leanfin=info".parse().unwrap()),
+                .unwrap_or_else(|_| "myapps=info".parse().unwrap()),
         )
         .init();
 
@@ -57,12 +63,15 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Serve => routes::serve(pool, config).await?,
-        Command::Sync => services::sync::run(&pool, &config).await?,
+        Command::Sync => apps::leanfin::services::sync::run(&pool, &config).await?,
         Command::CreateUser { username, password } => {
             auth::create_user(&pool, &username, &password).await?;
             tracing::info!("User '{username}' created");
         }
-        Command::Seed => services::seed::run(&pool).await?,
+        Command::Seed { app } => match app.as_str() {
+            "leanfin" => apps::leanfin::services::seed::run(&pool).await?,
+            other => anyhow::bail!("Unknown app: {other}. Available: leanfin"),
+        },
     }
 
     Ok(())

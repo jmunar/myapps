@@ -6,8 +6,10 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::AppState;
+use crate::routes::AppState;
 use crate::auth::UserId;
+use super::dashboard::leanfin_nav;
+use crate::layout::render_page;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -58,12 +60,12 @@ async fn list_labels(
                 </div>
                 <div class="label-item-actions">
                     <button class="btn-icon" onclick="this.closest('.label-item').querySelector('.label-edit-form').toggleAttribute('hidden')">Edit</button>
-                    <form method="POST" action="{base}/labels/{id}/delete" style="display:inline"
+                    <form method="POST" action="{base}/leanfin/labels/{id}/delete" style="display:inline"
                           onsubmit="return confirm('Delete label \'{name}\'?')">
                         <button class="btn-icon btn-icon-danger">Delete</button>
                     </form>
                 </div>
-                <form method="POST" action="{base}/labels/{id}/edit" class="label-edit-form" hidden>
+                <form method="POST" action="{base}/leanfin/labels/{id}/edit" class="label-edit-form" hidden>
                     <input type="text" name="name" value="{name}" required>
                     <input type="color" name="color" value="{color}">
                     <button type="submit" class="btn btn-primary btn-sm">Save</button>
@@ -82,25 +84,8 @@ async fn list_labels(
     }
 
     let default_color = "#4CAF50";
-    Html(format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LeanFin — Labels</title>
-    <link rel="stylesheet" href="{base}/static/style.css">
-</head>
-<body>
-    <nav>
-        <span class="brand">LeanFin</span>
-        <a href="{base}/">Transactions</a>
-        <a href="{base}/accounts">Accounts</a>
-        <a href="{base}/labels" class="active">Labels</a>
-        <a href="{base}/logout" class="nav-right">Log out</a>
-    </nav>
-    <main>
-        <div class="page-header">
+    let body = format!(
+        r#"<div class="page-header">
             <h1>Labels</h1>
             <p>Organize your transactions with labels</p>
         </div>
@@ -119,7 +104,7 @@ async fn list_labels(
                 <h2>Create label</h2>
             </div>
             <div class="card-body">
-                <form method="POST" action="{base}/labels/create" class="label-create-form">
+                <form method="POST" action="{base}/leanfin/labels/create" class="label-create-form">
                     <div class="form-row">
                         <div class="form-group" style="flex:1">
                             <label for="name">Name</label>
@@ -133,11 +118,10 @@ async fn list_labels(
                     <button type="submit">Create label</button>
                 </form>
             </div>
-        </div>
-    </main>
-</body>
-</html>"#
-    ))
+        </div>"#
+    );
+
+    Html(render_page("LeanFin — Labels", &leanfin_nav(base, "labels"), &body, base))
 }
 
 // ── Create label ─────────────────────────────────────────────
@@ -163,7 +147,7 @@ async fn create_label(
     {
         tracing::error!("Failed to create label: {e}");
     }
-    Redirect::to(&format!("{base}/labels"))
+    Redirect::to(&format!("{base}/leanfin/labels"))
 }
 
 // ── Edit label ───────────────────────────────────────────────
@@ -189,7 +173,7 @@ async fn edit_label(
         .execute(&state.pool)
         .await
         .ok();
-    Redirect::to(&format!("{base}/labels"))
+    Redirect::to(&format!("{base}/leanfin/labels"))
 }
 
 // ── Delete label ─────────────────────────────────────────────
@@ -206,5 +190,5 @@ async fn delete_label(
         .execute(&state.pool)
         .await
         .ok();
-    Redirect::to(&format!("{base}/labels"))
+    Redirect::to(&format!("{base}/leanfin/labels"))
 }

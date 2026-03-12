@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   LeanFin — Refined Ledger
-   A warm, precise aesthetic for personal finance.
+   MyApps — Personal Platform
+   A warm, precise aesthetic for personal tools.
    ═══════════════════════════════════════════════════════════════ */
 
 @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
@@ -848,3 +848,71 @@ tr.txn-misallocated .txn-date {
 .text-secondary { color: var(--text-secondary); }
 .text-sm { font-size: 0.835rem; }
 .mono { font-family: var(--font-mono); }
+
+/* ── App launcher ──────────────────────────────────────────── */
+.launcher-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: 1rem;
+}
+
+.launcher-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    text-decoration: none;
+    color: var(--text);
+    transition: box-shadow 0.15s var(--ease), transform 0.1s var(--ease);
+}
+
+.launcher-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+    color: var(--text);
+}
+
+.launcher-icon {
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--radius);
+    background: var(--accent-light);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.launcher-info h2 {
+    font-size: 1rem;
+    margin-bottom: 0;
+}
+
+.launcher-info p {
+    font-size: 0.85rem;
+    margin-top: 0.15rem;
+}
+
+/* Brand as link in nav */
+nav a.brand {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    color: var(--text-nav-active);
+    letter-spacing: -0.02em;
+    margin-right: auto;
+    border-bottom: none;
+    text-decoration: none;
+}
+
+nav a.brand:hover {
+    color: var(--text-nav-active);
+    border-bottom: none;
+}
