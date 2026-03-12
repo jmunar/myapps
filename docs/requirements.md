@@ -26,16 +26,20 @@ visibility into spending patterns.
   counterparty name, and balance after transaction.
 - The system never modifies or deletes upstream bank data; it is append-only.
 
-### Labeling
+### Labeling and allocations
 
-- Users can create labels (e.g. "Groceries", "Rent", "Salary") with an
-  optional color.
-- A transaction can have multiple labels.
-- Labels can be applied manually through the UI.
-- Users can define auto-labeling rules (pattern matching on description,
-  counterparty, or amount range). Rules run automatically on newly fetched
-  transactions.
-- Manual labels take precedence over auto-assigned ones.
+- Users can create labels (e.g. "Groceries", "Rent", "Salary") with a color.
+- Transactions are categorized via **allocations**: each allocation assigns a
+  portion of the transaction amount to a label.
+- A transaction can have one allocation (simple labeling) or multiple
+  (splitting, e.g. a grocery receipt that includes dining items).
+- The sum of allocation amounts should equal the transaction's absolute amount.
+- Allocations can be created/removed through an inline editor in the
+  transaction list.
+- Users can define auto-labeling rules (pattern matching on description or
+  counterparty). Rules run automatically on newly fetched transactions and
+  create a single allocation for the full amount.
+- Manual allocations take precedence over auto-assigned ones.
 
 ### Notifications
 
@@ -80,3 +84,18 @@ visibility into spending patterns.
 - If the sync job fails (network error, token expired), it logs the error and
   continues with the next account.
 - SQLite WAL mode is enabled for safe concurrent reads during sync.
+
+## Roadmap
+
+### Not yet implemented
+
+- **Label rule management UI** — create/edit/delete auto-labeling rules from
+  the web interface (currently rules are only created via seed data or direct
+  DB access).
+- **Transaction filtering** — filter the transaction list by label, date range,
+  account, or search text.
+- **Dashboard analytics** — spending summaries by label, monthly totals, and
+  visual charts.
+- **Account management** — re-authorize expired bank sessions and delete
+  accounts from the UI.
+- **Pagination** — paginate beyond the current 100-transaction limit.
