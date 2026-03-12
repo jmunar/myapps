@@ -3,7 +3,8 @@ use sqlx::SqlitePool;
 
 use crate::models::{LabelRule, Transaction};
 
-/// Run auto-labeling rules against transactions that have no auto-assigned labels.
+/// Run auto-labeling rules against transactions that have no allocations.
+/// Creates a single allocation for the full transaction amount.
 pub async fn apply_rules(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     let rules: Vec<LabelRule> = sqlx::query_as(
         r#"
@@ -22,7 +23,7 @@ pub async fn apply_rules(pool: &SqlitePool, user_id: i64) -> Result<u64> {
         return Ok(0);
     }
 
-    // Find transactions without auto-labels
+    // Find transactions without any allocations
     let unlabeled: Vec<Transaction> = sqlx::query_as(
         r#"
         SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
@@ -31,9 +32,7 @@ pub async fn apply_rules(pool: &SqlitePool, user_id: i64) -> Result<u64> {
         FROM transactions t
         JOIN accounts a ON t.account_id = a.id
         WHERE a.user_id = ?
-          AND t.id NOT IN (
-            SELECT transaction_id FROM transaction_labels WHERE source = 'auto'
-          )
+          AND t.id NOT IN (SELECT transaction_id FROM allocations)
         "#,
     )
     .bind(user_id)
@@ -53,23 +52,24 @@ pub async fn apply_rules(pool: &SqlitePool, user_id: i64) -> Result<u64> {
                 _ => continue,
             };
 
-            // Simple case-insensitive substring match for now
-            // TODO: support regex and amount_range
             if field_value
                 .to_lowercase()
                 .contains(&rule.pattern.to_lowercase())
             {
                 let result = sqlx::query(
-                    "INSERT OR IGNORE INTO transaction_labels (transaction_id, label_id, source) VALUES (?, ?, 'auto')",
+                    "INSERT INTO allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
                 )
                 .bind(tx.id)
                 .bind(rule.label_id)
+                .bind(tx.amount.abs())
                 .execute(pool)
                 .await;
 
                 if let Ok(r) = result {
                     applied += r.rows_affected();
                 }
+                // First matching rule wins — one auto-allocation per transaction
+                break;
             }
         }
     }

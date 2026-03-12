@@ -23,17 +23,24 @@ async fn login_page(
     <title>LeanFin — Login</title>
     <link rel="stylesheet" href="{base}/static/style.css">
 </head>
-<body>
-    <main class="login-container">
-        <h1>LeanFin</h1>
-        <form method="POST" action="{base}/login">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required autofocus>
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
-            <button type="submit">Log in</button>
-        </form>
-    </main>
+<body class="login-page">
+    <div class="login-card">
+        <div class="login-brand">
+            <h1>LeanFin</h1>
+            <p>Personal expense tracker</p>
+        </div>
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" action="{base}/login">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required autofocus>
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                    <button type="submit">Log in</button>
+                </form>
+            </div>
+        </div>
+    </div>
 </body>
 </html>"#
     ))

@@ -35,21 +35,39 @@ async fn list_accounts(
     .await
     .unwrap_or_default();
 
-    let mut rows = String::new();
+    let today = chrono::Utc::now().naive_utc();
+    let warn_threshold = today + chrono::Duration::days(14);
+
+    let mut items = String::new();
     for a in &accounts {
-        let expires = a
-            .session_expires_at
-            .format("%Y-%m-%d")
-            .to_string();
+        let expires = a.session_expires_at.format("%Y-%m-%d").to_string();
         let iban = a.iban.as_deref().unwrap_or("—");
-        rows.push_str(&format!(
-            "<tr><td>{}</td><td>{iban}</td><td>{expires}</td></tr>",
+        let expiry_class = if a.session_expires_at < today {
+            "expiry-expired"
+        } else if a.session_expires_at < warn_threshold {
+            "expiry-warning"
+        } else {
+            "expiry-ok"
+        };
+        let expiry_label = if a.session_expires_at < today {
+            "Expired"
+        } else {
+            "Active"
+        };
+        items.push_str(&format!(
+            r#"<div class="account-item">
+                <div>
+                    <div class="account-bank">{}</div>
+                    <div class="account-iban">{iban}</div>
+                </div>
+                <span class="account-expiry {expiry_class}">{expiry_label} — {expires}</span>
+            </div>"#,
             a.bank_name
         ));
     }
 
-    if rows.is_empty() {
-        rows = "<tr><td colspan=\"3\">No accounts linked yet.</td></tr>".into();
+    if items.is_empty() {
+        items = r#"<div class="empty-state"><p>No accounts linked yet.</p></div>"#.into();
     }
 
     Html(format!(
@@ -63,17 +81,26 @@ async fn list_accounts(
 </head>
 <body>
     <nav>
-        <strong>LeanFin</strong>
-        <a href="{base}/">Dashboard</a>
-        <a href="{base}/logout">Log out</a>
+        <span class="brand">LeanFin</span>
+        <a href="{base}/">Transactions</a>
+        <a href="{base}/accounts" class="active">Accounts</a>
+        <a href="{base}/labels">Labels</a>
+        <a href="{base}/logout" class="nav-right">Log out</a>
     </nav>
     <main>
-        <h1>Bank Accounts</h1>
-        <table>
-            <thead><tr><th>Bank</th><th>IBAN</th><th>Session expires</th></tr></thead>
-            <tbody>{rows}</tbody>
-        </table>
-        <p style="margin-top:1rem"><a href="{base}/accounts/link">+ Link a new account</a></p>
+        <div class="page-header">
+            <h1>Bank Accounts</h1>
+            <p>Manage your linked bank connections</p>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h2>Linked accounts</h2>
+                <a href="{base}/accounts/link" class="btn btn-primary">+ Link account</a>
+            </div>
+            <div class="card-body">
+                <div class="account-grid">{items}</div>
+            </div>
+        </div>
     </main>
 </body>
 </html>"#
@@ -106,20 +133,32 @@ async fn link_form(
 </head>
 <body>
     <nav>
-        <strong>LeanFin</strong>
-        <a href="{base}/accounts">Accounts</a>
-        <a href="{base}/logout">Log out</a>
+        <span class="brand">LeanFin</span>
+        <a href="{base}/">Transactions</a>
+        <a href="{base}/accounts" class="active">Accounts</a>
+        <a href="{base}/labels">Labels</a>
+        <a href="{base}/logout" class="nav-right">Log out</a>
     </nav>
     <main>
-        <h1>Link a bank account</h1>
-        <form method="POST" action="{base}/accounts/link">
-            <label for="country">Country code (e.g. ES, DE, FI)</label>
-            <input type="text" id="country" name="country" required maxlength="2"
-                   pattern="[A-Z]{{2}}" placeholder="ES" style="text-transform:uppercase">
-            <label for="bank_name">Bank name (exact, as listed by Enable Banking)</label>
-            <input type="text" id="bank_name" name="bank_name" required placeholder="e.g. Santander">
-            <button type="submit">Connect</button>
-        </form>
+        <div class="page-header">
+            <h1>Link a bank account</h1>
+            <p>Connect to your bank via Enable Banking (PSD2)</p>
+        </div>
+        <div class="card" style="max-width: 28rem;">
+            <div class="card-body">
+                <form method="POST" action="{base}/accounts/link">
+                    <label for="country">Country code</label>
+                    <input type="text" id="country" name="country" required maxlength="2"
+                           pattern="[A-Z]{{2}}" placeholder="ES" style="text-transform:uppercase">
+                    <label for="bank_name">Bank name</label>
+                    <input type="text" id="bank_name" name="bank_name" required placeholder="e.g. Santander">
+                    <div style="display:flex; gap:0.75rem; margin-top:1rem;">
+                        <a href="{base}/accounts" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" style="flex:1">Connect bank</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </main>
 </body>
 </html>"#

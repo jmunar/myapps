@@ -22,17 +22,22 @@ async fn index(
 </head>
 <body>
     <nav>
-        <strong>LeanFin</strong>
-        <a href="{base}/logout">Log out</a>
+        <span class="brand">LeanFin</span>
+        <a href="{base}/" class="active">Transactions</a>
+        <a href="{base}/accounts">Accounts</a>
+        <a href="{base}/labels">Labels</a>
+        <a href="{base}/logout" class="nav-right">Log out</a>
     </nav>
     <main>
-        <h1>Dashboard</h1>
-        <section>
-            <h2>Recent transactions</h2>
+        <div class="page-header">
+            <h1>Transactions</h1>
+            <p>Your recent activity across all accounts</p>
+        </div>
+        <div class="card">
             <div id="transactions" hx-get="{base}/transactions" hx-trigger="load">
-                Loading...
+                <div class="loading">Loading transactions</div>
             </div>
-        </section>
+        </div>
     </main>
 </body>
 </html>"#

@@ -27,6 +27,8 @@ enum Command {
         #[arg(long)]
         password: String,
     },
+    /// Populate database with demo data for local development
+    Seed,
 }
 
 #[tokio::main]
@@ -60,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
             auth::create_user(&pool, &username, &password).await?;
             tracing::info!("User '{username}' created");
         }
+        Command::Seed => services::seed::run(&pool).await?,
     }
 
     Ok(())

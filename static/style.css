@@ -1,64 +1,850 @@
+/* ═══════════════════════════════════════════════════════════════
+   LeanFin — Refined Ledger
+   A warm, precise aesthetic for personal finance.
+   ═══════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* ── Tokens ─────────────────────────────────────────────────── */
+:root {
+    --font-display: 'Libre Baskerville', 'Georgia', serif;
+    --font-body: 'Source Sans 3', 'Helvetica Neue', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Menlo', monospace;
+
+    --bg: #FAF9F6;
+    --bg-card: #FFFFFF;
+    --bg-nav: #1B2030;
+    --bg-input: #F5F4F0;
+    --bg-hover: #F0EDE8;
+
+    --text: #2C2C2C;
+    --text-secondary: #6B6B6B;
+    --text-nav: #D4D2CC;
+    --text-nav-active: #FFFFFF;
+
+    --border: #E4E0D8;
+    --border-light: #EDEBE6;
+
+    --accent: #1A6B5A;
+    --accent-hover: #145647;
+    --accent-light: #E8F3F0;
+
+    --positive: #2D7A4F;
+    --positive-bg: #EDF7F0;
+    --negative: #B8423A;
+    --negative-bg: #FDF0EF;
+
+    --warning: #C67F22;
+    --warning-bg: #FEF6E8;
+
+    --shadow-sm: 0 1px 2px rgba(27, 32, 48, 0.06);
+    --shadow-md: 0 2px 8px rgba(27, 32, 48, 0.08);
+    --shadow-lg: 0 4px 16px rgba(27, 32, 48, 0.10);
+
+    --radius: 6px;
+    --radius-lg: 10px;
+
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Reset ──────────────────────────────────────────────────── */
 *, *::before, *::after {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
 }
 
+html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
 body {
-    font-family: system-ui, -apple-system, sans-serif;
-    line-height: 1.5;
-    color: #1a1a1a;
-    background: #fafafa;
-    padding: 1rem;
-    max-width: 60rem;
-    margin: 0 auto;
+    font-family: var(--font-body);
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+    min-height: 100vh;
 }
 
+/* ── Typography ─────────────────────────────────────────────── */
+h1, h2, h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--text);
+    letter-spacing: -0.01em;
+}
+
+h1 { font-size: 1.625rem; }
+h2 { font-size: 1.2rem; margin-bottom: 0.25rem; }
+h3 { font-size: 1rem; }
+
+p { color: var(--text-secondary); }
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+    transition: color 0.15s var(--ease);
+}
+a:hover { color: var(--accent-hover); }
+
+/* ── Navigation ─────────────────────────────────────────────── */
 nav {
+    background: var(--bg-nav);
+    padding: 0 1.5rem;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid #ddd;
-    margin-bottom: 1.5rem;
+    height: 3.25rem;
+    gap: 1.75rem;
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
-h1, h2 { margin-bottom: 0.75rem; }
-h1 { font-size: 1.5rem; }
-h2 { font-size: 1.15rem; }
+nav .brand {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    color: var(--text-nav-active);
+    letter-spacing: -0.02em;
+    margin-right: auto;
+}
 
-a { color: #0066cc; }
+nav a {
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-nav);
+    text-decoration: none;
+    padding: 0.35rem 0;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
 
-.login-container {
-    max-width: 20rem;
-    margin: 4rem auto;
+nav a:hover,
+nav a.active {
+    color: var(--text-nav-active);
+    border-bottom-color: var(--accent);
+}
+
+nav .nav-right {
+    margin-left: auto;
+}
+
+/* ── Layout ─────────────────────────────────────────────────── */
+main {
+    max-width: 56rem;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 3rem;
+}
+
+.page-header {
+    margin-bottom: 1.75rem;
+}
+
+.page-header p {
+    margin-top: 0.25rem;
+    font-size: 0.9rem;
+}
+
+/* ── Cards ──────────────────────────────────────────────────── */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.card-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-header h2 {
+    margin-bottom: 0;
+    font-size: 0.95rem;
+}
+
+.card-body {
+    padding: 1.25rem;
+}
+
+/* ── Tables ─────────────────────────────────────────────────── */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+thead th {
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+}
+
+thead th:last-child {
+    text-align: right;
+}
+
+tbody td {
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: middle;
+}
+
+tbody tr {
+    transition: background 0.1s var(--ease);
+}
+
+tbody tr:hover {
+    background: var(--bg-hover);
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Transaction-specific table styles */
+.txn-date {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.txn-counterparty {
+    font-weight: 500;
+    color: var(--text);
+}
+
+.txn-description {
+    color: var(--text-secondary);
+    font-size: 0.835rem;
+}
+
+.txn-amount {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 0.875rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.positive {
+    color: var(--positive);
+}
+
+.negative {
+    color: var(--negative);
+}
+
+/* Empty state */
+.empty-state {
     text-align: center;
+    padding: 3rem 1.5rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
 }
 
+.empty-state svg {
+    display: block;
+    margin: 0 auto 1rem;
+    opacity: 0.35;
+}
+
+/* ── Account cards ──────────────────────────────────────────── */
+.account-grid {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.account-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: box-shadow 0.15s var(--ease);
+}
+
+.account-item:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.account-bank {
+    font-weight: 600;
+    font-size: 0.925rem;
+}
+
+.account-iban {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.15rem;
+}
+
+.account-expiry {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 100px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.expiry-ok {
+    background: var(--positive-bg);
+    color: var(--positive);
+}
+
+.expiry-warning {
+    background: var(--warning-bg);
+    color: var(--warning);
+}
+
+.expiry-expired {
+    background: var(--negative-bg);
+    color: var(--negative);
+}
+
+/* ── Forms ──────────────────────────────────────────────────── */
 form {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 1rem;
-    text-align: left;
+    gap: 0.35rem;
 }
 
-input {
-    padding: 0.4rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 1rem;
+label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 0.75rem;
 }
 
-button {
-    padding: 0.5rem;
-    background: #0066cc;
-    color: white;
+label:first-child {
+    margin-top: 0;
+}
+
+input[type="text"],
+input[type="password"] {
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+    outline: none;
+}
+
+input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(26, 107, 90, 0.12);
+}
+
+input::placeholder {
+    color: #B0ADA6;
+}
+
+button, .btn {
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.6rem 1.25rem;
     border: none;
-    border-radius: 4px;
-    font-size: 1rem;
+    border-radius: var(--radius);
     cursor: pointer;
-    margin-top: 0.5rem;
+    transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
 }
 
-button:hover { background: #0055aa; }
+button:active, .btn:active {
+    transform: scale(0.98);
+}
+
+.btn-primary, button[type="submit"] {
+    background: var(--accent);
+    color: #FFFFFF;
+}
+
+.btn-primary:hover, button[type="submit"]:hover {
+    background: var(--accent-hover);
+    color: #FFFFFF;
+}
+
+.btn-secondary {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+/* ── Login ──────────────────────────────────────────────────── */
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background:
+        radial-gradient(ellipse at 20% 50%, rgba(26, 107, 90, 0.04) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(27, 32, 48, 0.03) 0%, transparent 50%),
+        var(--bg);
+}
+
+.login-card {
+    width: 100%;
+    max-width: 22rem;
+}
+
+.login-brand {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.login-brand h1 {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    letter-spacing: -0.02em;
+}
+
+.login-brand p {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.login-card .card-body {
+    padding: 1.75rem;
+}
+
+.login-card button[type="submit"] {
+    width: 100%;
+    margin-top: 0.75rem;
+    padding: 0.7rem;
+}
+
+/* ── Action bar ─────────────────────────────────────────────── */
+.action-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+/* ── Loading skeleton ───────────────────────────────────────── */
+.loading {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.loading::after {
+    content: '';
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 640px) {
+    nav {
+        padding: 0 1rem;
+        gap: 1rem;
+    }
+
+    main {
+        padding: 1.25rem 1rem 2rem;
+    }
+
+    h1 { font-size: 1.35rem; }
+
+    table {
+        font-size: 0.8rem;
+    }
+
+    thead th,
+    tbody td {
+        padding: 0.5rem 0.65rem;
+    }
+
+    /* Stack counterparty + description on mobile */
+    .txn-description-mobile {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-top: 0.1rem;
+    }
+
+    .account-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+}
+
+/* ── Labels ─────────────────────────────────────────────────── */
+.label-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 100px;
+    background: color-mix(in srgb, var(--label-color) 15%, transparent);
+    color: var(--label-color);
+    white-space: nowrap;
+    border: 1px solid color-mix(in srgb, var(--label-color) 25%, transparent);
+}
+
+.label-badge-sm {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+}
+
+.txn-labels {
+    white-space: nowrap;
+}
+
+.txn-labels .label-badge {
+    margin-right: 0.25rem;
+}
+
+.label-add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.3rem;
+    height: 1.3rem;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    background: var(--bg-input);
+    border: 1px dashed var(--border);
+    cursor: pointer;
+    transition: all 0.15s var(--ease);
+    vertical-align: middle;
+}
+
+.label-add-btn:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Label picker (inline dropdown) */
+.label-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    padding: 0.25rem 0;
+    align-items: center;
+}
+
+.label-badge-toggle {
+    cursor: pointer;
+    transition: all 0.15s var(--ease);
+    opacity: 0.5;
+    font-family: var(--font-body);
+}
+
+.label-badge-toggle:hover {
+    opacity: 0.8;
+}
+
+.label-badge-toggle.active {
+    opacity: 1;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--label-color) 40%, transparent);
+}
+
+.label-picker-close {
+    font-family: var(--font-body);
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 100px;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.label-picker-close:hover {
+    background: var(--bg-hover);
+}
+
+/* Label list (management page) */
+.label-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.label-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border-light);
+    gap: 0.5rem;
+}
+
+.label-item:last-child {
+    border-bottom: none;
+}
+
+.label-item-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.label-item-actions {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.btn-icon {
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s var(--ease);
+}
+
+.btn-icon:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.btn-icon-danger:hover {
+    background: var(--negative-bg);
+    color: var(--negative);
+    border-color: color-mix(in srgb, var(--negative) 30%, transparent);
+}
+
+.btn-sm {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.75rem;
+}
+
+.label-edit-form {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+}
+
+.label-edit-form input[type="text"] {
+    flex: 1;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.label-edit-form input[type="color"] {
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.15rem;
+    cursor: pointer;
+    background: var(--bg-card);
+}
+
+/* Create label form */
+.label-create-form {
+    gap: 0.35rem;
+}
+
+.form-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.form-group label {
+    margin-top: 0;
+}
+
+.label-create-form input[type="color"] {
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.2rem;
+    cursor: pointer;
+    background: var(--bg-card);
+}
+
+/* ── Transaction allocation status ──────────────────────────── */
+tr.txn-unallocated {
+    background: color-mix(in srgb, var(--warning) 5%, transparent);
+}
+
+tr.txn-unallocated:hover {
+    background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+
+tr.txn-unallocated .txn-date {
+    border-left: 3px solid var(--warning);
+    padding-left: calc(1rem - 3px);
+}
+
+tr.txn-misallocated {
+    background: color-mix(in srgb, var(--negative) 5%, transparent);
+}
+
+tr.txn-misallocated:hover {
+    background: color-mix(in srgb, var(--negative) 10%, transparent);
+}
+
+tr.txn-misallocated .txn-date {
+    border-left: 3px solid var(--negative);
+    padding-left: calc(1rem - 3px);
+}
+
+/* ── Allocation editor ──────────────────────────────────────── */
+.alloc-editor-row td {
+    padding: 0 !important;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.alloc-editor {
+    background: var(--bg);
+    border-top: 2px solid var(--accent);
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.alloc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.alloc-remaining-ok {
+    color: var(--positive);
+    font-weight: 500;
+}
+
+.alloc-remaining-pending {
+    color: var(--warning);
+    font-weight: 500;
+}
+
+.alloc-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.alloc-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+}
+
+.alloc-row .label-badge {
+    min-width: 5rem;
+    justify-content: center;
+}
+
+.alloc-amount {
+    font-size: 0.85rem;
+    margin-left: auto;
+}
+
+.alloc-add-form {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.alloc-add-form select {
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--text);
+    flex: 1;
+}
+
+.alloc-amount-input {
+    width: 6rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.85rem;
+    text-align: right;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+}
+
+.alloc-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 0.25rem;
+}
+
+/* ── Utilities ──────────────────────────────────────────────── */
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mt-3 { margin-top: 1.5rem; }
+.text-secondary { color: var(--text-secondary); }
+.text-sm { font-size: 0.835rem; }
+.mono { font-family: var(--font-mono); }

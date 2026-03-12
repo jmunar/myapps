@@ -45,13 +45,15 @@ build() {
 }
 
 install() {
-    echo "▸ Installing binary..."
+    echo "▸ Installing binary and static files..."
     ssh -t "$SERVER" bash <<INSTALL
 set -euo pipefail
 sudo cp $REMOTE_BUILD_DIR/target/release/leanfin $REMOTE_DIR/leanfin.new
 sudo mv $REMOTE_DIR/leanfin.new $REMOTE_DIR/leanfin
 sudo chown leanfin:leanfin $REMOTE_DIR/leanfin
 sudo chmod +x $REMOTE_DIR/leanfin
+sudo rsync -a --delete $REMOTE_BUILD_DIR/static/ $REMOTE_DIR/static/
+sudo chown -R leanfin:leanfin $REMOTE_DIR/static
 INSTALL
 }
 

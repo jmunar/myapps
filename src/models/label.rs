@@ -16,8 +16,9 @@ pub struct LabelRule {
 }
 
 #[derive(sqlx::FromRow)]
-pub struct TransactionLabel {
+pub struct Allocation {
+    pub id: i64,
     pub transaction_id: i64,
     pub label_id: i64,
-    pub source: String,
+    pub amount: f64,
 }

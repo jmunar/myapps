@@ -95,6 +95,7 @@ pub async fn require_auth(
     mut request: Request,
     next: Next,
 ) -> Response {
+    let has_cookie = cookies.get(SESSION_COOKIE).is_some();
     let authenticated = async {
         let cookie = cookies.get(SESSION_COOKIE)?;
         let user_id = get_user_id_from_session(&state.pool, cookie.value())
@@ -111,6 +112,10 @@ pub async fn require_auth(
             next.run(request).await
         }
         None => {
+            tracing::warn!(
+                "Auth failed for {} (cookie present: {has_cookie})",
+                request.uri()
+            );
             let login_url = format!("{}/login", state.config.base_path);
             Redirect::to(&login_url).into_response()
         }
