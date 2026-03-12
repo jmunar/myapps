@@ -91,13 +91,12 @@ sudo chmod 750 /opt/leanfin
 if [[ ! -f /opt/leanfin/.env ]]; then
     sudo tee /opt/leanfin/.env > /dev/null <<'ENV'
 DATABASE_URL=sqlite:///opt/leanfin/data/leanfin.db
-ENCRYPTION_KEY=
+BASE_URL=https://YOURDOMAIN/leanfin
 ENABLE_BANKING_APP_ID=
-ENABLE_BANKING_REDIRECT_URI=
+ENABLE_BANKING_KEY_PATH=/opt/leanfin/private.pem
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 BIND_ADDR=127.0.0.1:3000
-BASE_PATH=/leanfin
 ENV
     sudo chown leanfin:leanfin /opt/leanfin/.env
     sudo chmod 600 /opt/leanfin/.env

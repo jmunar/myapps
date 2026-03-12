@@ -62,7 +62,7 @@ async fn login_submit(
                 let mut cookie = Cookie::new("session", token);
                 cookie.set_http_only(true);
                 cookie.set_secure(true);
-                cookie.set_same_site(tower_cookies::cookie::SameSite::Strict);
+                cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
                 cookie.set_path(cookie_path);
                 cookies.add(cookie);
                 Redirect::to(&format!("{base}/")).into_response()

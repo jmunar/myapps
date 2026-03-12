@@ -134,6 +134,7 @@ After setup, enable HTTPS with certbot (see Quick Start step 4).
 /opt/leanfin/              # Runtime (owned by leanfin user)
 ├── leanfin                # Binary
 ├── .env                   # Environment variables (chmod 600)
+├── private.pem            # Enable Banking RSA private key (chmod 600)
 ├── data/
 │   └── leanfin.db         # SQLite database (created on first run)
 ├── logs/
@@ -157,17 +158,20 @@ File: `/opt/leanfin/.env`
 
 ```bash
 DATABASE_URL=sqlite:///opt/leanfin/data/leanfin.db
-ENCRYPTION_KEY=           # openssl rand -hex 32
-ENABLE_BANKING_APP_ID=
-ENABLE_BANKING_REDIRECT_URI=https://yourdomain.com/leanfin/accounts/callback
+BASE_URL=https://yourdomain.com/leanfin   # Public URL (path becomes BASE_PATH)
+ENABLE_BANKING_APP_ID=              # UUID from Enable Banking control panel
+ENABLE_BANKING_KEY_PATH=/opt/leanfin/private.pem   # RSA private key
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 BIND_ADDR=127.0.0.1:3000
-BASE_PATH=/leanfin
 ```
 
-Only `DATABASE_URL`, `BIND_ADDR`, and `BASE_PATH` are required to run the
-server. The others are needed once you start linking bank accounts.
+Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
+`BASE_URL` is needed when served behind a reverse proxy subpath (the path
+component is used as the URL prefix). The Enable Banking variables are needed
+to link bank accounts. Copy
+your Enable Banking private key to `/opt/leanfin/private.pem` (chmod 600,
+owned by leanfin).
 
 ## systemd Service
 

@@ -12,7 +12,8 @@ visibility into spending patterns.
 
 - Connect multiple bank accounts via **Enable Banking** (PSD2 aggregator).
 - Each bank connection requires manual user authorization (SCA) through the
-  bank's login page. Consent is valid for up to 90 days per PSD2 regulation.
+  bank's login page. Consent validity depends on the bank (typically 90–180
+  days).
 - A daily cron job fetches new transactions from all linked accounts.
 - When a bank consent expires (or is close to expiry), the system notifies the
   user so they can re-authorize.
@@ -60,15 +61,14 @@ visibility into spending patterns.
 - The server is exposed to the internet behind nginx + certbot (HTTPS).
 - User authentication via username/password with Argon2 hashing and
   session cookies.
-- Bank OAuth tokens are encrypted at rest (AES-256-GCM) using a key loaded
-  from an environment variable.
+- Enable Banking API uses self-signed JWTs (RS256) for authentication. The
+  private key (`.pem`) is stored on the server, not in the repository.
 - No secrets are committed to the repository.
 
 ### Deployment
 
-- Development happens on a separate machine (not the Raspberry Pi).
-- The binary is cross-compiled for the target architecture (e.g. aarch64) and
-  deployed via SSH/SCP.
+- Development happens on a separate machine (not the server).
+- Source is rsynced to the server and compiled natively on the Odroid N2.
 - The application runs as a systemd service on the server.
 - The cron job is a system crontab entry that invokes the same binary with a
   `sync` subcommand.

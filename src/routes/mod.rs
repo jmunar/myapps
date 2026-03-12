@@ -1,3 +1,4 @@
+mod accounts;
 mod auth;
 mod dashboard;
 mod transactions;
@@ -27,6 +28,7 @@ pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
     let protected = Router::new()
         .merge(dashboard::routes())
         .merge(transactions::routes())
+        .merge(accounts::routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_auth,

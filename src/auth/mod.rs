@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use argon2::{
     Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
 };
 use axum::{
     extract::Request,
@@ -17,7 +17,7 @@ const SESSION_COOKIE: &str = "session";
 const SESSION_DURATION_DAYS: i64 = 30;
 
 pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> Result<i64> {
-    let salt = SaltString::generate(&mut OsRng);
+    let salt = SaltString::generate(&mut rand_core_06::OsRng);
     let password_hash = Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))?

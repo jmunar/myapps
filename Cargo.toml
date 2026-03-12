@@ -15,10 +15,8 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "chr
 # Auth
 argon2 = "0.5"
 rand = "0.9"
+rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
 hex = "0.4"
-
-# Crypto (token encryption)
-aes-gcm = "0.10"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -43,6 +41,15 @@ chrono = { version = "0.4", features = ["serde"] }
 # Cookie/session
 tower-cookies = "0.11"
 
+# JWT signing (Enable Banking API auth)
+jsonwebtoken = "9"
+
 # Error handling
 anyhow = "1"
 thiserror = "2"
+
+# UUID generation
+uuid = { version = "1", features = ["v4"] }
+
+# URL parsing
+url = "2"

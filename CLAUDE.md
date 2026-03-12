@@ -5,7 +5,7 @@ Personal expense management app that fetches bank transactions via Enable Bankin
 
 ## Stack
 
-- **Backend**: Rust, Axum, SQLite (sqlx), Askama templates
+- **Backend**: Rust, Axum, SQLite (sqlx)
 - **Frontend**: HTMX + server-rendered HTML
 - **Deploy target**: Odroid N2 (aarch64, Ubuntu Server 24.04), behind nginx
 
@@ -28,8 +28,7 @@ export LEANFIN_SERVER="user@odroid.local"
 
 ## Project Conventions
 
-- All SQL queries are compile-time checked via sqlx. Run `cargo sqlx prepare`
-  before committing if queries change.
+- SQL queries use runtime-checked sqlx (no compile-time macros).
 - Migrations live in `migrations/` and run automatically on startup.
 - Environment variables are loaded from `.env` in development (via dotenvy).
 - No secrets in the repo. See `.env.example` for required variables.
