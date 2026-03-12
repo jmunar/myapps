@@ -20,14 +20,14 @@ async fn login_page(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LeanFin — Login</title>
+    <title>MyApps — Login</title>
     <link rel="stylesheet" href="{base}/static/style.css">
 </head>
 <body class="login-page">
     <div class="login-card">
         <div class="login-brand">
-            <h1>LeanFin</h1>
-            <p>Personal expense tracker</p>
+            <h1>MyApps</h1>
+            <p>Your personal platform</p>
         </div>
         <div class="card">
             <div class="card-body">

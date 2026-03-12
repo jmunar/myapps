@@ -51,7 +51,7 @@ impl Config {
             .enable_banking_key_path
             .as_deref()
             .ok_or(ConfigError::Missing("ENABLE_BANKING_KEY_PATH"))?;
-        let redirect_uri = format!("{base_url}/accounts/callback");
+        let redirect_uri = format!("{base_url}/leanfin/accounts/callback");
         Ok((app_id, key_path, redirect_uri))
     }
 }

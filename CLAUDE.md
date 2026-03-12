@@ -1,7 +1,8 @@
-# LeanFin
+# MyApps
 
-Personal expense management app that fetches bank transactions via Enable Banking
-(PSD2) and lets you label/categorize them.
+Multi-app personal platform. LeanFin (personal expense management) is the first
+sub-application. After login, users see an app launcher and can navigate into
+individual apps. All apps share auth, DB, layout/styling, and config.
 
 ## Stack
 
@@ -13,15 +14,16 @@ Personal expense management app that fetches bank transactions via Enable Bankin
 
 ```bash
 # Development (local)
-cargo run -- serve              # Start HTTP server on 127.0.0.1:3000
-cargo run -- sync               # Run transaction sync manually
-cargo run -- create-user        # Create a user
+cargo run -- serve                  # Start HTTP server on 127.0.0.1:3000
+cargo run -- sync                   # Run transaction sync manually
+cargo run -- create-user            # Create a user
+cargo run -- seed --app leanfin     # Seed LeanFin demo data
 
 # Tests
 cargo test
 
 # Deploy to server (rsyncs source, builds on Odroid, installs + restarts)
-export LEANFIN_SERVER="user@odroid.local"
+export MYAPPS_SERVER="user@odroid.local"
 ./deploy.sh setup               # First time only
 ./deploy.sh deploy              # Build + install + restart
 ```
@@ -34,6 +36,8 @@ export LEANFIN_SERVER="user@odroid.local"
 - No secrets in the repo. See `.env.example` for required variables.
 - Keep memory footprint minimal — avoid unnecessary allocations and large
   dependencies.
+- LeanFin-specific routes, handlers, and services live under `src/apps/leanfin/`.
+- Shared infrastructure (auth, config, db, models, layout) stays at the top level.
 
 ## Documentation
 

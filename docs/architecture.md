@@ -1,4 +1,4 @@
-# LeanFin — Architecture
+# MyApps — Architecture
 
 ## Tech Stack
 
@@ -19,9 +19,10 @@
 A single binary with subcommands:
 
 ```
-leanfin serve          # Start the HTTP server
-leanfin sync           # Fetch transactions from all linked accounts (cron)
-leanfin create-user    # Create a user from the command line
+myapps serve                # Start the HTTP server
+myapps sync                 # Fetch transactions from all linked accounts (cron)
+myapps create-user          # Create a user from the command line
+myapps seed --app leanfin   # Populate LeanFin demo data
 ```
 
 All subcommands share the same configuration and database.
@@ -29,32 +30,52 @@ All subcommands share the same configuration and database.
 ## Project Layout
 
 ```
-leanfin/
+myapps/
 ├── docs/                    # Documentation
 ├── migrations/              # SQLite migrations (sqlx)
 ├── src/
 │   ├── main.rs              # CLI entrypoint (clap subcommands)
 │   ├── config.rs            # Configuration (env vars)
 │   ├── db.rs                # Database pool and migrations
+│   ├── layout.rs            # Shared HTML layout helper
 │   ├── models/              # Domain types (Transaction, Account, Label, etc.)
-│   ├── routes/              # Axum route handlers grouped by domain
+│   ├── auth/                # Authentication & session management
+│   ├── routes/              # Top-level router, auth routes, app launcher
+│   │   ├── mod.rs           # Router setup, AppState, nests sub-apps
 │   │   ├── auth.rs          # Login/logout
-│   │   ├── accounts.rs      # Bank account linking
-│   │   ├── dashboard.rs     # Main dashboard
-│   │   ├── transactions.rs  # Transaction listing
-│   │   └── labels.rs        # (planned) Label CRUD
-│   ├── services/            # Business logic
-│   │   ├── enable_banking.rs  # Enable Banking API client + JWT signing
-│   │   ├── sync.rs            # Transaction sync orchestration
-│   │   ├── labeling.rs        # Auto-labeling engine
-│   │   └── notify.rs          # Telegram notifications
-│   └── auth/                # Authentication & session management
+│   │   └── launcher.rs      # App launcher page (root /)
+│   ├── services/            # Shared services
+│   │   └── notify.rs        # Telegram notifications
+│   └── apps/                # Sub-applications
+│       └── leanfin/         # LeanFin expense tracker
+│           ├── mod.rs       # LeanFin router
+│           ├── dashboard.rs # Main transactions page
+│           ├── transactions.rs # Transaction list + allocation editor
+│           ├── accounts.rs  # Bank account linking (OAuth flow)
+│           ├── labels.rs    # Label CRUD
+│           └── services/    # LeanFin-specific business logic
+│               ├── enable_banking.rs  # Enable Banking API client + JWT
+│               ├── sync.rs            # Transaction sync orchestration
+│               ├── labeling.rs        # Auto-labeling engine
+│               └── seed.rs            # Demo data seeding
 ├── static/                  # CSS, JS (htmx)
 ├── Cargo.toml
 ├── .env.example             # Example environment variables
 ├── CLAUDE.md
 └── deploy.sh                # Rsync + build on server + restart script
 ```
+
+## Routing Structure
+
+After login, the top-level router serves:
+
+- `/` — App launcher (grid of available apps)
+- `/login`, `/logout` — Authentication (public)
+- `/leanfin/` — LeanFin sub-app (nested router)
+  - `/leanfin/` — Transactions dashboard
+  - `/leanfin/transactions` — Transaction list (HTMX partial)
+  - `/leanfin/accounts` — Bank account management
+  - `/leanfin/labels` — Label CRUD
 
 ## Database Schema
 
@@ -170,23 +191,23 @@ by `ENABLE_BANKING_KEY_PATH`.
 
 ### Bank Linking Flow
 
-1. User navigates to `/accounts/link` and submits country + bank name.
-2. `POST /accounts/link` creates a CSRF state token in `pending_links`, then
+1. User navigates to `/leanfin/accounts/link` and submits country + bank name.
+2. `POST /leanfin/accounts/link` creates a CSRF state token in `pending_links`, then
    calls Enable Banking `POST /auth` to start authorization.
 3. User is redirected to Enable Banking → bank's SCA page.
 4. User authenticates with their bank (2FA, biometrics, etc.).
-5. Bank redirects back to `GET /accounts/callback?code=...&state=...`.
+5. Bank redirects back to `GET /leanfin/accounts/callback?code=...&state=...`.
 6. Backend validates the CSRF state, calls `POST /sessions` to exchange the
    code for a session.
 7. The session response includes a list of accounts (each with a `uid`). All
    accounts are stored in the `accounts` table with the `session_id` and
    `session_expires_at`.
-8. User is redirected to `/accounts`.
+8. User is redirected to `/leanfin/accounts`.
 
 ### Sync Job Flow (cron)
 
 ```
-leanfin sync
+myapps sync
   │
   ├─ Sign a fresh JWT using the private key
   │

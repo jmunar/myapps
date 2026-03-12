@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::AppState;
+use crate::routes::AppState;
 use crate::auth::UserId;
 use crate::models::Transaction;
 
@@ -56,7 +56,7 @@ fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
     }
     html.push_str(&format!(
         r##"<span class="label-add-btn"
-                hx-get="{base}/transactions/{txn_id}/allocations"
+                hx-get="{base}/leanfin/transactions/{txn_id}/allocations"
                 hx-target="closest tr"
                 hx-swap="afterend"
                 hx-on::before-request="var e=document.getElementById('alloc-editor-{txn_id}');if(e){{e.remove();}}"
@@ -230,7 +230,7 @@ async fn alloc_editor(
                 <span class="label-badge" style="--label-color:{color}">{name}</span>
                 <span class="alloc-amount mono">{amount:.2}</span>
                 <form method="POST"
-                      hx-post="{base}/transactions/{txn_id}/allocations/{alloc_id}/delete"
+                      hx-post="{base}/leanfin/transactions/{txn_id}/allocations/{alloc_id}/delete"
                       hx-target="#alloc-editor-{txn_id}"
                       hx-swap="outerHTML">
                     <button class="btn-icon btn-icon-danger" type="submit">&times;</button>
@@ -270,7 +270,7 @@ async fn alloc_editor(
                     </div>
                     <div class="alloc-list">{alloc_rows}</div>
                     <form class="alloc-add-form"
-                          hx-post="{base}/transactions/{txn_id}/allocations/add"
+                          hx-post="{base}/leanfin/transactions/{txn_id}/allocations/add"
                           hx-target="#alloc-editor-{txn_id}"
                           hx-swap="outerHTML">
                         <select name="label_id" required>{options}</select>
@@ -281,7 +281,7 @@ async fn alloc_editor(
                     </form>
                     <div class="alloc-footer">
                         <button class="btn btn-secondary btn-sm"
-                                hx-get="{base}/transactions/{txn_id}/row"
+                                hx-get="{base}/leanfin/transactions/{txn_id}/row"
                                 hx-target="#txn-{txn_id}"
                                 hx-swap="outerHTML"
                                 onclick="var e=document.getElementById('alloc-editor-{txn_id}');if(e)setTimeout(function(){{e.remove()}},100)">Done</button>

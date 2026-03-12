@@ -1,8 +1,5 @@
-mod accounts;
 mod auth;
-mod dashboard;
-mod labels;
-mod transactions;
+mod launcher;
 
 use crate::config::Config;
 use axum::{Router, middleware};
@@ -27,10 +24,8 @@ pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
 
     // Routes that require authentication
     let protected = Router::new()
-        .merge(dashboard::routes())
-        .merge(transactions::routes())
-        .merge(accounts::routes())
-        .merge(labels::routes())
+        .merge(launcher::routes())
+        .nest("/leanfin", crate::apps::leanfin::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_auth,
