@@ -71,7 +71,7 @@ impl TestApp {
 
     /// Seed full LeanFin demo data and log in as the demo user.
     pub async fn seed_and_login(&self) {
-        myapps::apps::leanfin::services::seed::run(&self.pool)
+        myapps::apps::leanfin::services::seed::run(&self.pool, false)
             .await
             .unwrap();
 

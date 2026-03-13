@@ -23,7 +23,8 @@ A single binary with subcommands:
 myapps serve                # Start the HTTP server
 myapps sync                 # Fetch transactions from all linked accounts (cron)
 myapps create-user          # Create a user from the command line
-myapps seed --app leanfin   # Populate LeanFin demo data
+myapps seed --app leanfin           # Populate LeanFin demo data
+myapps seed --app leanfin --reset   # Wipe and re-seed demo data
 ```
 
 All subcommands share the same configuration and database.
