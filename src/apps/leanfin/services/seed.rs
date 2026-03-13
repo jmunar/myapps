@@ -3,7 +3,17 @@ use sqlx::SqlitePool;
 
 use crate::auth;
 
-pub async fn run(pool: &SqlitePool) -> Result<()> {
+pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
+    if reset {
+        // Delete the demo user; ON DELETE CASCADE wipes all related data
+        let result = sqlx::query("DELETE FROM users WHERE username = 'demo'")
+            .execute(pool)
+            .await?;
+        if result.rows_affected() > 0 {
+            tracing::info!("Wiped demo user and all associated data");
+        }
+    }
+
     // Create demo user (password: "demo")
     let user_id = match auth::create_user(pool, "demo", "demo").await {
         Ok(id) => {
