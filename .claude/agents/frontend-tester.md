@@ -25,7 +25,25 @@ All tests use the shared harness at `tests/harness/mod.rs`:
 - `TestApp.pool` — direct DB access for setup/assertions
 - `TestApp.server` — the `axum_test::TestServer` for making requests
 
-Every test file must start with `mod harness;`.
+## Test File Structure
+
+Tests mirror the source code hierarchy:
+
+```
+tests/
+  harness/mod.rs              # shared test infrastructure
+  auth_tests.rs               # platform-level (login, logout, launcher)
+  leanfin.rs                  # LeanFin test binary entry point
+  leanfin/
+    transactions.rs           # dashboard, transaction list/search/filter
+    labels.rs                 # label CRUD + rules
+```
+
+- Platform-level tests (`auth_tests.rs`) are top-level files that start with `mod harness;`.
+- App-specific tests live under a directory matching the app name (e.g. `leanfin/`).
+- The entry point (`leanfin.rs`) declares `mod harness;` and the submodules.
+- Submodules (e.g. `leanfin/transactions.rs`) use `use crate::harness;` to access the harness.
+- When adding a new app, create `tests/<app>.rs` + `tests/<app>/` following this pattern.
 
 ## Patterns
 

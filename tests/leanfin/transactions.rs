@@ -1,4 +1,4 @@
-mod harness;
+use crate::harness;
 
 #[tokio::test]
 async fn dashboard_loads_with_htmx_container() {

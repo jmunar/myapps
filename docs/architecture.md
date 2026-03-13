@@ -35,9 +35,11 @@ myapps/
 ├── migrations/              # SQLite migrations (sqlx)
 ├── tests/                   # Integration tests (axum-test)
 │   ├── harness/mod.rs       # Test harness: in-memory DB, login helpers
-│   ├── auth_tests.rs        # Auth flow tests
-│   ├── transaction_tests.rs # Transaction list/filter tests
-│   └── label_tests.rs       # Label CRUD + rules tests
+│   ├── auth_tests.rs        # Platform auth flow tests
+│   ├── leanfin.rs           # LeanFin test binary entry point
+│   └── leanfin/             # LeanFin app tests (mirrors src/apps/leanfin/)
+│       ├── transactions.rs  # Dashboard, transaction list/filter tests
+│       └── labels.rs        # Label CRUD + rules tests
 ├── src/
 │   ├── lib.rs               # Library crate (re-exports modules for tests)
 │   ├── main.rs              # CLI entrypoint (clap subcommands)

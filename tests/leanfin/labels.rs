@@ -1,4 +1,4 @@
-mod harness;
+use crate::harness;
 
 #[tokio::test]
 async fn labels_page_renders_seeded_labels() {
