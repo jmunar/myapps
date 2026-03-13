@@ -112,7 +112,12 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
     for tx in &transactions {
         let external_id = tx.external_id();
         let date = tx.date();
-        let amount: f64 = tx.transaction_amount.amount.parse().unwrap_or(0.0);
+        let raw_amount: f64 = tx.transaction_amount.amount.parse().unwrap_or(0.0);
+        let amount = match tx.credit_debit_indicator.as_deref() {
+            Some("DBIT") => -raw_amount.abs(),
+            Some("CRDT") => raw_amount.abs(),
+            _ => raw_amount, // fallback: trust the sign as-is
+        };
         let currency = &tx.transaction_amount.currency;
         let description = tx.description();
         let counterparty = tx.counterparty();

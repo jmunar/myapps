@@ -121,6 +121,7 @@ pub struct BankTransaction {
     pub booking_date: Option<String>,
     pub value_date: Option<String>,
     pub transaction_amount: TransactionAmount,
+    pub credit_debit_indicator: Option<String>,
     pub creditor: Option<Party>,
     pub debtor: Option<Party>,
     pub remittance_information: Option<Vec<String>>,
