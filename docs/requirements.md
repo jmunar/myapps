@@ -34,7 +34,8 @@ visibility into spending patterns.
 ### Transaction management (LeanFin)
 
 - Transactions are stored locally and deduplicated by their external ID
-  (provided by Enable Banking) scoped to the account.
+  (provided by Enable Banking) scoped to the account. Amounts are signed using
+  the `credit_debit_indicator` from the API (DBIT = negative, CRDT = positive).
 - Each transaction records at minimum: date, amount, currency, description,
   counterparty name, and balance after transaction.
 - The system never modifies or deletes upstream bank data; it is append-only.
@@ -123,12 +124,13 @@ visibility into spending patterns.
   that triggers an on-demand sync of the user's linked bank accounts. Shows
   real-time status feedback: spinning icon during sync, success/error pill badge
   on completion. The transaction list auto-refreshes after sync.
-- **Balance evolution tracking** — daily balance history for each account,
-  backfilled from transactions on first sync. A dedicated Balance page shows an
-  interactive Frappe Charts line chart with period selectors (30d/90d/180d/365d)
-  and an account dropdown including an "All accounts" aggregated view.
-  Reconciliation checks compare expected vs reported balances on each sync,
-  alerting via ntfy if discrepancies exceed 0.01.
+- **Balance evolution tracking** — a dedicated Balance page shows an interactive
+  Frappe Charts line chart with period selectors (30d/90d/180d/365d) and an
+  account dropdown including an "All accounts" aggregated view. Bank account
+  balances are computed on the fly from the most recent reported balance and
+  transaction sums (no persisted computed rows). Manual accounts use stored
+  reported values with gap-filling. Reconciliation checks compare expected vs
+  reported balances on each sync, alerting via ntfy if discrepancies exceed 0.01.
 - **Manual accounts** — users can create manually tracked accounts for assets not
   accessible through Open Banking (investments, real estate, vehicles, loans,
   crypto). Manual accounts support CRUD operations (create, edit metadata, update
@@ -138,11 +140,12 @@ visibility into spending patterns.
   the "All accounts" aggregated view include manual accounts seamlessly. The sync
   process filters to bank accounts only, skipping manual accounts.
 - **Expense visualization** — a dedicated Expenses page with multi-label
-  selection (toggle pills), a Frappe Charts time series showing daily expense
-  totals per selected label, and a transaction list below the chart. Clicking a
-  data point on the chart filters the transaction list to that date. The
-  transaction list reuses the same endpoint as the Transactions page with
-  label_ids and date range filters.
+  selection (toggle pills), a Frappe Charts time series showing daily totals per
+  selected label (both credit and debit transactions), and a transaction list
+  below the chart. When multiple labels are selected, a black "Total" line shows
+  the aggregate. Clicking a data point on the chart filters the transaction list
+  to that date. The transaction list reuses the same endpoint as the Transactions
+  page with label_ids and date range filters.
 
 ### Not yet implemented
 - **Pagination** — paginate beyond the current 100-transaction limit.

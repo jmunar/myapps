@@ -268,10 +268,10 @@ myapps sync
   │   ├─ If expiring within 7 days:
   │   │   └─ Send ntfy warning
   │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
+  │   ├─ Apply credit_debit_indicator: DBIT → negative, CRDT → positive
   │   ├─ INSERT OR IGNORE (dedup by external_id + account_id)
   │   ├─ GET /accounts/{uid}/balances → pick best balance type → UPDATE accounts
-  │   ├─ If no daily_balances rows exist → backfill ~90 days from transactions
-  │   ├─ Else → reconciliation check (expected vs reported balance, ntfy alert if off)
+  │   ├─ Reconciliation check (expected vs reported balance, ntfy alert if off)
   │   ├─ Upsert today's daily_balance as 'reported'
   │   └─ Run auto-labeling rules on newly inserted transactions
   │
