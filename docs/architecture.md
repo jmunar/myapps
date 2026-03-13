@@ -40,7 +40,8 @@ myapps/
 │   └── leanfin/             # LeanFin app tests (mirrors src/apps/leanfin/)
 │       ├── accounts.rs      # Account list + balance display tests
 │       ├── transactions.rs  # Dashboard, transaction list/filter tests
-│       └── labels.rs        # Label CRUD + rules tests
+│       ├── labels.rs        # Label CRUD + rules tests
+│       └── sync.rs          # Sync button + endpoint tests
 ├── src/
 │   ├── lib.rs               # Library crate (re-exports modules for tests)
 │   ├── main.rs              # CLI entrypoint (clap subcommands)
@@ -62,6 +63,7 @@ myapps/
 │           ├── transactions.rs # Transaction list + allocation editor
 │           ├── accounts.rs  # Bank account linking (OAuth flow)
 │           ├── labels.rs    # Label CRUD
+│           ├── sync_handler.rs  # Sync button endpoint (POST /sync)
 │           └── services/    # LeanFin-specific business logic
 │               ├── enable_banking.rs  # Enable Banking API client + JWT
 │               ├── sync.rs            # Transaction sync orchestration
@@ -88,6 +90,7 @@ After login, the top-level router serves:
   - `/leanfin/accounts` — Bank account management
   - `POST /leanfin/accounts/{id}/reauth` — Re-authorize expired bank session
   - `POST /leanfin/accounts/{id}/delete` — Delete account and its transactions
+  - `POST /leanfin/sync` — Trigger transaction sync for the user (HTMX partial)
   - `/leanfin/labels` — Label CRUD
 
 ## Database Schema
