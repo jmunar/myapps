@@ -26,7 +26,8 @@ visibility into spending patterns.
 - Each bank connection requires manual user authorization (SCA) through the
   bank's login page. Consent validity depends on the bank (typically 90–180
   days).
-- A daily cron job fetches new transactions from all linked accounts.
+- A daily cron job fetches new transactions from all linked accounts. Users can
+  also trigger a sync manually from the web UI.
 - When a bank consent expires (or is close to expiry), the system notifies the
   user so they can re-authorize.
 
@@ -118,6 +119,10 @@ visibility into spending patterns.
 - **Account balances** — fetch and display account balances from Enable Banking
   during sync. Balances are shown on the accounts page and as a running balance
   column in the transaction list.
+- **Manual sync button** — a sync button on the Transactions and Accounts pages
+  that triggers an on-demand sync of the user's linked bank accounts. Shows
+  real-time status feedback: spinning icon during sync, success/error pill badge
+  on completion. The transaction list auto-refreshes after sync.
 
 ### Not yet implemented
 

@@ -3,6 +3,7 @@ use axum::{Extension, Router, response::Html, routing::get};
 use crate::auth::UserId;
 use crate::layout::{NavItem, render_page};
 use crate::routes::AppState;
+use super::sync_handler::sync_button;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(index))
@@ -51,9 +52,15 @@ async fn index(
         ));
     }
 
+    let sync_btn = sync_button(base);
     let body = format!(
         r##"<div class="page-header">
-            <h1>Transactions</h1>
+            <div class="page-header-row">
+                <h1>Transactions</h1>
+                <div class="sync-container" id="sync-container">
+                    {sync_btn}
+                </div>
+            </div>
             <p>Your recent activity across all accounts</p>
         </div>
         <div class="card">
@@ -81,7 +88,7 @@ async fn index(
                     Not fully allocated
                 </label>
             </div>
-            <div id="txn-table" hx-get="{base}/leanfin/transactions" hx-trigger="load">
+            <div id="txn-table" hx-get="{base}/leanfin/transactions" hx-trigger="load, sync-done from:body">
                 <div class="loading">Loading transactions</div>
             </div>
         </div>"##

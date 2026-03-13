@@ -2,6 +2,7 @@ mod accounts;
 mod dashboard;
 mod labels;
 pub mod services;
+mod sync_handler;
 mod transactions;
 
 use axum::Router;
@@ -15,4 +16,5 @@ pub fn router() -> Router<AppState> {
         .merge(transactions::routes())
         .merge(accounts::routes())
         .merge(labels::routes())
+        .merge(sync_handler::routes())
 }

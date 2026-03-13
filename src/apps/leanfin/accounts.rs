@@ -11,6 +11,7 @@ use crate::routes::AppState;
 use crate::auth::UserId;
 use super::services::enable_banking;
 use super::dashboard::leanfin_nav;
+use super::sync_handler::sync_button;
 use crate::layout::render_page;
 
 pub fn routes() -> Router<AppState> {
@@ -97,9 +98,15 @@ async fn list_accounts(
         items = r#"<div class="empty-state"><p>No accounts linked yet.</p></div>"#.into();
     }
 
+    let sync_btn = sync_button(base);
     let body = format!(
-        r#"<div class="page-header">
-            <h1>Bank Accounts</h1>
+        r##"<div class="page-header">
+            <div class="page-header-row">
+                <h1>Bank Accounts</h1>
+                <div class="sync-container" id="sync-container">
+                    {sync_btn}
+                </div>
+            </div>
             <p>Manage your linked bank connections</p>
         </div>
         <div class="card">
@@ -110,7 +117,7 @@ async fn list_accounts(
             <div class="card-body">
                 <div class="account-grid">{items}</div>
             </div>
-        </div>"#
+        </div>"##
     );
 
     Html(render_page("LeanFin — Accounts", &leanfin_nav(base, "accounts"), &body, base))
