@@ -64,9 +64,11 @@ myapps/
 │           ├── accounts.rs  # Bank account linking (OAuth flow)
 │           ├── labels.rs    # Label CRUD
 │           ├── sync_handler.rs  # Sync button endpoint (POST /sync)
+│           ├── balance_evolution.rs  # Balance evolution page + data partial
 │           └── services/    # LeanFin-specific business logic
 │               ├── enable_banking.rs  # Enable Banking API client + JWT
 │               ├── sync.rs            # Transaction sync orchestration
+│               ├── balance.rs         # Daily balance tracking + reconciliation
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
 ├── static/                  # CSS, JS (htmx)
@@ -91,6 +93,8 @@ After login, the top-level router serves:
   - `POST /leanfin/accounts/{id}/reauth` — Re-authorize expired bank session
   - `POST /leanfin/accounts/{id}/delete` — Delete account and its transactions
   - `POST /leanfin/sync` — Trigger transaction sync for the user (HTMX partial)
+  - `/leanfin/balance-evolution` — Balance evolution page (chart + table)
+  - `/leanfin/balance-evolution/data?account_id=&days=90` — Balance data partial (HTMX)
   - `/leanfin/labels` — Label CRUD
 
 ## Database Schema
@@ -176,6 +180,18 @@ After login, the top-level router serves:
 | pattern   | TEXT    | Keyword for text fields; "min,max" for amount_range |
 | priority  | INTEGER | Higher wins on conflict, default 0     |
 
+### daily_balances
+
+| Column     | Type    | Notes                                    |
+|------------|---------|------------------------------------------|
+| id         | INTEGER | PK, autoincrement                        |
+| account_id | INTEGER | FK → accounts                            |
+| date       | TEXT    | ISO 8601 date                            |
+| balance    | REAL    | End-of-day balance                       |
+| source     | TEXT    | 'computed', 'reported'                   |
+| created_at | TEXT    | ISO 8601                                 |
+| UNIQUE(account_id, date) | | One row per account per day    |
+
 ### transaction_labels
 
 | Column         | Type    | Notes                      |
@@ -240,6 +256,9 @@ myapps sync
   │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
   │   ├─ INSERT OR IGNORE (dedup by external_id + account_id)
   │   ├─ GET /accounts/{uid}/balances → pick best balance type → UPDATE accounts
+  │   ├─ If no daily_balances rows exist → backfill ~90 days from transactions
+  │   ├─ Else → reconciliation check (expected vs reported balance, ntfy alert if off)
+  │   ├─ Upsert today's daily_balance as 'reported'
   │   └─ Run auto-labeling rules on newly inserted transactions
   │
   └─ Log summary: "Synced 42 new transactions across 3 accounts"

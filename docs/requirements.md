@@ -123,10 +123,16 @@ visibility into spending patterns.
   that triggers an on-demand sync of the user's linked bank accounts. Shows
   real-time status feedback: spinning icon during sync, success/error pill badge
   on completion. The transaction list auto-refreshes after sync.
+- **Balance evolution tracking** — daily balance history for each account,
+  backfilled from transactions on first sync. A dedicated Balance page shows an
+  SVG chart and data table with period selectors (30d/90d/180d/365d) and an
+  account dropdown including an "All accounts" aggregated view. Reconciliation
+  checks compare expected vs reported balances on each sync, alerting via ntfy
+  if discrepancies exceed 0.01.
 
 ### Not yet implemented
 
 - **Dashboard analytics** — spending summaries by label, monthly totals, and
-  visual charts.
+  visual charts (balance evolution charts are a first step).
 - **Pagination** — paginate beyond the current 100-transaction limit.
 - **Additional apps** — new sub-applications on the platform.
