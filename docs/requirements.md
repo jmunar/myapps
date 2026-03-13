@@ -147,6 +147,11 @@ visibility into spending patterns.
   to that date. The transaction list reuses the same endpoint as the Transactions
   page with label_ids and date range filters.
 
+- **Pagination** — the transaction list paginates with 50 transactions per page.
+  Prev/Next controls appear below the table with a "from–to of total" counter.
+  Filters reset to page 1 automatically. Pagination buttons use HTMX with
+  `hx-vals` to pass the page number while preserving all active filters via
+  `hx-include`.
+
 ### Not yet implemented
-- **Pagination** — paginate beyond the current 100-transaction limit.
 - **Additional apps** — new sub-applications on the platform.

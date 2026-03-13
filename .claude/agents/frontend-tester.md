@@ -107,7 +107,7 @@ let (id,): (i64,) = sqlx::query_as("SELECT id FROM labels WHERE name = ?")
 ### Protected (need login first)
 - `GET /` — app launcher
 - `GET /leanfin` — dashboard (full page with HTMX search/filter container)
-- `GET /leanfin/transactions` — HTMX partial, query params: q, account_id, unallocated, label_ids, date_from, date_to
+- `GET /leanfin/transactions` — HTMX partial, query params: q, account_id, unallocated, label_ids, date_from, date_to, page
 - `GET /leanfin/transactions/{id}/allocations` — HTMX partial: allocation editor
 - `POST /leanfin/transactions/{id}/allocations/add` — form: label_id, amount
 - `POST /leanfin/transactions/{id}/allocations/{alloc_id}/delete`
