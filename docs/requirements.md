@@ -37,6 +37,10 @@ visibility into spending patterns.
 - Each transaction records at minimum: date, amount, currency, description,
   counterparty name, and balance after transaction.
 - The system never modifies or deletes upstream bank data; it is append-only.
+- The transaction list can be filtered by free text (searches description and
+  counterparty), by bank account, and by allocation status (showing only
+  transactions that are not fully allocated). All filters are reactive and
+  update results as the user types or changes a selection.
 
 ### Labeling and allocations (LeanFin)
 
@@ -99,13 +103,16 @@ visibility into spending patterns.
 
 ## Roadmap
 
-### Not yet implemented
+### Implemented
 
 - **Label rule management UI** — create/edit/delete auto-labeling rules from
-  the web interface (currently rules are only created via seed data or direct
-  DB access).
-- **Transaction filtering** — filter the transaction list by label, date range,
-  account, or search text.
+  the web interface.
+- **Transaction filtering** — filter the transaction list by free text search,
+  account, or allocation status (not fully allocated). Filters are reactive
+  and trigger on every change via HTMX.
+
+### Not yet implemented
+
 - **Dashboard analytics** — spending summaries by label, monthly totals, and
   visual charts.
 - **Account management** — re-authorize expired bank sessions and delete

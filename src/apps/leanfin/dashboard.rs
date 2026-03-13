@@ -1,5 +1,6 @@
-use axum::{Router, response::Html, routing::get};
+use axum::{Extension, Router, response::Html, routing::get};
 
+use crate::auth::UserId;
 use crate::layout::{NavItem, render_page};
 use crate::routes::AppState;
 
@@ -17,20 +18,73 @@ pub fn leanfin_nav(base: &str, active: &str) -> Vec<NavItem> {
     ]
 }
 
+#[derive(sqlx::FromRow)]
+struct AccountOption {
+    id: i64,
+    bank_name: String,
+    iban: Option<String>,
+}
+
 async fn index(
     state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+
+    let accounts: Vec<AccountOption> = sqlx::query_as(
+        "SELECT id, bank_name, iban FROM accounts WHERE user_id = ? ORDER BY bank_name",
+    )
+    .bind(user_id.0)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let mut account_options = String::from(r#"<option value="">All accounts</option>"#);
+    for a in &accounts {
+        let display = match &a.iban {
+            Some(iban) => format!("{} ({})", a.bank_name, iban),
+            None => a.bank_name.clone(),
+        };
+        account_options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            a.id, display,
+        ));
+    }
+
     let body = format!(
-        r#"<div class="page-header">
+        r##"<div class="page-header">
             <h1>Transactions</h1>
             <p>Your recent activity across all accounts</p>
         </div>
         <div class="card">
-            <div id="transactions" hx-get="{base}/leanfin/transactions" hx-trigger="load">
+            <div class="txn-filters" id="txn-filters">
+                <input type="search" name="q" placeholder="Search transactions…"
+                       class="txn-filter-search"
+                       hx-get="{base}/leanfin/transactions"
+                       hx-target="#txn-table"
+                       hx-trigger="input changed delay:200ms"
+                       hx-include="#txn-filters">
+                <select name="account_id"
+                        class="txn-filter-select"
+                        hx-get="{base}/leanfin/transactions"
+                        hx-target="#txn-table"
+                        hx-trigger="change"
+                        hx-include="#txn-filters">
+                    {account_options}
+                </select>
+                <label class="txn-filter-check">
+                    <input type="checkbox" name="unallocated" value="1"
+                           hx-get="{base}/leanfin/transactions"
+                           hx-target="#txn-table"
+                           hx-trigger="change"
+                           hx-include="#txn-filters">
+                    Not fully allocated
+                </label>
+            </div>
+            <div id="txn-table" hx-get="{base}/leanfin/transactions" hx-trigger="load">
                 <div class="loading">Loading transactions</div>
             </div>
-        </div>"#
+        </div>"##
     );
     Html(render_page("LeanFin — Transactions", &leanfin_nav(base, "transactions"), &body, base))
 }
