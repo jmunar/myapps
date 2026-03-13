@@ -52,6 +52,12 @@ async fn accounts_page_hides_balance_when_null() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
+    // Clear balances so we can test the null case
+    sqlx::query("UPDATE accounts SET balance_amount = NULL, balance_currency = NULL")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
     let response = app.server.get("/leanfin/accounts").await;
     let body = response.text();
     assert!(!body.contains("account-balance"));

@@ -1,4 +1,5 @@
 mod accounts;
+mod balance_evolution;
 mod dashboard;
 mod labels;
 pub mod services;
@@ -17,4 +18,5 @@ pub fn router() -> Router<AppState> {
         .merge(accounts::routes())
         .merge(labels::routes())
         .merge(sync_handler::routes())
+        .merge(balance_evolution::routes())
 }

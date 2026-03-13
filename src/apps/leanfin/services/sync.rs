@@ -12,6 +12,7 @@ pub struct SyncResult {
     pub accounts_synced: u64,
     pub accounts_skipped: u64,
     pub errors: Vec<String>,
+    pub reconciliation_warnings: Vec<String>,
 }
 
 pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
@@ -63,7 +64,7 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
         }
 
         match sync_account(pool, config, account).await {
-            Ok(count) => {
+            Ok((count, _warning)) => {
                 tracing::info!(
                     "Account '{}': {} new transactions",
                     account.bank_name,
@@ -85,7 +86,8 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
     Ok(())
 }
 
-async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> Result<u64> {
+/// Returns (inserted_count, optional reconciliation warning).
+async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> Result<(u64, Option<String>)> {
     // If the account has no transactions yet, do a full initial sync (90 days).
     // Otherwise, fetch the last 5 days for overlap safety.
     let has_transactions: bool = sqlx::query_scalar(
@@ -138,11 +140,13 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
     }
 
     // Fetch and store account balance (non-fatal)
+    let mut reported_balance: Option<f64> = None;
     match enable_banking::get_balances(config, &account.account_uid).await {
         Ok(balances) => {
             if let Some(best) = enable_banking::pick_best_balance(&balances) {
                 if let Ok(amount) = best.balance_amount.amount.parse::<f64>() {
                     let currency = &best.balance_amount.currency;
+                    reported_balance = Some(amount);
                     if let Err(e) = sqlx::query(
                         "UPDATE accounts SET balance_amount = ?, balance_currency = ? WHERE id = ?",
                     )
@@ -162,6 +166,33 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         }
     }
 
+    // Daily balance tracking and reconciliation
+    let mut reconciliation_warning: Option<String> = None;
+    if let Some(balance) = reported_balance {
+        let has_daily: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM daily_balances WHERE account_id = ?)",
+        )
+        .bind(account.id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+
+        if !has_daily {
+            if let Err(e) = super::balance::backfill_daily_balances(pool, account.id, balance).await {
+                tracing::warn!("Failed to backfill daily balances for '{}': {e:#}", account.bank_name);
+            }
+        } else {
+            match super::balance::check_reconciliation(pool, config, account, balance).await {
+                Ok(warning) => reconciliation_warning = warning,
+                Err(e) => tracing::warn!("Reconciliation check failed for '{}': {e:#}", account.bank_name),
+            }
+        }
+
+        if let Err(e) = super::balance::record_daily_balance(pool, account.id, balance).await {
+            tracing::warn!("Failed to record daily balance for '{}': {e:#}", account.bank_name);
+        }
+    }
+
     // Run auto-labeling on newly fetched transactions
     if inserted > 0 {
         match super::labeling::apply_rules(pool, account.user_id).await {
@@ -174,7 +205,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         }
     }
 
-    Ok(inserted)
+    Ok((inserted, reconciliation_warning))
 }
 
 /// Run sync for a single user's accounts, returning a structured result for UI display.
@@ -194,6 +225,7 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
         accounts_synced: 0,
         accounts_skipped: 0,
         errors: Vec::new(),
+        reconciliation_warnings: Vec::new(),
     };
 
     let now = Utc::now().naive_utc();
@@ -211,9 +243,12 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
         }
 
         match sync_account(pool, config, account).await {
-            Ok(count) => {
+            Ok((count, warning)) => {
                 result.total_new += count;
                 result.accounts_synced += 1;
+                if let Some(w) = warning {
+                    result.reconciliation_warnings.push(w);
+                }
             }
             Err(e) => {
                 result.accounts_skipped += 1;
