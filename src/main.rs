@@ -1,13 +1,5 @@
-mod apps;
-mod auth;
-mod config;
-mod db;
-mod layout;
-mod models;
-mod routes;
-mod services;
-
 use clap::{Parser, Subcommand};
+use myapps::{apps, auth, config, db, routes};
 
 #[derive(Parser)]
 #[command(name = "myapps", about = "Multi-app platform")]

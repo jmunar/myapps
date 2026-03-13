@@ -70,13 +70,17 @@ cmd_remove() {
     local branch="$1"
     local worktree_dir="$REPO_DIR/../myapps-$branch"
 
+    # Fetch latest remote state and update the local main branch so that
+    # branch deletion checks and future worktrees start from the latest code.
+    git -C "$REPO_DIR" fetch --prune origin 2>/dev/null
+    git -C "$REPO_DIR" pull --ff-only 2>/dev/null || true
+
     git -C "$REPO_DIR" worktree remove "$worktree_dir"
     echo "Removed worktree: $worktree_dir"
 
     # Delete the local branch only if the remote branch is already gone
     # (i.e. the PR was merged and the remote branch was deleted).
     # Use -D because squash-merged branches won't appear in --merged.
-    git -C "$REPO_DIR" fetch --prune origin 2>/dev/null
     if git -C "$REPO_DIR" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
         echo "Branch '$branch' still exists on remote — kept local branch"
     else

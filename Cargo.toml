@@ -53,3 +53,6 @@ uuid = { version = "1", features = ["v4"] }
 
 # URL parsing
 url = "2"
+
+[dev-dependencies]
+axum-test = "19"
