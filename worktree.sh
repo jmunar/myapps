@@ -40,7 +40,24 @@ cmd_create() {
 
     echo ""
     echo "Worktree ready at: $worktree_dir"
-    echo "  cd $worktree_dir"
+
+    # If running in iTerm2, open a new tab in the worktree directory
+    if [ "${TERM_PROGRAM:-}" = "iTerm.app" ]; then
+        osascript <<EOF
+tell application "iTerm2"
+    tell current window
+        set newTab to (create tab with default profile)
+        tell current session of newTab
+            set name to "$branch"
+            write text "cd $(printf '%q' "$worktree_dir") && claude"
+        end tell
+    end tell
+end tell
+EOF
+        echo "Opened iTerm2 tab: $branch"
+    else
+        echo "  cd $worktree_dir"
+    fi
 }
 
 cmd_remove() {

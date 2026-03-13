@@ -118,12 +118,13 @@ Dev machine                         Odroid N2
 Run once on a fresh server. It:
 
 1. Installs the Rust toolchain (if not already present)
-2. Creates a `myapps` system user (no login shell)
-3. Creates `/opt/myapps/{data,logs,static}` with proper ownership
-4. Creates `/opt/myapps/.env` template (chmod 600)
-5. Installs the `myapps.service` systemd unit
-6. Installs a cron job for daily sync at 06:00
-7. Installs an nginx site config for the configured domain (HTTP, proxying
+2. Installs build dependencies (`pkg-config`, `libssl-dev`) and `sccache`
+3. Creates a `myapps` system user (no login shell)
+4. Creates `/opt/myapps/{data,logs,static}` with proper ownership
+5. Creates `/opt/myapps/.env` template (chmod 600)
+6. Installs the `myapps.service` systemd unit
+7. Installs a cron job for daily sync at 06:00
+8. Installs an nginx site config for the configured domain (HTTP, proxying
    `/myapps/` to `127.0.0.1:3000`)
 
 After setup, enable HTTPS with certbot (see Quick Start step 4).

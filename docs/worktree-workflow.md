@@ -18,7 +18,9 @@ a full working copy on its own branch, sharing the same git history.
 
 ## Starting a Claude Session per Ticket
 
-Open a separate terminal per worktree and start Claude Code from that directory:
+If you're using iTerm2, `worktree.sh create` automatically opens a new tab in
+the worktree directory and launches `claude`. Otherwise, open a separate
+terminal and start Claude Code manually:
 
 ```bash
 cd ../myapps-<ticket>
