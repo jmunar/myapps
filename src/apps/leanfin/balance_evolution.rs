@@ -170,112 +170,42 @@ async fn data(
         );
     }
 
-    // Build SVG chart
-    let chart_html = render_chart(&series);
-
-    // Build data table
-    let mut rows = String::new();
-    for point in series.iter().rev() {
-        let sign = if point.balance < 0.0 { "negative" } else { "positive" };
-        let source_badge = match point.source.as_str() {
-            "reported" => r#"<span class="source-badge source-reported">reported</span>"#,
-            "aggregated" => r#"<span class="source-badge source-aggregated">aggregated</span>"#,
-            "carried" => r#"<span class="source-badge source-computed">carried</span>"#,
-            _ => r#"<span class="source-badge source-computed">computed</span>"#,
-        };
-        rows.push_str(&format!(
-            r#"<tr>
-                <td class="txn-date">{}</td>
-                <td class="txn-amount {sign}">{:.2}</td>
-                <td>{source_badge}</td>
-            </tr>"#,
-            point.date, point.balance,
-        ));
-    }
+    // Build JSON arrays for Frappe Charts
+    let labels: Vec<String> = series.iter().map(|p| format!("\"{}\"", p.date)).collect();
+    let values: Vec<String> = series.iter().map(|p| format!("{:.2}", p.balance)).collect();
+    let labels_json = format!("[{}]", labels.join(","));
+    let values_json = format!("[{}]", values.join(","));
 
     let html = format!(
-        r#"{chart_html}
-        <table>
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Balance</th>
-                    <th>Source</th>
-                </tr>
-            </thead>
-            <tbody>{rows}</tbody>
-        </table>"#,
+        r##"<div id="balance-chart" class="frappe-chart-container"></div>
+        <script>
+        (function() {{
+            var el = document.getElementById('balance-chart');
+            if (!el) return;
+            el.innerHTML = '';
+            new frappe.Chart(el, {{
+                data: {{
+                    labels: {labels_json},
+                    datasets: [{{ values: {values_json} }}]
+                }},
+                type: 'line',
+                height: 300,
+                colors: ['#1A6B5A'],
+                lineOptions: {{
+                    regionFill: 1,
+                    hideDots: 1
+                }},
+                axisOptions: {{
+                    xIsSeries: true,
+                    xAxisMode: 'tick'
+                }},
+                tooltipOptions: {{
+                    formatTooltipY: function(d) {{ return d.toLocaleString(undefined, {{minimumFractionDigits: 2, maximumFractionDigits: 2}}); }}
+                }}
+            }});
+        }})();
+        </script>"##,
     );
 
     Html(html)
-}
-
-fn render_chart(series: &[balance::BalancePoint]) -> String {
-    if series.len() < 2 {
-        return String::new();
-    }
-
-    let width = 800.0_f64;
-    let height = 200.0_f64;
-    let pad_x = 60.0_f64;
-    let pad_y = 20.0_f64;
-
-    let min_bal = series.iter().map(|p| p.balance).fold(f64::INFINITY, f64::min);
-    let max_bal = series.iter().map(|p| p.balance).fold(f64::NEG_INFINITY, f64::max);
-    let range = if (max_bal - min_bal).abs() < 0.01 { 1.0 } else { max_bal - min_bal };
-
-    let n = series.len() as f64;
-    let points: Vec<String> = series
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let x = pad_x + (i as f64 / (n - 1.0)) * (width - 2.0 * pad_x);
-            let y = pad_y + (1.0 - (p.balance - min_bal) / range) * (height - 2.0 * pad_y);
-            format!("{x:.1},{y:.1}")
-        })
-        .collect();
-
-    let polyline = points.join(" ");
-
-    // Fill area
-    let first_x = pad_x;
-    let last_x = pad_x + (width - 2.0 * pad_x);
-    let bottom = height - pad_y;
-    let fill_points = format!("{first_x:.1},{bottom:.1} {polyline} {last_x:.1},{bottom:.1}");
-
-    // Y-axis labels
-    let fmt = |v: f64| -> String {
-        if v.abs() >= 1000.0 {
-            format!("{:.0}k", v / 1000.0)
-        } else {
-            format!("{v:.0}")
-        }
-    };
-    let mid = min_bal + range / 2.0;
-
-    // X-axis labels (first, middle, last)
-    let first_date = &series[0].date;
-    let last_date = &series[series.len() - 1].date;
-    let mid_idx = series.len() / 2;
-    let mid_date = &series[mid_idx].date;
-
-    format!(
-        r#"<div class="balance-chart">
-            <svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" class="balance-svg">
-                <polygon points="{fill_points}" class="chart-fill"/>
-                <polyline points="{polyline}" class="chart-line"/>
-            </svg>
-            <div class="chart-y-labels">
-                <span>{}</span>
-                <span>{}</span>
-                <span>{}</span>
-            </div>
-            <div class="chart-x-labels">
-                <span>{first_date}</span>
-                <span>{mid_date}</span>
-                <span>{last_date}</span>
-            </div>
-        </div>"#,
-        fmt(max_bal), fmt(mid), fmt(min_bal),
-    )
 }

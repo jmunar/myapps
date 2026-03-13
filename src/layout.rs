@@ -34,6 +34,7 @@ pub fn render_page(title: &str, nav_items: &[NavItem], body_html: &str, base_pat
     <title>{title}</title>
     <link rel="stylesheet" href="{base_path}/static/style.css">
     <script src="{base_path}/static/htmx.min.js"></script>
+    <script src="{base_path}/static/frappe-charts.min.umd.js"></script>
 </head>
 <body>
     <nav>

@@ -60,7 +60,7 @@ async fn balance_evolution_page_has_period_buttons() {
 }
 
 #[tokio::test]
-async fn data_endpoint_returns_balance_table_for_specific_account() {
+async fn data_endpoint_returns_frappe_chart_for_specific_account() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
@@ -77,14 +77,13 @@ async fn data_endpoint_returns_balance_table_for_specific_account() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("<table>"));
-    assert!(body.contains("<th>Date</th>"));
-    assert!(body.contains("<th>Balance</th>"));
-    assert!(body.contains("<th>Source</th>"));
+    assert!(body.contains("balance-chart"));
+    assert!(body.contains("frappe-chart-container"));
+    assert!(body.contains("frappe.Chart"));
 }
 
 #[tokio::test]
-async fn data_endpoint_returns_aggregated_data_when_account_id_empty() {
+async fn data_endpoint_returns_chart_when_account_id_empty() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
@@ -95,8 +94,8 @@ async fn data_endpoint_returns_aggregated_data_when_account_id_empty() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("<table>"));
-    assert!(body.contains("source-aggregated"));
+    assert!(body.contains("frappe-chart-container"));
+    assert!(body.contains("frappe.Chart"));
 }
 
 #[tokio::test]
@@ -144,7 +143,7 @@ async fn data_endpoint_returns_not_found_for_other_users_account() {
 }
 
 #[tokio::test]
-async fn data_endpoint_shows_date_and_balance_values() {
+async fn data_endpoint_contains_balance_data_in_json() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
@@ -161,13 +160,14 @@ async fn data_endpoint_shows_date_and_balance_values() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    // Should contain date cells and balance values
-    assert!(body.contains(r#"class="txn-date""#));
-    assert!(body.contains(r#"class="txn-amount"#));
+    // Chart data is embedded as JSON arrays in the script
+    assert!(body.contains("labels:"));
+    assert!(body.contains("values:"));
+    assert!(body.contains("type: 'line'"));
 }
 
 #[tokio::test]
-async fn data_endpoint_renders_svg_chart() {
+async fn data_endpoint_renders_frappe_chart_container() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
@@ -184,13 +184,13 @@ async fn data_endpoint_renders_svg_chart() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("<svg"));
-    assert!(body.contains("balance-svg"));
     assert!(body.contains("balance-chart"));
+    assert!(body.contains("frappe-chart-container"));
+    assert!(body.contains("regionFill"));
 }
 
 #[tokio::test]
-async fn data_endpoint_shows_source_badges() {
+async fn data_endpoint_uses_accent_color() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
@@ -207,9 +207,8 @@ async fn data_endpoint_shows_source_badges() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    // Seed data produces "reported" and "computed" sources
-    assert!(body.contains("source-badge"));
-    assert!(body.contains("source-reported") || body.contains("source-computed"));
+    // Chart uses the app's accent color
+    assert!(body.contains("#1A6B5A"));
 }
 
 #[tokio::test]

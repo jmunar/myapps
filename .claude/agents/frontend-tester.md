@@ -37,6 +37,8 @@ tests/
   leanfin/
     transactions.rs           # dashboard, transaction list/search/filter
     labels.rs                 # label CRUD + rules
+    expenses.rs               # expenses page + chart endpoint
+    balance_evolution.rs      # balance evolution page + chart data
 ```
 
 - Platform-level tests (`auth_tests.rs`) are top-level files that start with `mod harness;`.
@@ -105,7 +107,7 @@ let (id,): (i64,) = sqlx::query_as("SELECT id FROM labels WHERE name = ?")
 ### Protected (need login first)
 - `GET /` — app launcher
 - `GET /leanfin` — dashboard (full page with HTMX search/filter container)
-- `GET /leanfin/transactions` — HTMX partial, query params: q, account_id, unallocated
+- `GET /leanfin/transactions` — HTMX partial, query params: q, account_id, unallocated, label_ids, date_from, date_to
 - `GET /leanfin/transactions/{id}/allocations` — HTMX partial: allocation editor
 - `POST /leanfin/transactions/{id}/allocations/add` — form: label_id, amount
 - `POST /leanfin/transactions/{id}/allocations/{alloc_id}/delete`
@@ -117,6 +119,8 @@ let (id,): (i64,) = sqlx::query_as("SELECT id FROM labels WHERE name = ?")
 - `GET /leanfin/labels/{id}/rules` — HTMX partial: rules panel
 - `POST /leanfin/labels/{id}/rules/create` — form: field, pattern
 - `POST /leanfin/labels/{label_id}/rules/{rule_id}/delete`
+- `GET /leanfin/expenses` — expenses page (label selector + chart container)
+- `GET /leanfin/expenses/chart` — HTMX partial, query params: label_ids, days
 - `GET /leanfin/accounts` — accounts page (bank + manual sections)
 - `GET /leanfin/accounts/manual/new` — manual account creation form
 - `POST /leanfin/accounts/manual/new` — form: name, category, currency, initial_value, date → redirect 303

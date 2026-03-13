@@ -105,6 +105,9 @@ struct FilterParams {
     q: Option<String>,
     account_id: Option<String>,
     unallocated: Option<String>,
+    label_ids: Option<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
 }
 
 async fn list(
@@ -147,6 +150,31 @@ async fn list(
         );
     }
 
+    // Filter by label IDs (comma-separated)
+    let label_ids: Vec<i64> = filter
+        .label_ids
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|s| s.trim().parse::<i64>().ok())
+        .collect();
+    if !label_ids.is_empty() {
+        let placeholders = label_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        sql.push_str(&format!(
+            " AND t.id IN (SELECT transaction_id FROM allocations WHERE label_id IN ({placeholders}))"
+        ));
+    }
+
+    let date_from = filter.date_from.as_deref().unwrap_or("").trim().to_string();
+    if !date_from.is_empty() {
+        sql.push_str(" AND t.date >= ?");
+    }
+
+    let date_to = filter.date_to.as_deref().unwrap_or("").trim().to_string();
+    if !date_to.is_empty() {
+        sql.push_str(" AND t.date <= ?");
+    }
+
     sql.push_str(" ORDER BY t.date DESC LIMIT 100");
 
     let mut query = sqlx::query_as::<_, Transaction>(&sql).bind(user_id.0);
@@ -157,6 +185,15 @@ async fn list(
         let pattern = format!("%{q}%");
         query = query.bind(pattern.clone());
         query = query.bind(pattern);
+    }
+    for lid in &label_ids {
+        query = query.bind(lid);
+    }
+    if !date_from.is_empty() {
+        query = query.bind(&date_from);
+    }
+    if !date_to.is_empty() {
+        query = query.bind(&date_to);
     }
 
     let transactions: Vec<Transaction> = query
