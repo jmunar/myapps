@@ -36,8 +36,8 @@ pub async fn spawn_app() -> TestApp {
         base_url: None,
         enable_banking_app_id: None,
         enable_banking_key_path: None,
-        telegram_bot_token: None,
-        telegram_chat_id: None,
+        ntfy_url: None,
+        ntfy_topic: None,
         bind_addr: "127.0.0.1:0".into(),
         base_path: String::new(),
     };

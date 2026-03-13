@@ -5,8 +5,8 @@ pub struct Config {
     pub base_url: Option<String>,
     pub enable_banking_app_id: Option<String>,
     pub enable_banking_key_path: Option<String>,
-    pub telegram_bot_token: Option<String>,
-    pub telegram_chat_id: Option<String>,
+    pub ntfy_url: Option<String>,
+    pub ntfy_topic: Option<String>,
     pub bind_addr: String,
     /// URL prefix derived from BASE_URL path (e.g. "/leanfin").
     /// Empty string means served at root.
@@ -28,8 +28,8 @@ impl Config {
             base_url,
             enable_banking_app_id: env::var("ENABLE_BANKING_APP_ID").ok(),
             enable_banking_key_path: env::var("ENABLE_BANKING_KEY_PATH").ok(),
-            telegram_bot_token: env::var("TELEGRAM_BOT_TOKEN").ok(),
-            telegram_chat_id: env::var("TELEGRAM_CHAT_ID").ok(),
+            ntfy_url: env::var("NTFY_URL").ok(),
+            ntfy_topic: env::var("NTFY_TOPIC").ok(),
             bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".to_string()),
             base_path,
         })

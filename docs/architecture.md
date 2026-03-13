@@ -10,7 +10,7 @@
 | Frontend         | HTMX + server-rendered HTML     |
 | Auth             | Argon2 + server-side sessions   |
 | Bank aggregator  | Enable Banking PSD2 API         |
-| Notifications    | Telegram Bot API                |
+| Notifications    | ntfy (HTTP push)                |
 | Reverse proxy    | nginx + certbot                 |
 | Process manager  | systemd                         |
 
@@ -55,7 +55,7 @@ myapps/
 │   │   ├── auth.rs          # Login/logout
 │   │   └── launcher.rs      # App launcher page (root /)
 │   ├── services/            # Shared services
-│   │   └── notify.rs        # Telegram notifications
+│   │   └── notify.rs        # ntfy push notifications
 │   └── apps/                # Sub-applications
 │       └── leanfin/         # LeanFin expense tracker
 │           ├── mod.rs       # LeanFin router
@@ -233,10 +233,10 @@ myapps sync
   ├─ For each account:
   │   ├─ Check session_expires_at
   │   ├─ If expired:
-  │   │   ├─ Send Telegram notification
+  │   │   ├─ Send ntfy notification
   │   │   └─ Skip
   │   ├─ If expiring within 7 days:
-  │   │   └─ Send Telegram warning
+  │   │   └─ Send ntfy warning
   │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
   │   ├─ INSERT OR IGNORE (dedup by external_id + account_id)
   │   ├─ GET /accounts/{uid}/balances → pick best balance type → UPDATE accounts

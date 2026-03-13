@@ -1,33 +1,35 @@
 use crate::config::Config;
 
-/// Send a notification message via Telegram. Logs errors but does not fail.
+/// Send a notification message via ntfy. Logs errors but does not fail.
 pub async fn send(config: &Config, message: &str) {
-    let (Some(token), Some(chat_id)) = (&config.telegram_bot_token, &config.telegram_chat_id)
-    else {
-        tracing::debug!("Telegram not configured, skipping notification");
+    let Some(topic) = &config.ntfy_topic else {
+        tracing::debug!("ntfy not configured, skipping notification");
         return;
     };
 
-    let url = format!("https://api.telegram.org/bot{token}/sendMessage");
+    let base = config
+        .ntfy_url
+        .as_deref()
+        .unwrap_or("https://ntfy.sh");
+
+    let url = format!("{base}/{topic}");
 
     let result = reqwest::Client::new()
         .post(&url)
-        .json(&serde_json::json!({
-            "chat_id": chat_id,
-            "text": message,
-        }))
+        .header("Title", "MyApps")
+        .body(message.to_string())
         .send()
         .await;
 
     match result {
         Ok(resp) if resp.status().is_success() => {
-            tracing::debug!("Telegram notification sent");
+            tracing::debug!("ntfy notification sent");
         }
         Ok(resp) => {
-            tracing::warn!("Telegram API returned {}", resp.status());
+            tracing::warn!("ntfy returned {}", resp.status());
         }
         Err(e) => {
-            tracing::warn!("Failed to send Telegram notification: {e}");
+            tracing::warn!("Failed to send ntfy notification: {e}");
         }
     }
 }
