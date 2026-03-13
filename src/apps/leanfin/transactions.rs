@@ -100,6 +100,8 @@ fn render_row(t: &Transaction, txn_allocs: &[&AllocRow], base: &str) -> String {
 
 // ── Transaction list (HTMX partial) ─────────────────────────
 
+const PAGE_SIZE: i64 = 50;
+
 #[derive(Deserialize, Default)]
 struct FilterParams {
     q: Option<String>,
@@ -108,6 +110,7 @@ struct FilterParams {
     label_ids: Option<String>,
     date_from: Option<String>,
     date_to: Option<String>,
+    page: Option<i64>,
 }
 
 async fn list(
@@ -116,30 +119,25 @@ async fn list(
     Query(filter): Query<FilterParams>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let page = filter.page.unwrap_or(1).max(1);
+    let offset = (page - 1) * PAGE_SIZE;
 
-    // Build dynamic query based on filters
-    let mut sql = String::from(
-        r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
-               t.currency, t.description, t.counterparty, t.balance_after,
-               t.created_at
-        FROM transactions t
-        JOIN accounts a ON t.account_id = a.id
-        WHERE a.user_id = ?"#,
-    );
+    // Build dynamic WHERE clause (shared between count and data queries)
+    let mut where_clause = String::from(" WHERE a.user_id = ?");
 
     let account_id: Option<i64> = filter.account_id.as_deref().and_then(|s| s.parse().ok());
     if account_id.is_some() {
-        sql.push_str(" AND t.account_id = ?");
+        where_clause.push_str(" AND t.account_id = ?");
     }
 
     let q = filter.q.as_deref().unwrap_or("").trim().to_string();
     if !q.is_empty() {
-        sql.push_str(" AND (t.description LIKE ? OR t.counterparty LIKE ?)");
+        where_clause.push_str(" AND (t.description LIKE ? OR t.counterparty LIKE ?)");
     }
 
     let show_unallocated = filter.unallocated.is_some();
     if show_unallocated {
-        sql.push_str(
+        where_clause.push_str(
             r#" AND t.id NOT IN (
                 SELECT al.transaction_id FROM allocations al
                 GROUP BY al.transaction_id
@@ -160,52 +158,79 @@ async fn list(
         .collect();
     if !label_ids.is_empty() {
         let placeholders = label_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        sql.push_str(&format!(
+        where_clause.push_str(&format!(
             " AND t.id IN (SELECT transaction_id FROM allocations WHERE label_id IN ({placeholders}))"
         ));
     }
 
     let date_from = filter.date_from.as_deref().unwrap_or("").trim().to_string();
     if !date_from.is_empty() {
-        sql.push_str(" AND t.date >= ?");
+        where_clause.push_str(" AND t.date >= ?");
     }
 
     let date_to = filter.date_to.as_deref().unwrap_or("").trim().to_string();
     if !date_to.is_empty() {
-        sql.push_str(" AND t.date <= ?");
+        where_clause.push_str(" AND t.date <= ?");
     }
 
-    sql.push_str(" ORDER BY t.date DESC LIMIT 100");
+    // Helper to bind filter params to a query
+    macro_rules! bind_filters {
+        ($query:expr) => {{
+            let mut q_bound = $query.bind(user_id.0);
+            if let Some(aid) = account_id {
+                q_bound = q_bound.bind(aid);
+            }
+            if !q.is_empty() {
+                let pattern = format!("%{q}%");
+                q_bound = q_bound.bind(pattern.clone());
+                q_bound = q_bound.bind(pattern);
+            }
+            for lid in &label_ids {
+                q_bound = q_bound.bind(*lid);
+            }
+            if !date_from.is_empty() {
+                q_bound = q_bound.bind(date_from.clone());
+            }
+            if !date_to.is_empty() {
+                q_bound = q_bound.bind(date_to.clone());
+            }
+            q_bound
+        }};
+    }
 
-    let mut query = sqlx::query_as::<_, Transaction>(&sql).bind(user_id.0);
-    if let Some(aid) = account_id {
-        query = query.bind(aid);
-    }
-    if !q.is_empty() {
-        let pattern = format!("%{q}%");
-        query = query.bind(pattern.clone());
-        query = query.bind(pattern);
-    }
-    for lid in &label_ids {
-        query = query.bind(lid);
-    }
-    if !date_from.is_empty() {
-        query = query.bind(&date_from);
-    }
-    if !date_to.is_empty() {
-        query = query.bind(&date_to);
-    }
-
-    let transactions: Vec<Transaction> = query
-        .fetch_all(&state.pool)
+    // Count total matching transactions
+    let count_sql = format!(
+        "SELECT COUNT(*) as cnt FROM transactions t JOIN accounts a ON t.account_id = a.id{where_clause}"
+    );
+    let total: i64 = bind_filters!(sqlx::query_scalar::<_, i64>(&count_sql))
+        .fetch_one(&state.pool)
         .await
-        .unwrap_or_default();
+        .unwrap_or(0);
 
-    if transactions.is_empty() {
+    if total == 0 {
         return Html(r#"<div class="empty-state">
             <p>No transactions yet. Link a bank account and run a sync to get started.</p>
         </div>"#.to_string());
     }
+
+    let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
+    let page = page.min(total_pages);
+
+    // Fetch page of transactions
+    let data_sql = format!(
+        r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
+               t.currency, t.description, t.counterparty, t.balance_after,
+               t.created_at
+        FROM transactions t
+        JOIN accounts a ON t.account_id = a.id{where_clause}
+        ORDER BY t.date DESC LIMIT ? OFFSET ?"#
+    );
+    let transactions: Vec<Transaction> = bind_filters!(sqlx::query_as::<_, Transaction>(&data_sql))
+        .bind(PAGE_SIZE)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
 
     // Fetch all allocations for these transactions
     let txn_ids: Vec<i64> = transactions.iter().map(|t| t.id).collect();
@@ -218,11 +243,11 @@ async fn list(
            WHERE a.transaction_id IN ({placeholders})
            ORDER BY a.amount DESC"#
     );
-    let mut query = sqlx::query_as::<_, AllocRow>(&query_str);
+    let mut alloc_query = sqlx::query_as::<_, AllocRow>(&query_str);
     for id in &txn_ids {
-        query = query.bind(id);
+        alloc_query = alloc_query.bind(id);
     }
-    let allocs: Vec<AllocRow> = query
+    let allocs: Vec<AllocRow> = alloc_query
         .fetch_all(&state.pool)
         .await
         .unwrap_or_default();
@@ -236,6 +261,36 @@ async fn list(
         rows.push_str(&render_row(t, &txn_allocs, base));
     }
 
+    // Pagination controls
+    let from_row = offset + 1;
+    let to_row = (offset + PAGE_SIZE).min(total);
+    let mut pagination = format!(
+        r#"<div class="pagination">
+            <span class="pagination-info">{from_row}–{to_row} of {total}</span>
+            <div class="pagination-buttons">"#
+    );
+    if page > 1 {
+        pagination.push_str(&format!(
+            r##"<button class="btn btn-secondary btn-sm"
+                    hx-get="{base}/leanfin/transactions"
+                    hx-target="#txn-table"
+                    hx-include="#txn-filters"
+                    hx-vals='{{"page":{prev}}}'>Prev</button>"##,
+            prev = page - 1,
+        ));
+    }
+    if page < total_pages {
+        pagination.push_str(&format!(
+            r##"<button class="btn btn-secondary btn-sm"
+                    hx-get="{base}/leanfin/transactions"
+                    hx-target="#txn-table"
+                    hx-include="#txn-filters"
+                    hx-vals='{{"page":{next}}}'>Next</button>"##,
+            next = page + 1,
+        ));
+    }
+    pagination.push_str("</div></div>");
+
     Html(format!(
         r#"<table>
             <thead><tr>
@@ -247,7 +302,8 @@ async fn list(
                 <th>Balance</th>
             </tr></thead>
             <tbody>{rows}</tbody>
-        </table>"#
+        </table>
+        {pagination}"#
     ))
 }
 
