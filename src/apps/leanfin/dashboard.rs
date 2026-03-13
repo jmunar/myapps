@@ -15,6 +15,7 @@ pub fn leanfin_nav(base: &str, active: &str) -> Vec<NavItem> {
         NavItem { href: format!("{base}/leanfin"), label: "Transactions", active: active == "transactions" },
         NavItem { href: format!("{base}/leanfin/accounts"), label: "Accounts", active: active == "accounts" },
         NavItem { href: format!("{base}/leanfin/balance-evolution"), label: "Balance", active: active == "balance" },
+        NavItem { href: format!("{base}/leanfin/expenses"), label: "Expenses", active: active == "expenses" },
         NavItem { href: format!("{base}/leanfin/labels"), label: "Labels", active: active == "labels" },
         NavItem { href: format!("{base}/logout"), label: "Log out", active: false },
     ]
@@ -25,6 +26,12 @@ struct AccountOption {
     id: i64,
     bank_name: String,
     iban: Option<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct LabelOption {
+    id: i64,
+    name: String,
 }
 
 async fn index(
@@ -50,6 +57,22 @@ async fn index(
         account_options.push_str(&format!(
             r#"<option value="{}">{}</option>"#,
             a.id, display,
+        ));
+    }
+
+    let labels: Vec<LabelOption> = sqlx::query_as(
+        "SELECT id, name FROM labels WHERE user_id = ? ORDER BY name",
+    )
+    .bind(user_id.0)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let mut label_options = String::from(r#"<option value="">All labels</option>"#);
+    for l in &labels {
+        label_options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            l.id, l.name,
         ));
     }
 
@@ -79,6 +102,14 @@ async fn index(
                         hx-trigger="change"
                         hx-include="#txn-filters">
                     {account_options}
+                </select>
+                <select name="label_ids"
+                        class="txn-filter-select"
+                        hx-get="{base}/leanfin/transactions"
+                        hx-target="#txn-table"
+                        hx-trigger="change"
+                        hx-include="#txn-filters">
+                    {label_options}
                 </select>
                 <label class="txn-filter-check">
                     <input type="checkbox" name="unallocated" value="1"

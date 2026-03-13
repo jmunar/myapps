@@ -1307,50 +1307,59 @@ tr.txn-misallocated .txn-date {
     color: #FFFFFF;
 }
 
-.balance-chart {
-    position: relative;
-    padding: 1rem 1rem 0.5rem 3.5rem;
+/* ── Frappe Charts overrides ────────────────────────────────── */
+.frappe-chart-container {
+    padding: 1rem;
 }
 
-.balance-svg {
-    width: 100%;
-    height: 10rem;
+.frappe-chart-container .chart-legend {
+    font-family: var(--font-body);
+    font-size: 0.8rem;
 }
 
-.chart-line {
-    fill: none;
-    stroke: var(--accent);
-    stroke-width: 2;
-    vector-effect: non-scaling-stroke;
+.frappe-chart-container .axis text,
+.frappe-chart-container .chart-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    fill: var(--text-secondary);
 }
 
-.chart-fill {
-    fill: var(--accent-light);
+.frappe-chart-container .title {
+    display: none;
+}
+
+/* ── Expenses page ─────────────────────────────────────────── */
+.expenses-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-light);
+    flex-wrap: wrap;
+}
+
+.expenses-labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.label-pill {
+    cursor: pointer;
     opacity: 0.5;
+    transition: all 0.15s var(--ease);
+    font-family: var(--font-body);
 }
 
-.chart-y-labels {
-    position: absolute;
-    top: 1rem;
-    left: 0.5rem;
-    bottom: 0.5rem;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--text-secondary);
+.label-pill:hover {
+    opacity: 0.8;
 }
 
-.chart-x-labels {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.25rem 0 0.5rem;
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--text-secondary);
-    margin-left: 3.5rem;
-    margin-right: 1rem;
+.label-pill-active {
+    opacity: 1;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--label-color) 40%, transparent);
 }
 
 .source-badge {
