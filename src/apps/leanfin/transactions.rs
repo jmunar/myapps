@@ -1,6 +1,6 @@
 use axum::{
     Extension, Form, Router,
-    extract::Path,
+    extract::{Path, Query},
     response::Html,
     routing::{get, post},
 };
@@ -98,26 +98,69 @@ fn render_row(t: &Transaction, txn_allocs: &[&AllocRow], base: &str) -> String {
 
 // ── Transaction list (HTMX partial) ─────────────────────────
 
+#[derive(Deserialize, Default)]
+struct FilterParams {
+    q: Option<String>,
+    account_id: Option<String>,
+    unallocated: Option<String>,
+}
+
 async fn list(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Query(filter): Query<FilterParams>,
 ) -> Html<String> {
     let base = &state.config.base_path;
 
-    let transactions: Vec<Transaction> = sqlx::query_as(
+    // Build dynamic query based on filters
+    let mut sql = String::from(
         r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
                t.created_at
         FROM transactions t
         JOIN accounts a ON t.account_id = a.id
-        WHERE a.user_id = ?
-        ORDER BY t.date DESC
-        LIMIT 100"#,
-    )
-    .bind(user_id.0)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+        WHERE a.user_id = ?"#,
+    );
+
+    let account_id: Option<i64> = filter.account_id.as_deref().and_then(|s| s.parse().ok());
+    if account_id.is_some() {
+        sql.push_str(" AND t.account_id = ?");
+    }
+
+    let q = filter.q.as_deref().unwrap_or("").trim().to_string();
+    if !q.is_empty() {
+        sql.push_str(" AND (t.description LIKE ? OR t.counterparty LIKE ?)");
+    }
+
+    let show_unallocated = filter.unallocated.is_some();
+    if show_unallocated {
+        sql.push_str(
+            r#" AND t.id NOT IN (
+                SELECT al.transaction_id FROM allocations al
+                GROUP BY al.transaction_id
+                HAVING ABS(SUM(al.amount) - ABS(
+                    (SELECT t2.amount FROM transactions t2 WHERE t2.id = al.transaction_id)
+                )) < 0.01
+            )"#,
+        );
+    }
+
+    sql.push_str(" ORDER BY t.date DESC LIMIT 100");
+
+    let mut query = sqlx::query_as::<_, Transaction>(&sql).bind(user_id.0);
+    if let Some(aid) = account_id {
+        query = query.bind(aid);
+    }
+    if !q.is_empty() {
+        let pattern = format!("%{q}%");
+        query = query.bind(pattern.clone());
+        query = query.bind(pattern);
+    }
+
+    let transactions: Vec<Transaction> = query
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_default();
 
     if transactions.is_empty() {
         return Html(r#"<div class="empty-state">
