@@ -41,12 +41,18 @@ cmd_create() {
     echo ""
     echo "Worktree ready at: $worktree_dir"
 
-    # If running in iTerm2, open a new tab in the worktree directory
+    # If running in iTerm2, open a new tab in the worktree directory.
+    # Uses a "Worktree" profile (if it exists) with "Applications in terminal
+    # may change the title" disabled, so Claude cannot override the tab name.
     if [ "${TERM_PROGRAM:-}" = "iTerm.app" ]; then
         osascript <<EOF
 tell application "iTerm2"
     tell current window
-        set newTab to (create tab with default profile)
+        try
+            set newTab to (create tab with profile "Worktree")
+        on error
+            set newTab to (create tab with default profile)
+        end try
         tell current session of newTab
             set name to "$branch"
             write text "cd $(printf '%q' "$worktree_dir") && claude"
@@ -67,12 +73,16 @@ cmd_remove() {
     git -C "$REPO_DIR" worktree remove "$worktree_dir"
     echo "Removed worktree: $worktree_dir"
 
-    # Delete the branch if it's been merged
-    if git -C "$REPO_DIR" branch --merged main | grep -q "$branch"; then
-        git -C "$REPO_DIR" branch -d "$branch"
-        echo "Deleted merged branch: $branch"
+    # Delete the local branch only if the remote branch is already gone
+    # (i.e. the PR was merged and the remote branch was deleted).
+    # Use -D because squash-merged branches won't appear in --merged.
+    git -C "$REPO_DIR" fetch --prune origin 2>/dev/null
+    if git -C "$REPO_DIR" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+        echo "Branch '$branch' still exists on remote — kept local branch"
     else
-        echo "Branch '$branch' not yet merged into main — kept"
+        git -C "$REPO_DIR" branch -D "$branch" 2>/dev/null \
+            && echo "Deleted branch: $branch" \
+            || echo "Branch '$branch' not found or already deleted"
     fi
 }
 
