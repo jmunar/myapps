@@ -44,7 +44,7 @@ git push -u origin HEAD
 
 ## 7. Create PR
 
-Create a pull request targeting `main` using `gh pr create`. Write a clear title and body summarizing all changes on the branch. Use this format for the body:
+Create a pull request targeting `main` using `gh pr create`. The PR title **must** start with the ticket name derived from the branch name in square brackets. Extract the ticket prefix (everything up to and including the first number) from the branch name, uppercase it, and prepend it. For example, branch `feat-12-feature-xyz` → title starts with `[FEAT-12]`. Write a clear title after the prefix summarizing all changes on the branch. Use this format for the body:
 
 ```
 ## Summary
