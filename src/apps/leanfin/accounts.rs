@@ -21,6 +21,8 @@ pub fn routes() -> Router<AppState> {
         .route("/accounts/callback", get(callback))
         .route("/accounts/{id}/reauth", post(reauth))
         .route("/accounts/{id}/delete", post(delete_account))
+        .route("/accounts/{id}/archive", post(archive_account))
+        .route("/accounts/{id}/unarchive", post(unarchive_account))
         .route("/accounts/manual/new", get(manual_new_form).post(manual_new_submit))
         .route("/accounts/manual/{id}/edit", get(manual_edit_form).post(manual_edit_submit))
         .route("/accounts/manual/{id}/value", get(manual_value_form).post(manual_value_submit))
@@ -28,14 +30,28 @@ pub fn routes() -> Router<AppState> {
 
 // ── List accounts ─────────────────────────────────────────────────
 
+#[derive(Deserialize, Default)]
+struct ListAccountsParams {
+    show_archived: Option<String>,
+    archive_error: Option<i64>,
+}
+
 async fn list_accounts(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Query(params): Query<ListAccountsParams>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let show_archived = params.show_archived.is_some();
+
+    let error_banner = if params.archive_error.is_some() {
+        r#"<div class="alert alert-error">Cannot archive: this account has unallocated transactions. Allocate all transactions first.</div>"#
+    } else {
+        ""
+    };
 
     let accounts: Vec<AccountRow> = sqlx::query_as(
-        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category FROM accounts WHERE user_id = ?",
+        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived FROM accounts WHERE user_id = ?",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -45,8 +61,13 @@ async fn list_accounts(
     let today = chrono::Utc::now().naive_utc();
     let warn_threshold = today + chrono::Duration::days(14);
 
-    let bank_accounts: Vec<&AccountRow> = accounts.iter().filter(|a| a.account_type == "bank").collect();
-    let manual_accounts: Vec<&AccountRow> = accounts.iter().filter(|a| a.account_type == "manual").collect();
+    let has_archived = accounts.iter().any(|a| a.archived);
+    let bank_accounts: Vec<&AccountRow> = accounts.iter()
+        .filter(|a| a.account_type == "bank" && (show_archived || !a.archived))
+        .collect();
+    let manual_accounts: Vec<&AccountRow> = accounts.iter()
+        .filter(|a| a.account_type == "manual" && (show_archived || !a.archived))
+        .collect();
 
     // Bank accounts section
     let mut bank_items = String::new();
@@ -55,45 +76,71 @@ async fn list_accounts(
         let expires = session_expires_at.format("%Y-%m-%d").to_string();
         let iban = a.iban.as_deref().unwrap_or("\u{2014}");
         let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
-        let is_expired = session_expires_at < today;
-        let expiry_class = if is_expired {
-            "expiry-expired"
-        } else if session_expires_at < warn_threshold {
-            "expiry-warning"
-        } else {
-            "expiry-ok"
-        };
-        let expiry_label = if is_expired { "Expired" } else { "Active" };
 
-        let reauth_btn = if is_expired || session_expires_at < warn_threshold {
-            format!(
-                r#"<form method="POST" action="{base}/leanfin/accounts/{}/reauth" style="display:inline">
-                    <button type="submit" class="btn-icon">Re-authorize</button>
-                </form>"#,
-                a.id
-            )
+        if a.archived {
+            bank_items.push_str(&format!(
+                r#"<div class="account-item account-archived">
+                    <div>
+                        <div class="account-bank">{bank} <span class="archived-badge">Archived</span></div>
+                        <div class="account-iban">{iban}</div>
+                        {balance_html}
+                    </div>
+                    <div class="account-actions">
+                        <form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
+                            <button type="submit" class="btn-icon">Unarchive</button>
+                        </form>
+                        <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
+                              onsubmit="return confirm('Delete this account and all its transactions?')" style="display:inline">
+                            <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                        </form>
+                    </div>
+                </div>"#,
+                bank = a.bank_name, id = a.id
+            ));
         } else {
-            String::new()
-        };
+            let is_expired = session_expires_at < today;
+            let expiry_class = if is_expired {
+                "expiry-expired"
+            } else if session_expires_at < warn_threshold {
+                "expiry-warning"
+            } else {
+                "expiry-ok"
+            };
+            let expiry_label = if is_expired { "Expired" } else { "Active" };
 
-        bank_items.push_str(&format!(
-            r#"<div class="account-item">
-                <div>
-                    <div class="account-bank">{}</div>
-                    <div class="account-iban">{iban}</div>
-                    {balance_html}
-                </div>
-                <div class="account-actions">
-                    <span class="account-expiry {expiry_class}">{expiry_label} — {expires}</span>
-                    {reauth_btn}
-                    <form method="POST" action="{base}/leanfin/accounts/{}/delete"
-                          onsubmit="return confirm('Delete this account and all its transactions?')" style="display:inline">
-                        <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
-                    </form>
-                </div>
-            </div>"#,
-            a.bank_name, a.id
-        ));
+            let reauth_btn = if is_expired || session_expires_at < warn_threshold {
+                format!(
+                    r#"<form method="POST" action="{base}/leanfin/accounts/{}/reauth" style="display:inline">
+                        <button type="submit" class="btn-icon">Re-authorize</button>
+                    </form>"#,
+                    a.id
+                )
+            } else {
+                String::new()
+            };
+
+            bank_items.push_str(&format!(
+                r#"<div class="account-item">
+                    <div>
+                        <div class="account-bank">{}</div>
+                        <div class="account-iban">{iban}</div>
+                        {balance_html}
+                    </div>
+                    <div class="account-actions">
+                        <span class="account-expiry {expiry_class}">{expiry_label} — {expires}</span>
+                        {reauth_btn}
+                        <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
+                            <button type="submit" class="btn-icon">Archive</button>
+                        </form>
+                        <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
+                              onsubmit="return confirm('Delete this account and all its transactions?')" style="display:inline">
+                            <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                        </form>
+                    </div>
+                </div>"#,
+                a.bank_name, id = a.id
+            ));
+        }
     }
 
     if bank_items.is_empty() {
@@ -110,29 +157,67 @@ async fn list_accounts(
             None => String::new(),
         };
 
-        manual_items.push_str(&format!(
-            r#"<div class="account-item">
-                <div>
-                    <div class="account-bank">{name}</div>
-                    {category_badge}
-                    {balance_html}
-                </div>
-                <div class="account-actions">
-                    <a href="{base}/leanfin/accounts/manual/{id}/value" class="btn-icon">Update value</a>
-                    <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">Edit</a>
-                    <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
-                          onsubmit="return confirm('Delete this account and all its balance history?')" style="display:inline">
-                        <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
-                    </form>
-                </div>
-            </div>"#,
-            id = a.id
-        ));
+        if a.archived {
+            manual_items.push_str(&format!(
+                r#"<div class="account-item account-archived">
+                    <div>
+                        <div class="account-bank">{name} <span class="archived-badge">Archived</span></div>
+                        {category_badge}
+                        {balance_html}
+                    </div>
+                    <div class="account-actions">
+                        <form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
+                            <button type="submit" class="btn-icon">Unarchive</button>
+                        </form>
+                        <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
+                              onsubmit="return confirm('Delete this account and all its balance history?')" style="display:inline">
+                            <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                        </form>
+                    </div>
+                </div>"#,
+                id = a.id
+            ));
+        } else {
+            manual_items.push_str(&format!(
+                r#"<div class="account-item">
+                    <div>
+                        <div class="account-bank">{name}</div>
+                        {category_badge}
+                        {balance_html}
+                    </div>
+                    <div class="account-actions">
+                        <a href="{base}/leanfin/accounts/manual/{id}/value" class="btn-icon">Update value</a>
+                        <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">Edit</a>
+                        <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
+                            <button type="submit" class="btn-icon">Archive</button>
+                        </form>
+                        <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
+                              onsubmit="return confirm('Delete this account and all its balance history?')" style="display:inline">
+                            <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                        </form>
+                    </div>
+                </div>"#,
+                id = a.id
+            ));
+        }
     }
 
     if manual_items.is_empty() {
         manual_items = r#"<div class="empty-state"><p>No manual accounts yet.</p></div>"#.into();
     }
+
+    let archived_toggle = if has_archived {
+        let checked = if show_archived { " checked" } else { "" };
+        format!(
+            r#"<label class="txn-filter-check" style="margin-left:auto">
+                <input type="checkbox" id="show-archived"{checked}
+                       onchange="window.location.href='{base}/leanfin/accounts' + (this.checked ? '?show_archived=1' : '')">
+                Show archived
+            </label>"#
+        )
+    } else {
+        String::new()
+    };
 
     let sync_btn = sync_button(base);
     let body = format!(
@@ -144,7 +229,9 @@ async fn list_accounts(
                 </div>
             </div>
             <p>Manage your linked bank connections and manual accounts</p>
+            {archived_toggle}
         </div>
+        {error_banner}
         <div class="card">
             <div class="card-header">
                 <h2>Bank Accounts</h2>
@@ -189,6 +276,7 @@ struct AccountRow {
     account_type: String,
     account_name: Option<String>,
     asset_category: Option<String>,
+    archived: bool,
 }
 
 // ── Manual account: new ──────────────────────────────────────────
@@ -301,7 +389,7 @@ async fn manual_edit_form(
     let base = &state.config.base_path;
 
     let account: Option<ManualAccountRow> = sqlx::query_as(
-        "SELECT id, account_name, asset_category FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual'",
+        "SELECT id, account_name, asset_category FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -373,7 +461,7 @@ async fn manual_edit_submit(
     let base = &state.config.base_path;
 
     let _ = sqlx::query(
-        "UPDATE accounts SET account_name = ?, bank_name = ?, asset_category = ? WHERE id = ? AND user_id = ? AND account_type = 'manual'",
+        "UPDATE accounts SET account_name = ?, bank_name = ?, asset_category = ? WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
     )
     .bind(&form.name)
     .bind(&form.name)
@@ -396,7 +484,7 @@ async fn manual_value_form(
     let base = &state.config.base_path;
 
     let account: Option<ManualValueRow> = sqlx::query_as(
-        "SELECT id, account_name, balance_amount, balance_currency FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual'",
+        "SELECT id, account_name, balance_amount, balance_currency FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -461,7 +549,7 @@ async fn manual_value_submit(
 
     // Verify ownership and account_type
     let owns: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual')",
+        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0)",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -633,6 +721,71 @@ struct ReauthAccountRow {
     id: i64,
     bank_name: String,
     bank_country: String,
+}
+
+// ── Archive / Unarchive account ──────────────────────────────────
+
+async fn archive_account(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    // Check for unallocated transactions (bank accounts only — manual accounts have no transactions)
+    let has_unallocated: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS(
+            SELECT 1 FROM transactions t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE a.id = ? AND a.user_id = ?
+              AND t.id NOT IN (
+                SELECT al.transaction_id FROM allocations al
+                GROUP BY al.transaction_id
+                HAVING ABS(SUM(al.amount) - ABS(
+                    (SELECT t2.amount FROM transactions t2 WHERE t2.id = al.transaction_id)
+                )) < 0.01
+              )
+        )"#,
+    )
+    .bind(account_id)
+    .bind(user_id.0)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(false);
+
+    if has_unallocated {
+        // Redirect back with an error — the UI will show an alert
+        return Redirect::to(&format!(
+            "{base}/leanfin/accounts?archive_error={account_id}"
+        ))
+        .into_response();
+    }
+
+    let _ = sqlx::query("UPDATE accounts SET archived = 1 WHERE id = ? AND user_id = ?")
+        .bind(account_id)
+        .bind(user_id.0)
+        .execute(&state.pool)
+        .await;
+
+    tracing::info!("Archived account {account_id} for user {}", user_id.0);
+    Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
+}
+
+async fn unarchive_account(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    let _ = sqlx::query("UPDATE accounts SET archived = 0 WHERE id = ? AND user_id = ?")
+        .bind(account_id)
+        .bind(user_id.0)
+        .execute(&state.pool)
+        .await;
+
+    tracing::info!("Unarchived account {account_id} for user {}", user_id.0);
+    Redirect::to(&format!("{base}/leanfin/accounts?show_archived=1")).into_response()
 }
 
 // ── Delete account ───────────────────────────────────────────────
