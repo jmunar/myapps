@@ -284,14 +284,16 @@ pub async fn get_transactions(
     let mut all = Vec::new();
     let mut continuation_key: Option<String> = None;
 
-    loop {
-        let mut req = http
-            .get(format!("{API_BASE}/accounts/{account_uid}/transactions"))
-            .query(&[("date_from", date_from)]);
+    let mut page = 0u32;
 
-        if let Some(key) = &continuation_key {
-            req = req.query(&[("continuation_key", key.as_str())]);
-        }
+    loop {
+        page += 1;
+
+        let url = format!("{API_BASE}/accounts/{account_uid}/transactions");
+        let req = match &continuation_key {
+            Some(key) => http.get(&url).query(&[("continuation_key", key.as_str())]),
+            None => http.get(&url).query(&[("date_from", date_from)]),
+        };
 
         let raw = req
             .send()
@@ -305,6 +307,12 @@ pub async fn get_transactions(
         }
 
         let resp: TransactionsResponse = raw.json().await?;
+
+        tracing::info!(
+            "Transactions page {page}: {} items (total so far: {})",
+            resp.transactions.len(),
+            all.len() + resp.transactions.len(),
+        );
 
         all.extend(resp.transactions);
 

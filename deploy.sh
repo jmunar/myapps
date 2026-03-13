@@ -80,7 +80,7 @@ fi
 
 # Install build dependencies
 echo "  Installing build dependencies..."
-sudo apt-get install -y pkg-config libssl-dev
+sudo apt-get install -y pkg-config libssl-dev sqlite3
 
 # Install sccache if not present
 if ! command -v sccache &>/dev/null; then

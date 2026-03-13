@@ -100,7 +100,11 @@ pub async fn run(pool: &SqlitePool) -> Result<()> {
     seed_labels(pool, user_id).await?;
     let alloc_count = seed_allocations(pool, user_id).await?;
 
-    tracing::info!("Seeded {count} transactions, {alloc_count} allocations");
+    // Seed account balances and daily balance history
+    seed_balances(pool, acct1, 3245.67).await?;
+    seed_balances(pool, acct2, 8500.85).await?;
+
+    tracing::info!("Seeded {count} transactions, {alloc_count} allocations, daily balances");
     tracing::info!("Ready! Run `cargo run -- serve` and login with demo / demo");
     Ok(())
 }
@@ -288,4 +292,19 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     }
 
     Ok(count)
+}
+
+/// Set account balance and backfill daily_balances from transaction history.
+async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64) -> Result<()> {
+    // Set account balance
+    sqlx::query("UPDATE accounts SET balance_amount = ?, balance_currency = 'EUR' WHERE id = ?")
+        .bind(current_balance)
+        .bind(account_id)
+        .execute(pool)
+        .await?;
+
+    // Backfill daily balances using the balance service
+    super::balance::backfill_daily_balances(pool, account_id, current_balance).await?;
+
+    Ok(())
 }

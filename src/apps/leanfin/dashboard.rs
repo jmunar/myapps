@@ -14,6 +14,7 @@ pub fn leanfin_nav(base: &str, active: &str) -> Vec<NavItem> {
         NavItem { href: format!("{base}/leanfin"), label: "LeanFin", active: false },
         NavItem { href: format!("{base}/leanfin"), label: "Transactions", active: active == "transactions" },
         NavItem { href: format!("{base}/leanfin/accounts"), label: "Accounts", active: active == "accounts" },
+        NavItem { href: format!("{base}/leanfin/balance-evolution"), label: "Balance", active: active == "balance" },
         NavItem { href: format!("{base}/leanfin/labels"), label: "Labels", active: active == "labels" },
         NavItem { href: format!("{base}/logout"), label: "Log out", active: false },
     ]

@@ -15,6 +15,15 @@ async fn trigger_sync(
 ) -> impl IntoResponse {
     let result = sync::run_for_user(&state.pool, &state.config, user_id.0).await;
 
+    let btn = sync_button(&state.config.base_path);
+
+    let warning_html = if result.reconciliation_warnings.is_empty() {
+        String::new()
+    } else {
+        let warnings = result.reconciliation_warnings.join("<br>");
+        format!(r#"<div class="reconciliation-alert">{warnings}</div>"#)
+    };
+
     let html = if result.errors.is_empty() {
         let msg = if result.accounts_synced == 0 {
             "No accounts to sync".to_string()
@@ -27,8 +36,8 @@ async fn trigger_sync(
         };
         format!(
             r##"{btn}
-            <span class="sync-status sync-status-ok">{msg}</span>"##,
-            btn = sync_button(&state.config.base_path),
+            <span class="sync-status sync-status-ok">{msg}</span>
+            {warning_html}"##,
         )
     } else {
         let error_summary = result.errors.join("; ");
@@ -42,8 +51,8 @@ async fn trigger_sync(
         };
         format!(
             r##"{btn}
-            <span class="sync-status sync-status-error">{msg}</span>"##,
-            btn = sync_button(&state.config.base_path),
+            <span class="sync-status sync-status-error">{msg}</span>
+            {warning_html}"##,
         )
     };
 
