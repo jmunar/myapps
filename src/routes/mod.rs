@@ -15,8 +15,9 @@ pub struct AppState {
     pub config: Arc<Config>,
 }
 
-pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
-    let bind_addr = config.bind_addr.clone();
+/// Build the application router without binding to a port.
+/// Used by both `serve` and integration tests.
+pub fn build_router(pool: SqlitePool, config: Config) -> Router {
     let state = AppState {
         pool: pool.clone(),
         config: Arc::new(config),
@@ -34,12 +35,17 @@ pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
     // Public routes (login/logout)
     let public = auth::routes();
 
-    let app = Router::new()
+    Router::new()
         .merge(protected)
         .merge(public)
         .nest_service("/static", ServeDir::new("static"))
         .layer(CookieManagerLayer::new())
-        .with_state(state);
+        .with_state(state)
+}
+
+pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
+    let bind_addr = config.bind_addr.clone();
+    let app = build_router(pool, config);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("Listening on {bind_addr}");
