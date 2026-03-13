@@ -25,6 +25,8 @@ struct AccountOption {
     id: i64,
     bank_name: String,
     iban: Option<String>,
+    account_type: String,
+    account_name: Option<String>,
 }
 
 async fn index(
@@ -34,7 +36,7 @@ async fn index(
     let base = &state.config.base_path;
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
-        "SELECT id, bank_name, iban FROM accounts WHERE user_id = ? ORDER BY bank_name",
+        "SELECT id, bank_name, iban, account_type, account_name FROM accounts WHERE user_id = ? ORDER BY bank_name",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -43,9 +45,13 @@ async fn index(
 
     let mut account_options = String::from(r#"<option value="">All accounts</option>"#);
     for a in &accounts {
-        let display = match &a.iban {
-            Some(iban) => format!("{} ({})", a.bank_name, iban),
-            None => a.bank_name.clone(),
+        let display = if a.account_type == "manual" {
+            a.account_name.clone().unwrap_or_else(|| a.bank_name.clone())
+        } else {
+            match &a.iban {
+                Some(iban) => format!("{} ({})", a.bank_name, iban),
+                None => a.bank_name.clone(),
+            }
         };
         account_options.push_str(&format!(
             r#"<option value="{}">{}</option>"#,

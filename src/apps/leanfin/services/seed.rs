@@ -21,17 +21,22 @@ pub async fn run(pool: &SqlitePool) -> Result<()> {
     };
 
     // Create two bank accounts
-    let acct1 = insert_account(
+    let acct1 = insert_bank_account(
         pool, user_id, "Santander", "ES", Some("ES12 3456 7890 1234 5678 9012"),
         "sess_fake_1", "uid_checking_001", "2026-09-01T00:00:00Z",
     ).await?;
 
-    let acct2 = insert_account(
+    let acct2 = insert_bank_account(
         pool, user_id, "ING Direct", "ES", Some("ES98 7654 3210 9876 5432 1098"),
         "sess_fake_2", "uid_savings_001", "2026-08-15T00:00:00Z",
     ).await?;
 
-    tracing::info!("Created 2 bank accounts");
+    // Create a manual account (investment portfolio)
+    let acct3 = insert_manual_account(
+        pool, user_id, "Stock Portfolio", "investment", "EUR",
+    ).await?;
+
+    tracing::info!("Created 2 bank accounts + 1 manual account");
 
     // Seed transactions for the last ~60 days
     let txns: &[(&str, f64, &str, &str, Option<&str>)] = &[
@@ -104,12 +109,22 @@ pub async fn run(pool: &SqlitePool) -> Result<()> {
     seed_balances(pool, acct1, 3245.67).await?;
     seed_balances(pool, acct2, 8500.85).await?;
 
+    // Seed manual account value history (sparse updates)
+    seed_manual_balances(pool, acct3, &[
+        ("2026-01-05", 15000.00),
+        ("2026-01-20", 15350.00),
+        ("2026-02-03", 14800.00),
+        ("2026-02-17", 15600.00),
+        ("2026-03-01", 16100.00),
+        ("2026-03-10", 16450.00),
+    ]).await?;
+
     tracing::info!("Seeded {count} transactions, {alloc_count} allocations, daily balances");
     tracing::info!("Ready! Run `cargo run -- serve` and login with demo / demo");
     Ok(())
 }
 
-async fn insert_account(
+async fn insert_bank_account(
     pool: &SqlitePool,
     user_id: i64,
     bank_name: &str,
@@ -121,7 +136,7 @@ async fn insert_account(
 ) -> Result<i64> {
     // Use INSERT OR IGNORE + fetch to be idempotent
     sqlx::query(
-        "INSERT OR IGNORE INTO accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank')"
     )
     .bind(user_id).bind(bank_name).bind(country).bind(iban)
     .bind(session_id).bind(account_uid).bind(expires)
@@ -130,6 +145,28 @@ async fn insert_account(
     let (id,): (i64,) = sqlx::query_as("SELECT id FROM accounts WHERE account_uid = ?")
         .bind(account_uid)
         .fetch_one(pool).await?;
+    Ok(id)
+}
+
+async fn insert_manual_account(
+    pool: &SqlitePool,
+    user_id: i64,
+    name: &str,
+    category: &str,
+    currency: &str,
+) -> Result<i64> {
+    let uid = format!("manual_{name}");
+    sqlx::query(
+        "INSERT OR IGNORE INTO accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_currency) VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?)"
+    )
+    .bind(user_id).bind(name).bind(&uid).bind(name).bind(category).bind(currency)
+    .execute(pool).await?;
+
+    let (id,): (i64,) = sqlx::query_as(
+        "SELECT id FROM accounts WHERE account_uid = ?"
+    )
+    .bind(&uid)
+    .fetch_one(pool).await?;
     Ok(id)
 }
 
@@ -305,6 +342,32 @@ async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64)
 
     // Backfill daily balances using the balance service
     super::balance::backfill_daily_balances(pool, account_id, current_balance).await?;
+
+    Ok(())
+}
+
+/// Seed sparse daily balance entries for a manual account.
+async fn seed_manual_balances(pool: &SqlitePool, account_id: i64, values: &[(&str, f64)]) -> Result<()> {
+    let mut last_value = 0.0;
+    for (date, value) in values {
+        sqlx::query(
+            r#"INSERT OR IGNORE INTO daily_balances (account_id, date, balance, source)
+               VALUES (?, ?, ?, 'reported')"#,
+        )
+        .bind(account_id)
+        .bind(date)
+        .bind(value)
+        .execute(pool)
+        .await?;
+        last_value = *value;
+    }
+
+    // Update the current balance on the account
+    sqlx::query("UPDATE accounts SET balance_amount = ? WHERE id = ?")
+        .bind(last_value)
+        .bind(account_id)
+        .execute(pool)
+        .await?;
 
     Ok(())
 }
