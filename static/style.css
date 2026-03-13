@@ -404,6 +404,34 @@ tbody tr:last-child td {
     color: var(--negative);
 }
 
+.account-archived {
+    opacity: 0.6;
+}
+
+.archived-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 100px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    vertical-align: middle;
+    margin-left: 0.35rem;
+}
+
+.alert-error {
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.65rem 1rem;
+    margin-bottom: 1rem;
+    background: var(--negative-bg);
+    color: var(--negative);
+    border: 1px solid color-mix(in srgb, var(--negative) 25%, transparent);
+    border-radius: var(--radius);
+}
+
 /* ── Forms ──────────────────────────────────────────────────── */
 form {
     display: flex;

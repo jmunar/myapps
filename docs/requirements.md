@@ -147,6 +147,15 @@ visibility into spending patterns.
   to that date. The transaction list reuses the same endpoint as the Transactions
   page with label_ids and date range filters.
 
+- **Account archiving** — accounts (bank or manual) can be archived to make them
+  read-only. Archived bank accounts are skipped during sync; archived manual
+  accounts cannot be edited or have their value updated. Archiving is blocked
+  when the account has unallocated transactions. Archived accounts are hidden
+  from the accounts list by default (a "Show archived" toggle reveals them) and
+  excluded from the balance evolution individual account dropdown, but their
+  balances are still included in the aggregated "All accounts" view. Transactions
+  from archived accounts remain visible in the transaction list.
+
 ### Not yet implemented
 - **Pagination** — paginate beyond the current 100-transaction limit.
 - **Additional apps** — new sub-applications on the platform.
