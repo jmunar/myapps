@@ -44,3 +44,4 @@ export MYAPPS_SERVER="user@odroid.local"
 - [Requirements](docs/requirements.md)
 - [Architecture](docs/architecture.md)
 - [Deployment](docs/deployment.md)
+- [Worktree Workflow](docs/worktree-workflow.md)
