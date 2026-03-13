@@ -33,7 +33,13 @@ All subcommands share the same configuration and database.
 myapps/
 ├── docs/                    # Documentation
 ├── migrations/              # SQLite migrations (sqlx)
+├── tests/                   # Integration tests (axum-test)
+│   ├── harness/mod.rs       # Test harness: in-memory DB, login helpers
+│   ├── auth_tests.rs        # Auth flow tests
+│   ├── transaction_tests.rs # Transaction list/filter tests
+│   └── label_tests.rs       # Label CRUD + rules tests
 ├── src/
+│   ├── lib.rs               # Library crate (re-exports modules for tests)
 │   ├── main.rs              # CLI entrypoint (clap subcommands)
 │   ├── config.rs            # Configuration (env vars)
 │   ├── db.rs                # Database pool and migrations
@@ -41,7 +47,7 @@ myapps/
 │   ├── models/              # Domain types (Transaction, Account, Label, etc.)
 │   ├── auth/                # Authentication & session management
 │   ├── routes/              # Top-level router, auth routes, app launcher
-│   │   ├── mod.rs           # Router setup, AppState, nests sub-apps
+│   │   ├── mod.rs           # Router setup, AppState, build_router(), nests sub-apps
 │   │   ├── auth.rs          # Login/logout
 │   │   └── launcher.rs      # App launcher page (root /)
 │   ├── services/            # Shared services
@@ -59,6 +65,8 @@ myapps/
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
 ├── static/                  # CSS, JS (htmx)
+├── .claude/agents/          # Claude Code agent prompts
+│   └── frontend-tester.md   # Agent for generating integration tests
 ├── Cargo.toml
 ├── .env.example             # Example environment variables
 ├── CLAUDE.md

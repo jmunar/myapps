@@ -112,6 +112,9 @@ visibility into spending patterns.
   and trigger on every change via HTMX.
 - **Account management** — re-authorize expired bank sessions and delete
   accounts from the UI.
+- **Integration test infrastructure** — HTTP-level tests using axum-test with
+  in-memory SQLite, covering auth flows, transaction list/filtering, and label
+  CRUD. A Claude Code agent automates test generation for new features.
 
 ### Not yet implemented
 
