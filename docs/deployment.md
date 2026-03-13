@@ -162,8 +162,8 @@ DATABASE_URL=sqlite:///opt/myapps/data/myapps.db
 BASE_URL=https://yourdomain.com/myapps   # Public URL (path becomes BASE_PATH)
 ENABLE_BANKING_APP_ID=              # UUID from Enable Banking control panel
 ENABLE_BANKING_KEY_PATH=/opt/myapps/private.pem   # RSA private key
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
+NTFY_URL=http://127.0.0.1:8090              # ntfy server (local)
+NTFY_TOPIC=                                 # ntfy topic name
 BIND_ADDR=127.0.0.1:3000
 ```
 
@@ -192,6 +192,82 @@ Installed at `/etc/cron.d/myapps` by `setup`. Runs daily at 06:00:
 ```
 0 6 * * * myapps . /opt/myapps/.env && /opt/myapps/myapps sync >> /opt/myapps/logs/sync.log 2>&1
 ```
+
+## ntfy (Self-Hosted Notifications)
+
+ntfy runs as a single binary and sends push notifications to your phone.
+
+### Install
+
+```bash
+# On the Odroid — add the ntfy apt repository
+sudo mkdir -p /etc/apt/keyrings
+sudo curl -L -o /etc/apt/keyrings/ntfy.gpg https://archive.ntfy.sh/apt/keyring.gpg
+sudo apt install apt-transport-https
+echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/ntfy.gpg] https://archive.ntfy.sh/apt stable main" \
+    | sudo tee /etc/apt/sources.list.d/ntfy.list
+sudo apt update
+sudo apt install ntfy
+```
+
+### Configure
+
+Edit `/etc/ntfy/server.yml`:
+
+```yaml
+base-url: https://ntfy.munarriz.mooo.com
+listen-http: 127.0.0.1:8090
+behind-proxy: true
+```
+
+### Enable and start
+
+```bash
+sudo systemctl enable ntfy
+sudo systemctl start ntfy
+```
+
+### Add nginx proxy
+
+Create `/etc/nginx/sites-available/ntfy`:
+
+```nginx
+server {
+    listen 80;
+    server_name ntfy.munarriz.mooo.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+Enable it, reload, and add HTTPS:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/ntfy /etc/nginx/sites-enabled/
+sudo nginx -s reload
+sudo certbot --nginx -d ntfy.munarriz.mooo.com
+```
+
+### Connect MyApps
+
+Set these in `/opt/myapps/.env`:
+
+```bash
+NTFY_URL=http://127.0.0.1:8090
+NTFY_TOPIC=myapps
+```
+
+MyApps connects to ntfy locally — no need to go through nginx.
+
+### Subscribe on your phone
+
+Install the ntfy app ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy),
+[iOS](https://apps.apple.com/app/ntfy/id1625396347)), add your server
+`https://ntfy.munarriz.mooo.com`, and subscribe to the `myapps` topic.
 
 ## nginx + HTTPS
 

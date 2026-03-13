@@ -107,8 +107,8 @@ DATABASE_URL=sqlite:///opt/myapps/data/myapps.db
 BASE_URL=https://YOURDOMAIN/myapps
 ENABLE_BANKING_APP_ID=
 ENABLE_BANKING_KEY_PATH=/opt/myapps/private.pem
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_CHAT_ID=
+NTFY_URL=http://127.0.0.1:8090
+NTFY_TOPIC=
 BIND_ADDR=127.0.0.1:3000
 ENV
     sudo chown myapps:myapps /opt/myapps/.env

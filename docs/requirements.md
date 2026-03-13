@@ -62,7 +62,7 @@ visibility into spending patterns.
 
 - The system notifies the user when a bank consent is expired or about to
   expire (e.g. 7 days before).
-- Notification channel: Telegram bot (lightweight, no infrastructure needed).
+- Notification channel: ntfy (open-source, self-hostable, simple HTTP push).
 
 ### User interface
 
