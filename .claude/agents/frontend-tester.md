@@ -121,13 +121,20 @@ let (id,): (i64,) = sqlx::query_as("SELECT id FROM labels WHERE name = ?")
 - `POST /leanfin/labels/{label_id}/rules/{rule_id}/delete`
 - `GET /leanfin/expenses` — expenses page (label selector + chart container)
 - `GET /leanfin/expenses/chart` — HTMX partial, query params: label_ids, days
-- `GET /leanfin/accounts` — accounts page
+- `GET /leanfin/accounts` — accounts page (bank + manual sections)
+- `GET /leanfin/accounts/manual/new` — manual account creation form
+- `POST /leanfin/accounts/manual/new` — form: name, category, currency, initial_value, date → redirect 303
+- `GET /leanfin/accounts/manual/{id}/edit` — manual account edit form
+- `POST /leanfin/accounts/manual/{id}/edit` — form: name, category → redirect 303
+- `GET /leanfin/accounts/manual/{id}/value` — manual account value update form
+- `POST /leanfin/accounts/manual/{id}/value` — form: value, date → redirect 303
 
 ## Seed Data Summary
 
 The `seed_and_login()` helper creates:
 - User: demo/demo
-- 2 accounts: Santander (checking), ING Direct (savings)
+- 2 bank accounts: Santander (checking), ING Direct (savings)
+- 1 manual account: Stock Portfolio (investment, EUR) with sparse daily balance entries
 - ~39 transactions across both accounts (with counterparties like Mercadona,
   Netflix, Starbucks, Repsol, etc.)
 - 10 labels: Groceries, Subscriptions, Transport, Housing, Dining, Health,

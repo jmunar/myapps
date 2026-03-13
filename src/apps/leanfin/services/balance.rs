@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::{Duration, NaiveDate, Utc};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 use crate::config::Config;
 use crate::models::Account;
@@ -148,7 +149,71 @@ pub async fn check_reconciliation(
     Ok(None)
 }
 
-/// Query daily balance series for a single account.
+/// Fill gaps in a sparse balance series by carrying forward the previous day's value.
+/// For bank accounts with daily data this is a no-op; for manual accounts it fills
+/// missing dates between recorded values.
+pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint> {
+    if series.is_empty() {
+        return Vec::new();
+    }
+
+    let cutoff = (Utc::now() - Duration::days(days))
+        .naive_utc()
+        .date();
+    let today = Utc::now().naive_utc().date();
+
+    // Build a map of date -> BalancePoint
+    let mut point_map: HashMap<NaiveDate, &BalancePoint> = HashMap::new();
+    for p in series {
+        if let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") {
+            point_map.insert(d, p);
+        }
+    }
+
+    // Determine the range: from the later of (cutoff, first data point) to today
+    let first_date = series.iter()
+        .filter_map(|p| NaiveDate::parse_from_str(&p.date, "%Y-%m-%d").ok())
+        .min()
+        .unwrap_or(cutoff);
+    let start = first_date.max(cutoff);
+
+    let mut result = Vec::new();
+    let mut date = start;
+    let mut last_balance: Option<f64> = None;
+
+    // Check if there's a balance before `start` to carry forward
+    for p in series {
+        if let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") {
+            if d < start {
+                last_balance = Some(p.balance);
+            }
+        }
+    }
+
+    while date <= today {
+        let date_str = date.format("%Y-%m-%d").to_string();
+        if let Some(point) = point_map.get(&date) {
+            last_balance = Some(point.balance);
+            result.push(BalancePoint {
+                date: date_str,
+                balance: point.balance,
+                source: point.source.clone(),
+            });
+        } else if let Some(bal) = last_balance {
+            result.push(BalancePoint {
+                date: date_str,
+                balance: bal,
+                source: "carried".to_string(),
+            });
+        }
+        // If no last_balance yet (before first data point), skip this date
+        date += Duration::days(1);
+    }
+
+    result
+}
+
+/// Query daily balance series for a single account, with gap-filling.
 pub async fn get_balance_series(
     pool: &SqlitePool,
     account_id: i64,
@@ -168,11 +233,11 @@ pub async fn get_balance_series(
     .fetch_all(pool)
     .await?;
 
-    Ok(rows)
+    Ok(fill_balance_gaps(&rows, days))
 }
 
 /// Query aggregated daily balance series across all accounts for a user.
-/// Sums balances per date; source is 'aggregated'.
+/// Fetches per-account series, fills gaps per account, then aggregates by date.
 pub async fn get_aggregated_balance_series(
     pool: &SqlitePool,
     user_id: i64,
@@ -182,20 +247,46 @@ pub async fn get_aggregated_balance_series(
         .format("%Y-%m-%d")
         .to_string();
 
-    let rows: Vec<BalancePoint> = sqlx::query_as(
-        r#"SELECT db.date, SUM(db.balance) as balance, 'aggregated' as source
-           FROM daily_balances db
-           JOIN accounts a ON db.account_id = a.id
-           WHERE a.user_id = ? AND db.date >= ?
-           GROUP BY db.date
-           ORDER BY db.date ASC"#,
+    // Get all account IDs for this user
+    let account_ids: Vec<(i64,)> = sqlx::query_as(
+        "SELECT id FROM accounts WHERE user_id = ?",
     )
     .bind(user_id)
-    .bind(&cutoff)
     .fetch_all(pool)
     .await?;
 
-    Ok(rows)
+    // Fetch and gap-fill per account, then aggregate
+    let mut date_totals: HashMap<String, f64> = HashMap::new();
+
+    for (account_id,) in &account_ids {
+        let rows: Vec<BalancePoint> = sqlx::query_as(
+            r#"SELECT date, balance, source FROM daily_balances
+               WHERE account_id = ? AND date >= ?
+               ORDER BY date ASC"#,
+        )
+        .bind(account_id)
+        .bind(&cutoff)
+        .fetch_all(pool)
+        .await?;
+
+        let filled = fill_balance_gaps(&rows, days);
+        for point in &filled {
+            *date_totals.entry(point.date.clone()).or_insert(0.0) += point.balance;
+        }
+    }
+
+    let mut result: Vec<BalancePoint> = date_totals
+        .into_iter()
+        .map(|(date, balance)| BalancePoint {
+            date,
+            balance,
+            source: "aggregated".to_string(),
+        })
+        .collect();
+
+    result.sort_by(|a, b| a.date.cmp(&b.date));
+
+    Ok(result)
 }
 
 #[derive(sqlx::FromRow)]
@@ -210,7 +301,7 @@ struct PrevBalance {
     balance: f64,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, Clone)]
 pub struct BalancePoint {
     pub date: String,
     pub balance: f64,

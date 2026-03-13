@@ -19,13 +19,13 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
     tracing::info!("Starting transaction sync");
 
     let accounts: Vec<Account> = sqlx::query_as(
-        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, created_at FROM accounts",
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, created_at FROM accounts WHERE account_type = 'bank'",
     )
     .fetch_all(pool)
     .await?;
 
     if accounts.is_empty() {
-        tracing::info!("No linked accounts, nothing to sync");
+        tracing::info!("No linked bank accounts, nothing to sync");
         return Ok(());
     }
 
@@ -88,6 +88,8 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
 
 /// Returns (inserted_count, optional reconciliation warning).
 async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> Result<(u64, Option<String>)> {
+    let account_uid = &account.account_uid;
+
     // If the account has no transactions yet, do a full initial sync (90 days).
     // Otherwise, fetch the last 5 days for overlap safety.
     let has_transactions: bool = sqlx::query_scalar(
@@ -103,7 +105,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         .to_string();
 
     let transactions =
-        enable_banking::get_transactions(config, &account.account_uid, &date_from).await?;
+        enable_banking::get_transactions(config, account_uid, &date_from).await?;
 
     let mut inserted = 0u64;
 
@@ -141,7 +143,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
 
     // Fetch and store account balance (non-fatal)
     let mut reported_balance: Option<f64> = None;
-    match enable_banking::get_balances(config, &account.account_uid).await {
+    match enable_banking::get_balances(config, account_uid).await {
         Ok(balances) => {
             if let Some(best) = enable_banking::pick_best_balance(&balances) {
                 if let Ok(amount) = best.balance_amount.amount.parse::<f64>() {
@@ -213,7 +215,7 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
     tracing::info!("Starting sync for user {user_id}");
 
     let accounts: Vec<Account> = sqlx::query_as(
-        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, created_at FROM accounts WHERE user_id = ?",
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, created_at FROM accounts WHERE user_id = ? AND account_type = 'bank'",
     )
     .bind(user_id)
     .fetch_all(pool)
