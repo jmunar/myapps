@@ -176,6 +176,34 @@ pub struct BalanceAmount {
     pub amount: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct BalancesResponse {
+    pub balances: Vec<BankBalance>,
+}
+
+#[derive(Deserialize)]
+pub struct BankBalance {
+    pub balance_amount: BalanceAmountFull,
+    pub balance_type: String,
+}
+
+#[derive(Deserialize)]
+pub struct BalanceAmountFull {
+    pub amount: String,
+    pub currency: String,
+}
+
+/// Pick the most useful balance by type priority.
+pub fn pick_best_balance(balances: &[BankBalance]) -> Option<&BankBalance> {
+    const PRIORITY: &[&str] = &["ITAV", "CLAV", "XPCD", "ITBD", "CLBD"];
+    for prio in PRIORITY {
+        if let Some(b) = balances.iter().find(|b| b.balance_type == *prio) {
+            return Some(b);
+        }
+    }
+    balances.first()
+}
+
 // ── API calls ─────────────────────────────────────────────────────
 
 /// Start bank authorization. Returns the URL to redirect the user to.
@@ -287,4 +315,22 @@ pub async fn get_transactions(
     }
 
     Ok(all)
+}
+
+/// Fetch balances for an account.
+pub async fn get_balances(config: &Config, account_uid: &str) -> Result<Vec<BankBalance>> {
+    let resp = client(config)?
+        .get(format!("{API_BASE}/accounts/{account_uid}/balances"))
+        .send()
+        .await
+        .context("failed to send balances request")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Enable Banking balances failed ({status}): {body}");
+    }
+
+    let data: BalancesResponse = resp.json().await.context("failed to parse balances response")?;
+    Ok(data.balances)
 }

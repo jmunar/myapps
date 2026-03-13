@@ -118,6 +118,31 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         inserted += result.rows_affected();
     }
 
+    // Fetch and store account balance (non-fatal)
+    match enable_banking::get_balances(config, &account.account_uid).await {
+        Ok(balances) => {
+            if let Some(best) = enable_banking::pick_best_balance(&balances) {
+                if let Ok(amount) = best.balance_amount.amount.parse::<f64>() {
+                    let currency = &best.balance_amount.currency;
+                    if let Err(e) = sqlx::query(
+                        "UPDATE accounts SET balance_amount = ?, balance_currency = ? WHERE id = ?",
+                    )
+                    .bind(amount)
+                    .bind(currency)
+                    .bind(account.id)
+                    .execute(pool)
+                    .await
+                    {
+                        tracing::warn!("Failed to update balance for '{}': {e:#}", account.bank_name);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to fetch balances for '{}': {e:#}", account.bank_name);
+        }
+    }
+
     // Run auto-labeling on newly fetched transactions
     if inserted > 0 {
         match super::labeling::apply_rules(pool, account.user_id).await {

@@ -68,6 +68,7 @@ fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
 fn render_row(t: &Transaction, txn_allocs: &[&AllocRow], base: &str) -> String {
     let counterparty = t.counterparty.as_deref().unwrap_or("—");
     let sign = if t.amount < 0.0 { "negative" } else { "positive" };
+    let balance = t.balance_after.map_or("—".to_string(), |b| format!("{b:.2}"));
     let badge_html = render_badges(txn_allocs, base, t.id);
 
     let allocated: f64 = txn_allocs.iter().map(|a| a.amount).sum();
@@ -87,6 +88,7 @@ fn render_row(t: &Transaction, txn_allocs: &[&AllocRow], base: &str) -> String {
             <td class="txn-description">{desc}</td>
             <td class="txn-labels">{badge_html}</td>
             <td class="txn-amount {sign}">{amount:+.2} {currency}</td>
+            <td class="txn-balance">{balance}</td>
         </tr>"#,
         id = t.id,
         date = t.date,
@@ -205,6 +207,7 @@ async fn list(
                 <th>Description</th>
                 <th>Labels</th>
                 <th>Amount</th>
+                <th>Balance</th>
             </tr></thead>
             <tbody>{rows}</tbody>
         </table>"#
@@ -305,7 +308,7 @@ async fn alloc_editor(
 
     Html(format!(
         r##"<tr id="alloc-editor-{txn_id}" class="alloc-editor-row">
-            <td colspan="5">
+            <td colspan="6">
                 <div class="alloc-editor">
                     <div class="alloc-header">
                         <span class="text-sm"><strong>Allocations</strong> — total: <span class="mono">{abs_total:.2}</span></span>

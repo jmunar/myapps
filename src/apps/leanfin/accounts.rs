@@ -31,7 +31,7 @@ async fn list_accounts(
     let base = &state.config.base_path;
 
     let accounts: Vec<AccountRow> = sqlx::query_as(
-        "SELECT id, bank_name, iban, session_expires_at FROM accounts WHERE user_id = ?",
+        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency FROM accounts WHERE user_id = ?",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -45,6 +45,13 @@ async fn list_accounts(
     for a in &accounts {
         let expires = a.session_expires_at.format("%Y-%m-%d").to_string();
         let iban = a.iban.as_deref().unwrap_or("\u{2014}");
+        let balance_html = match (a.balance_amount, a.balance_currency.as_deref()) {
+            (Some(amt), Some(cur)) => {
+                let sign = if amt < 0.0 { "negative" } else { "positive" };
+                format!(r#"<div class="account-balance {sign}">{amt:.2} {cur}</div>"#)
+            }
+            _ => String::new(),
+        };
         let is_expired = a.session_expires_at < today;
         let expiry_class = if is_expired {
             "expiry-expired"
@@ -71,6 +78,7 @@ async fn list_accounts(
                 <div>
                     <div class="account-bank">{}</div>
                     <div class="account-iban">{iban}</div>
+                    {balance_html}
                 </div>
                 <div class="account-actions">
                     <span class="account-expiry {expiry_class}">{expiry_label} — {expires}</span>
@@ -114,6 +122,8 @@ struct AccountRow {
     bank_name: String,
     iban: Option<String>,
     session_expires_at: NaiveDateTime,
+    balance_amount: Option<f64>,
+    balance_currency: Option<String>,
 }
 
 // ── Link: choose bank ─────────────────────────────────────────────
