@@ -13,7 +13,6 @@ pub struct ExpensePoint {
 }
 
 /// Get daily expense totals grouped by label for the given label IDs and period.
-/// Only considers negative transactions (expenses). Amounts are returned as positive.
 pub async fn get_expense_series(
     pool: &SqlitePool,
     user_id: i64,
@@ -39,7 +38,6 @@ pub async fn get_expense_series(
            WHERE a.user_id = ?
              AND l.id IN ({placeholders})
              AND t.date >= ?
-             AND t.amount < 0
            GROUP BY t.date, l.id
            ORDER BY t.date ASC, l.name ASC"#
     );
