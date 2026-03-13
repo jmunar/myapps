@@ -1,8 +1,8 @@
 use axum::{
     Extension, Form, Router,
-    extract::Query,
+    extract::{Path, Query},
     response::{Html, IntoResponse, Redirect},
-    routing::get,
+    routing::{get, post},
 };
 use chrono::NaiveDateTime;
 use serde::Deserialize;
@@ -18,6 +18,8 @@ pub fn routes() -> Router<AppState> {
         .route("/accounts", get(list_accounts))
         .route("/accounts/link", get(link_form).post(link_submit))
         .route("/accounts/callback", get(callback))
+        .route("/accounts/{id}/reauth", post(reauth))
+        .route("/accounts/{id}/delete", post(delete_account))
 }
 
 // ── List accounts ─────────────────────────────────────────────────
@@ -43,27 +45,43 @@ async fn list_accounts(
     for a in &accounts {
         let expires = a.session_expires_at.format("%Y-%m-%d").to_string();
         let iban = a.iban.as_deref().unwrap_or("\u{2014}");
-        let expiry_class = if a.session_expires_at < today {
+        let is_expired = a.session_expires_at < today;
+        let expiry_class = if is_expired {
             "expiry-expired"
         } else if a.session_expires_at < warn_threshold {
             "expiry-warning"
         } else {
             "expiry-ok"
         };
-        let expiry_label = if a.session_expires_at < today {
-            "Expired"
+        let expiry_label = if is_expired { "Expired" } else { "Active" };
+
+        let reauth_btn = if is_expired || a.session_expires_at < warn_threshold {
+            format!(
+                r#"<form method="POST" action="{base}/leanfin/accounts/{}/reauth" style="display:inline">
+                    <button type="submit" class="btn-icon">Re-authorize</button>
+                </form>"#,
+                a.id
+            )
         } else {
-            "Active"
+            String::new()
         };
+
         items.push_str(&format!(
             r#"<div class="account-item">
                 <div>
                     <div class="account-bank">{}</div>
                     <div class="account-iban">{iban}</div>
                 </div>
-                <span class="account-expiry {expiry_class}">{expiry_label} — {expires}</span>
+                <div class="account-actions">
+                    <span class="account-expiry {expiry_class}">{expiry_label} — {expires}</span>
+                    {reauth_btn}
+                    <form method="POST" action="{base}/leanfin/accounts/{}/delete"
+                          onsubmit="return confirm('Delete this account and all its transactions?')" style="display:inline">
+                        <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                    </form>
+                </div>
             </div>"#,
-            a.bank_name
+            a.bank_name, a.id
         ));
     }
 
@@ -92,7 +110,6 @@ async fn list_accounts(
 
 #[derive(sqlx::FromRow)]
 struct AccountRow {
-    #[allow(dead_code)]
     id: i64,
     bank_name: String,
     iban: Option<String>,
@@ -170,6 +187,98 @@ async fn link_submit(
     }
 }
 
+// ── Re-authorize expired session ─────────────────────────────────
+
+async fn reauth(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    // Verify account belongs to this user and get bank details
+    let account: Option<ReauthAccountRow> = sqlx::query_as(
+        "SELECT id, bank_name, bank_country FROM accounts WHERE id = ? AND user_id = ?",
+    )
+    .bind(account_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some(account) = account else {
+        return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
+    };
+
+    let csrf_state = format!("{}:{}", user_id.0, uuid::Uuid::new_v4());
+
+    // Store pending link with reauth_account_id so callback knows to update
+    if let Err(e) = sqlx::query(
+        "INSERT INTO pending_links (state, user_id, bank_name, country, reauth_account_id) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(&csrf_state)
+    .bind(user_id.0)
+    .bind(&account.bank_name)
+    .bind(&account.bank_country)
+    .bind(account.id)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::error!("Failed to store pending reauth link: {e}");
+        return Html("Failed to start re-authorization".to_string()).into_response();
+    }
+
+    match enable_banking::start_auth(
+        &state.config,
+        &account.bank_name,
+        &account.bank_country,
+        &csrf_state,
+        90,
+    )
+    .await
+    {
+        Ok(auth_resp) => Redirect::to(&auth_resp.url).into_response(),
+        Err(e) => {
+            tracing::error!("Enable Banking reauth failed: {e:#}");
+            Html(format!("Failed to re-authorize: {e}")).into_response()
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct ReauthAccountRow {
+    id: i64,
+    bank_name: String,
+    bank_country: String,
+}
+
+// ── Delete account ───────────────────────────────────────────────
+
+async fn delete_account(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    let result = sqlx::query("DELETE FROM accounts WHERE id = ? AND user_id = ?")
+        .bind(account_id)
+        .bind(user_id.0)
+        .execute(&state.pool)
+        .await;
+
+    match result {
+        Ok(r) => {
+            if r.rows_affected() > 0 {
+                tracing::info!("Deleted account {account_id} for user {}", user_id.0);
+            }
+        }
+        Err(e) => tracing::error!("Failed to delete account {account_id}: {e}"),
+    }
+
+    Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
+}
+
 // ── OAuth callback ────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -186,7 +295,7 @@ async fn callback(
 
     // Validate CSRF state and get the pending link info
     let pending: Option<PendingLink> = sqlx::query_as(
-        "SELECT state, user_id, bank_name, country FROM pending_links WHERE state = ?",
+        "SELECT state, user_id, bank_name, country, reauth_account_id FROM pending_links WHERE state = ?",
     )
     .bind(&params.state)
     .fetch_optional(&state.pool)
@@ -227,40 +336,89 @@ async fn callback(
         (chrono::Utc::now() + chrono::Duration::days(90)).naive_utc()
     });
 
-    // Store each account from the session
-    let mut linked = 0;
-    for account in &session.accounts {
-        let iban = account
-            .account_id
-            .as_ref()
-            .and_then(|id| id.iban.as_deref());
+    if let Some(reauth_id) = pending.reauth_account_id {
+        // Re-authorization: update existing accounts that share the same bank session
+        // The new session may return the same or different account UIDs, so update
+        // all accounts from this bank for this user that match one of the new UIDs.
+        let mut updated = 0u64;
+        for account in &session.accounts {
+            let result = sqlx::query(
+                "UPDATE accounts SET session_id = ?, session_expires_at = ? WHERE account_uid = ? AND user_id = ?",
+            )
+            .bind(&session.session_id)
+            .bind(expires_at)
+            .bind(&account.uid)
+            .bind(pending.user_id)
+            .execute(&state.pool)
+            .await;
 
-        let result = sqlx::query(
-            r#"INSERT OR IGNORE INTO accounts
-               (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)"#,
-        )
-        .bind(pending.user_id)
-        .bind(&pending.bank_name)
-        .bind(&pending.country)
-        .bind(iban)
-        .bind(&session.session_id)
-        .bind(&account.uid)
-        .bind(expires_at)
-        .execute(&state.pool)
-        .await;
-
-        match result {
-            Ok(r) => linked += r.rows_affected(),
-            Err(e) => tracing::error!("Failed to store account {}: {e}", account.uid),
+            match result {
+                Ok(r) => updated += r.rows_affected(),
+                Err(e) => tracing::error!("Failed to update account {}: {e}", account.uid),
+            }
         }
-    }
 
-    tracing::info!(
-        "Linked {linked} account(s) from {} for user {}",
-        pending.bank_name,
-        pending.user_id
-    );
+        // If the specific account wasn't matched by UID (bank may assign new UIDs),
+        // fall back to updating by the reauth account ID directly
+        if updated == 0 {
+            if let Some(first) = session.accounts.first() {
+                let iban = first.account_id.as_ref().and_then(|id| id.iban.as_deref());
+                let _ = sqlx::query(
+                    "UPDATE accounts SET session_id = ?, account_uid = ?, iban = COALESCE(?, iban), session_expires_at = ? WHERE id = ? AND user_id = ?",
+                )
+                .bind(&session.session_id)
+                .bind(&first.uid)
+                .bind(iban)
+                .bind(expires_at)
+                .bind(reauth_id)
+                .bind(pending.user_id)
+                .execute(&state.pool)
+                .await;
+            }
+        }
+
+        tracing::info!(
+            "Re-authorized {} account(s) from {} for user {}",
+            updated.max(1),
+            pending.bank_name,
+            pending.user_id
+        );
+    } else {
+        // New link: insert accounts
+        let mut linked = 0;
+        for account in &session.accounts {
+            let iban = account
+                .account_id
+                .as_ref()
+                .and_then(|id| id.iban.as_deref());
+
+            let result = sqlx::query(
+                r#"INSERT OR IGNORE INTO accounts
+                   (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+            )
+            .bind(pending.user_id)
+            .bind(&pending.bank_name)
+            .bind(&pending.country)
+            .bind(iban)
+            .bind(&session.session_id)
+            .bind(&account.uid)
+            .bind(expires_at)
+            .execute(&state.pool)
+            .await;
+
+            match result {
+                Ok(r) => linked += r.rows_affected(),
+                Err(e) => tracing::error!("Failed to store account {}: {e}", account.uid),
+            }
+        }
+
+        tracing::info!(
+            "Linked {linked} account(s) from {} for user {}",
+            pending.bank_name,
+            pending.user_id
+        );
+    }
 
     Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
 }
@@ -272,4 +430,5 @@ struct PendingLink {
     user_id: i64,
     bank_name: String,
     country: String,
+    reauth_account_id: Option<i64>,
 }

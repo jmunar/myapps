@@ -78,6 +78,17 @@ if ! command -v cargo &>/dev/null; then
     echo "  Rust installed"
 fi
 
+# Install build dependencies
+echo "  Installing build dependencies..."
+sudo apt-get install -y pkg-config libssl-dev
+
+# Install sccache if not present
+if ! command -v sccache &>/dev/null; then
+    echo "  Installing sccache..."
+    cargo install sccache --locked
+    echo "  sccache installed"
+fi
+
 # Create dedicated system user (no login shell, no home dir)
 if ! id myapps &>/dev/null; then
     sudo useradd --system --no-create-home --shell /usr/sbin/nologin myapps

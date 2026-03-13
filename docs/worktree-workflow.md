@@ -12,13 +12,17 @@ a full working copy on its own branch, sharing the same git history.
 # List active worktrees
 ./worktree.sh list
 
-# Remove a finished worktree (deletes merged branch automatically)
+# Remove a finished worktree (deletes local branch if remote is gone)
 ./worktree.sh remove <branch-name>
 ```
 
 ## Starting a Claude Session per Ticket
 
-Open a separate terminal per worktree and start Claude Code from that directory:
+If you're using iTerm2, `worktree.sh create` automatically opens a new tab in
+the worktree directory and launches `claude`. It uses a dedicated "Worktree"
+iTerm2 profile if available (create one with "Applications in terminal may
+change the title" disabled so Claude cannot override the tab name). Otherwise,
+open a separate terminal and start Claude Code manually:
 
 ```bash
 cd ../myapps-<ticket>

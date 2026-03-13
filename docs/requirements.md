@@ -110,12 +110,12 @@ visibility into spending patterns.
 - **Transaction filtering** — filter the transaction list by free text search,
   account, or allocation status (not fully allocated). Filters are reactive
   and trigger on every change via HTMX.
+- **Account management** — re-authorize expired bank sessions and delete
+  accounts from the UI.
 
 ### Not yet implemented
 
 - **Dashboard analytics** — spending summaries by label, monthly totals, and
   visual charts.
-- **Account management** — re-authorize expired bank sessions and delete
-  accounts from the UI.
 - **Pagination** — paginate beyond the current 100-transaction limit.
 - **Additional apps** — new sub-applications on the platform.
