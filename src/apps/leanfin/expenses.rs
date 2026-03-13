@@ -236,7 +236,28 @@ async fn chart_data(
         ));
     }
 
-    let colors: Vec<String> = label_info.iter().map(|(_, _, c)| format!("'{c}'")).collect();
+    // Add a "Total" dataset when multiple labels are selected
+    if label_info.len() > 1 {
+        let values: Vec<String> = all_dates
+            .iter()
+            .map(|d| {
+                let total: f64 = label_info
+                    .iter()
+                    .map(|(lid, _, _)| data_map.get(&(*d, *lid)).copied().unwrap_or(0.0))
+                    .sum();
+                format!("{total:.2}")
+            })
+            .collect();
+        datasets_json.push(format!(
+            r#"{{ name: "Total", values: [{vals}] }}"#,
+            vals = values.join(","),
+        ));
+    }
+
+    let mut colors: Vec<String> = label_info.iter().map(|(_, _, c)| format!("'{c}'")).collect();
+    if label_info.len() > 1 {
+        colors.push("'#000000'".to_string());
+    }
 
     let label_ids_str = label_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
 

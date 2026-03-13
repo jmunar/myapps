@@ -6,68 +6,6 @@ use std::collections::HashMap;
 use crate::config::Config;
 use crate::models::Account;
 
-/// On first sync, walk backwards from the current reported balance using daily
-/// transaction sums to fill ~90 days of `computed` daily balance rows.
-pub async fn backfill_daily_balances(
-    pool: &SqlitePool,
-    account_id: i64,
-    current_balance: f64,
-) -> Result<()> {
-    let today = Utc::now().format("%Y-%m-%d").to_string();
-    let cutoff = (Utc::now() - Duration::days(90)).format("%Y-%m-%d").to_string();
-
-    // Get daily transaction sums ordered newest-first
-    let daily_sums: Vec<DailySum> = sqlx::query_as(
-        r#"SELECT date, SUM(amount) as total
-           FROM transactions
-           WHERE account_id = ? AND date >= ?
-           GROUP BY date
-           ORDER BY date DESC"#,
-    )
-    .bind(account_id)
-    .bind(&cutoff)
-    .fetch_all(pool)
-    .await?;
-
-    // Walk backwards: today's balance is known, subtract each day's transactions
-    // to get the previous day's closing balance.
-    let mut balance = current_balance;
-    let mut date = NaiveDate::parse_from_str(&today, "%Y-%m-%d")?;
-    let cutoff_date = NaiveDate::parse_from_str(&cutoff, "%Y-%m-%d")?;
-
-    // Build a map of date -> sum for quick lookup
-    let mut sum_map = std::collections::HashMap::new();
-    for ds in &daily_sums {
-        sum_map.insert(ds.date.clone(), ds.total);
-    }
-
-    // Insert from today backwards
-    while date >= cutoff_date {
-        let date_str = date.format("%Y-%m-%d").to_string();
-        let source = if date_str == today { "reported" } else { "computed" };
-
-        sqlx::query(
-            "INSERT OR IGNORE INTO daily_balances (account_id, date, balance, source) VALUES (?, ?, ?, ?)",
-        )
-        .bind(account_id)
-        .bind(&date_str)
-        .bind(balance)
-        .bind(source)
-        .execute(pool)
-        .await?;
-
-        // Subtract today's transactions to get yesterday's closing balance
-        if let Some(&day_total) = sum_map.get(&date_str) {
-            balance -= day_total;
-        }
-
-        date -= Duration::days(1);
-    }
-
-    tracing::info!("Backfilled daily balances for account {account_id}");
-    Ok(())
-}
-
 /// Upsert today's balance as a `reported` row.
 pub async fn record_daily_balance(
     pool: &SqlitePool,
@@ -150,8 +88,7 @@ pub async fn check_reconciliation(
 }
 
 /// Fill gaps in a sparse balance series by carrying forward the previous day's value.
-/// For bank accounts with daily data this is a no-op; for manual accounts it fills
-/// missing dates between recorded values.
+/// Used for manual accounts that have sparse reported entries.
 pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint> {
     if series.is_empty() {
         return Vec::new();
@@ -213,7 +150,10 @@ pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint
     result
 }
 
-/// Query daily balance series for a single account, with gap-filling.
+/// Query daily balance series for a single account.
+/// For bank accounts, computes balances on the fly from the most recent reported
+/// balance and transaction sums. For manual accounts, uses stored reported rows
+/// with gap-filling.
 pub async fn get_balance_series(
     pool: &SqlitePool,
     account_id: i64,
@@ -222,43 +162,17 @@ pub async fn get_balance_series(
     let cutoff = (Utc::now() - Duration::days(days))
         .format("%Y-%m-%d")
         .to_string();
+    let today = Utc::now().format("%Y-%m-%d").to_string();
 
-    let rows: Vec<BalancePoint> = sqlx::query_as(
-        r#"SELECT date, balance, source FROM daily_balances
-           WHERE account_id = ? AND date >= ?
-           ORDER BY date ASC"#,
+    // Check account type
+    let account_type: String = sqlx::query_scalar(
+        "SELECT account_type FROM accounts WHERE id = ?",
     )
     .bind(account_id)
-    .bind(&cutoff)
-    .fetch_all(pool)
+    .fetch_one(pool)
     .await?;
 
-    Ok(fill_balance_gaps(&rows, days))
-}
-
-/// Query aggregated daily balance series across all accounts for a user.
-/// Fetches per-account series, fills gaps per account, then aggregates by date.
-pub async fn get_aggregated_balance_series(
-    pool: &SqlitePool,
-    user_id: i64,
-    days: i64,
-) -> Result<Vec<BalancePoint>> {
-    let cutoff = (Utc::now() - Duration::days(days))
-        .format("%Y-%m-%d")
-        .to_string();
-
-    // Get all account IDs for this user
-    let account_ids: Vec<(i64,)> = sqlx::query_as(
-        "SELECT id FROM accounts WHERE user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-
-    // Fetch and gap-fill per account, then aggregate
-    let mut date_totals: HashMap<String, f64> = HashMap::new();
-
-    for (account_id,) in &account_ids {
+    if account_type == "manual" {
         let rows: Vec<BalancePoint> = sqlx::query_as(
             r#"SELECT date, balance, source FROM daily_balances
                WHERE account_id = ? AND date >= ?
@@ -268,8 +182,104 @@ pub async fn get_aggregated_balance_series(
         .bind(&cutoff)
         .fetch_all(pool)
         .await?;
+        return Ok(fill_balance_gaps(&rows, days));
+    }
 
-        let filled = fill_balance_gaps(&rows, days);
+    // Bank account: find the most recent reported balance at or before today
+    let anchor: Option<BalancePoint> = sqlx::query_as(
+        r#"SELECT date, balance, source FROM daily_balances
+           WHERE account_id = ? AND source = 'reported' AND date <= ?
+           ORDER BY date DESC LIMIT 1"#,
+    )
+    .bind(account_id)
+    .bind(&today)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(anchor) = anchor else {
+        return Ok(Vec::new());
+    };
+
+    // Fetch daily transaction sums for the range
+    let daily_sums: Vec<DailySum> = sqlx::query_as(
+        r#"SELECT date, SUM(amount) as total FROM transactions
+           WHERE account_id = ? AND date >= ?
+           GROUP BY date"#,
+    )
+    .bind(account_id)
+    .bind(&cutoff)
+    .fetch_all(pool)
+    .await?;
+
+    let sum_map: HashMap<String, f64> = daily_sums
+        .into_iter()
+        .map(|ds| (ds.date, ds.total))
+        .collect();
+
+    let anchor_date = NaiveDate::parse_from_str(&anchor.date, "%Y-%m-%d")?;
+    let cutoff_date = NaiveDate::parse_from_str(&cutoff, "%Y-%m-%d")?;
+    let today_date = NaiveDate::parse_from_str(&today, "%Y-%m-%d")?;
+
+    // Walk backwards from anchor to cutoff
+    let mut backward_points: Vec<BalancePoint> = Vec::new();
+    let mut balance = anchor.balance;
+    let mut date = anchor_date;
+
+    while date >= cutoff_date {
+        let date_str = date.format("%Y-%m-%d").to_string();
+        backward_points.push(BalancePoint {
+            date: date_str.clone(),
+            balance,
+            source: "computed".to_string(),
+        });
+        if let Some(&day_total) = sum_map.get(&date_str) {
+            balance -= day_total;
+        }
+        date -= Duration::days(1);
+    }
+    backward_points.reverse();
+
+    // Walk forward from anchor to today
+    let mut forward_points: Vec<BalancePoint> = Vec::new();
+    if anchor_date < today_date {
+        balance = anchor.balance;
+        date = anchor_date + Duration::days(1);
+        while date <= today_date {
+            let date_str = date.format("%Y-%m-%d").to_string();
+            if let Some(&day_total) = sum_map.get(&date_str) {
+                balance += day_total;
+            }
+            forward_points.push(BalancePoint {
+                date: date_str,
+                balance,
+                source: "computed".to_string(),
+            });
+            date += Duration::days(1);
+        }
+    }
+
+    backward_points.extend(forward_points);
+    Ok(backward_points)
+}
+
+/// Query aggregated daily balance series across all accounts for a user.
+/// Fetches per-account series then aggregates by date.
+pub async fn get_aggregated_balance_series(
+    pool: &SqlitePool,
+    user_id: i64,
+    days: i64,
+) -> Result<Vec<BalancePoint>> {
+    let account_ids: Vec<(i64,)> = sqlx::query_as(
+        "SELECT id FROM accounts WHERE user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut date_totals: HashMap<String, f64> = HashMap::new();
+
+    for (account_id,) in &account_ids {
+        let filled = get_balance_series(pool, *account_id, days).await?;
         for point in &filled {
             *date_totals.entry(point.date.clone()).or_insert(0.0) += point.balance;
         }
