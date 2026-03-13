@@ -20,8 +20,9 @@ a full working copy on its own branch, sharing the same git history.
 
 If you're using iTerm2, `worktree.sh create` automatically opens a new tab in
 the worktree directory and launches `claude`. It uses a dedicated "Worktree"
-iTerm2 profile if available (create one with "Applications in terminal may
-change the title" disabled so Claude cannot override the tab name). Otherwise,
+iTerm2 profile if available (create one with the Title set to "Session Name"
+and "Applications in terminal may change the title" disabled, so Claude cannot
+override the tab name). Otherwise,
 open a separate terminal and start Claude Code manually:
 
 ```bash
