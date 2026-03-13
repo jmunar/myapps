@@ -21,6 +21,9 @@ pub fn routes() -> Router<AppState> {
         .route("/accounts/callback", get(callback))
         .route("/accounts/{id}/reauth", post(reauth))
         .route("/accounts/{id}/delete", post(delete_account))
+        .route("/accounts/manual/new", get(manual_new_form).post(manual_new_submit))
+        .route("/accounts/manual/{id}/edit", get(manual_edit_form).post(manual_edit_submit))
+        .route("/accounts/manual/{id}/value", get(manual_value_form).post(manual_value_submit))
 }
 
 // ── List accounts ─────────────────────────────────────────────────
@@ -32,7 +35,7 @@ async fn list_accounts(
     let base = &state.config.base_path;
 
     let accounts: Vec<AccountRow> = sqlx::query_as(
-        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency FROM accounts WHERE user_id = ?",
+        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category FROM accounts WHERE user_id = ?",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -42,28 +45,27 @@ async fn list_accounts(
     let today = chrono::Utc::now().naive_utc();
     let warn_threshold = today + chrono::Duration::days(14);
 
-    let mut items = String::new();
-    for a in &accounts {
-        let expires = a.session_expires_at.format("%Y-%m-%d").to_string();
+    let bank_accounts: Vec<&AccountRow> = accounts.iter().filter(|a| a.account_type == "bank").collect();
+    let manual_accounts: Vec<&AccountRow> = accounts.iter().filter(|a| a.account_type == "manual").collect();
+
+    // Bank accounts section
+    let mut bank_items = String::new();
+    for a in &bank_accounts {
+        let session_expires_at = a.session_expires_at;
+        let expires = session_expires_at.format("%Y-%m-%d").to_string();
         let iban = a.iban.as_deref().unwrap_or("\u{2014}");
-        let balance_html = match (a.balance_amount, a.balance_currency.as_deref()) {
-            (Some(amt), Some(cur)) => {
-                let sign = if amt < 0.0 { "negative" } else { "positive" };
-                format!(r#"<div class="account-balance {sign}">{amt:.2} {cur}</div>"#)
-            }
-            _ => String::new(),
-        };
-        let is_expired = a.session_expires_at < today;
+        let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
+        let is_expired = session_expires_at < today;
         let expiry_class = if is_expired {
             "expiry-expired"
-        } else if a.session_expires_at < warn_threshold {
+        } else if session_expires_at < warn_threshold {
             "expiry-warning"
         } else {
             "expiry-ok"
         };
         let expiry_label = if is_expired { "Expired" } else { "Active" };
 
-        let reauth_btn = if is_expired || a.session_expires_at < warn_threshold {
+        let reauth_btn = if is_expired || session_expires_at < warn_threshold {
             format!(
                 r#"<form method="POST" action="{base}/leanfin/accounts/{}/reauth" style="display:inline">
                     <button type="submit" class="btn-icon">Re-authorize</button>
@@ -74,7 +76,7 @@ async fn list_accounts(
             String::new()
         };
 
-        items.push_str(&format!(
+        bank_items.push_str(&format!(
             r#"<div class="account-item">
                 <div>
                     <div class="account-bank">{}</div>
@@ -94,33 +96,86 @@ async fn list_accounts(
         ));
     }
 
-    if items.is_empty() {
-        items = r#"<div class="empty-state"><p>No accounts linked yet.</p></div>"#.into();
+    if bank_items.is_empty() {
+        bank_items = r#"<div class="empty-state"><p>No bank accounts linked yet.</p></div>"#.into();
+    }
+
+    // Manual accounts section
+    let mut manual_items = String::new();
+    for a in &manual_accounts {
+        let name = a.account_name.as_deref().unwrap_or(&a.bank_name);
+        let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
+        let category_badge = match a.asset_category.as_deref() {
+            Some(cat) => format!(r#"<span class="category-badge">{cat}</span>"#),
+            None => String::new(),
+        };
+
+        manual_items.push_str(&format!(
+            r#"<div class="account-item">
+                <div>
+                    <div class="account-bank">{name}</div>
+                    {category_badge}
+                    {balance_html}
+                </div>
+                <div class="account-actions">
+                    <a href="{base}/leanfin/accounts/manual/{id}/value" class="btn-icon">Update value</a>
+                    <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">Edit</a>
+                    <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
+                          onsubmit="return confirm('Delete this account and all its balance history?')" style="display:inline">
+                        <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                    </form>
+                </div>
+            </div>"#,
+            id = a.id
+        ));
+    }
+
+    if manual_items.is_empty() {
+        manual_items = r#"<div class="empty-state"><p>No manual accounts yet.</p></div>"#.into();
     }
 
     let sync_btn = sync_button(base);
     let body = format!(
         r##"<div class="page-header">
             <div class="page-header-row">
-                <h1>Bank Accounts</h1>
+                <h1>Accounts</h1>
                 <div class="sync-container" id="sync-container">
                     {sync_btn}
                 </div>
             </div>
-            <p>Manage your linked bank connections</p>
+            <p>Manage your linked bank connections and manual accounts</p>
         </div>
         <div class="card">
             <div class="card-header">
-                <h2>Linked accounts</h2>
+                <h2>Bank Accounts</h2>
                 <a href="{base}/leanfin/accounts/link" class="btn btn-primary">+ Link account</a>
             </div>
             <div class="card-body">
-                <div class="account-grid">{items}</div>
+                <div class="account-grid">{bank_items}</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h2>Manual Accounts</h2>
+                <a href="{base}/leanfin/accounts/manual/new" class="btn btn-primary">+ Add account</a>
+            </div>
+            <div class="card-body">
+                <div class="account-grid">{manual_items}</div>
             </div>
         </div>"##
     );
 
     Html(render_page("LeanFin — Accounts", &leanfin_nav(base, "accounts"), &body, base))
+}
+
+fn format_balance(amount: Option<f64>, currency: Option<&str>) -> String {
+    match (amount, currency) {
+        (Some(amt), Some(cur)) => {
+            let sign = if amt < 0.0 { "negative" } else { "positive" };
+            format!(r#"<div class="account-balance {sign}">{amt:.2} {cur}</div>"#)
+        }
+        _ => String::new(),
+    }
 }
 
 #[derive(sqlx::FromRow)]
@@ -131,6 +186,317 @@ struct AccountRow {
     session_expires_at: NaiveDateTime,
     balance_amount: Option<f64>,
     balance_currency: Option<String>,
+    account_type: String,
+    account_name: Option<String>,
+    asset_category: Option<String>,
+}
+
+// ── Manual account: new ──────────────────────────────────────────
+
+async fn manual_new_form(
+    state: axum::extract::State<AppState>,
+) -> Html<String> {
+    let base = &state.config.base_path;
+    let body = format!(
+        r#"<div class="page-header">
+            <h1>Add Manual Account</h1>
+            <p>Track an asset or liability manually</p>
+        </div>
+        <div class="card" style="max-width: 28rem;">
+            <div class="card-body">
+                <form method="POST" action="{base}/leanfin/accounts/manual/new">
+                    <label for="name">Account name</label>
+                    <input type="text" id="name" name="name" required placeholder="e.g. Stock Portfolio">
+                    <label for="category">Category</label>
+                    <select id="category" name="category">
+                        <option value="investment">Investment</option>
+                        <option value="real_estate">Real Estate</option>
+                        <option value="vehicle">Vehicle</option>
+                        <option value="loan">Loan</option>
+                        <option value="crypto">Crypto</option>
+                        <option value="other">Other</option>
+                    </select>
+                    <label for="currency">Currency</label>
+                    <input type="text" id="currency" name="currency" required maxlength="3"
+                           pattern="[A-Z]{{3}}" placeholder="EUR" value="EUR" style="text-transform:uppercase">
+                    <label for="initial_value">Initial value</label>
+                    <input type="number" id="initial_value" name="initial_value" required step="0.01" placeholder="0.00">
+                    <label for="date">As of date</label>
+                    <input type="date" id="date" name="date" required>
+                    <div style="display:flex; gap:0.75rem; margin-top:1rem;">
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" style="flex:1">Add account</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script>document.getElementById('date').valueAsDate = new Date();</script>"#
+    );
+    Html(render_page("LeanFin — Add Manual Account", &leanfin_nav(base, "accounts"), &body, base))
+}
+
+#[derive(Deserialize)]
+struct ManualNewForm {
+    name: String,
+    category: String,
+    currency: String,
+    initial_value: f64,
+    date: String,
+}
+
+async fn manual_new_submit(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Form(form): Form<ManualNewForm>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+    let currency = form.currency.to_uppercase();
+
+    let uid = format!("manual_{}", uuid::Uuid::new_v4());
+    let result = sqlx::query(
+        r#"INSERT INTO accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_amount, balance_currency)
+           VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?, ?)"#,
+    )
+    .bind(user_id.0)
+    .bind(&form.name)
+    .bind(&uid)
+    .bind(&form.name)
+    .bind(&form.category)
+    .bind(form.initial_value)
+    .bind(&currency)
+    .execute(&state.pool)
+    .await;
+
+    match result {
+        Ok(r) => {
+            let account_id = r.last_insert_rowid();
+            // Record initial daily balance
+            let _ = sqlx::query(
+                r#"INSERT OR REPLACE INTO daily_balances (account_id, date, balance, source)
+                   VALUES (?, ?, ?, 'reported')"#,
+            )
+            .bind(account_id)
+            .bind(&form.date)
+            .bind(form.initial_value)
+            .execute(&state.pool)
+            .await;
+
+            tracing::info!("Created manual account '{}' for user {}", form.name, user_id.0);
+        }
+        Err(e) => {
+            tracing::error!("Failed to create manual account: {e}");
+        }
+    }
+
+    Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
+}
+
+// ── Manual account: edit ─────────────────────────────────────────
+
+async fn manual_edit_form(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    let account: Option<ManualAccountRow> = sqlx::query_as(
+        "SELECT id, account_name, asset_category FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual'",
+    )
+    .bind(account_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some(account) = account else {
+        return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
+    };
+
+    let name = account.account_name.as_deref().unwrap_or("");
+    let category = account.asset_category.as_deref().unwrap_or("other");
+
+    let category_options = ["investment", "real_estate", "vehicle", "loan", "crypto", "other"]
+        .iter()
+        .map(|c| {
+            let selected = if *c == category { " selected" } else { "" };
+            format!(r#"<option value="{c}"{selected}>{c}</option>"#)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let body = format!(
+        r#"<div class="page-header">
+            <h1>Edit Account</h1>
+            <p>Update account details</p>
+        </div>
+        <div class="card" style="max-width: 28rem;">
+            <div class="card-body">
+                <form method="POST" action="{base}/leanfin/accounts/manual/{id}/edit">
+                    <label for="name">Account name</label>
+                    <input type="text" id="name" name="name" required value="{name}">
+                    <label for="category">Category</label>
+                    <select id="category" name="category">
+                        {category_options}
+                    </select>
+                    <div style="display:flex; gap:0.75rem; margin-top:1rem;">
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" style="flex:1">Save changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>"#,
+        id = account.id
+    );
+    Html(render_page("LeanFin — Edit Account", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+}
+
+#[derive(sqlx::FromRow)]
+struct ManualAccountRow {
+    id: i64,
+    account_name: Option<String>,
+    asset_category: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ManualEditForm {
+    name: String,
+    category: String,
+}
+
+async fn manual_edit_submit(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+    Form(form): Form<ManualEditForm>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    let _ = sqlx::query(
+        "UPDATE accounts SET account_name = ?, bank_name = ?, asset_category = ? WHERE id = ? AND user_id = ? AND account_type = 'manual'",
+    )
+    .bind(&form.name)
+    .bind(&form.name)
+    .bind(&form.category)
+    .bind(account_id)
+    .bind(user_id.0)
+    .execute(&state.pool)
+    .await;
+
+    Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
+}
+
+// ── Manual account: update value ─────────────────────────────────
+
+async fn manual_value_form(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    let account: Option<ManualValueRow> = sqlx::query_as(
+        "SELECT id, account_name, balance_amount, balance_currency FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual'",
+    )
+    .bind(account_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some(account) = account else {
+        return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
+    };
+
+    let name = account.account_name.as_deref().unwrap_or("Account");
+    let current = account.balance_amount.map(|v| format!("{v:.2}")).unwrap_or_default();
+    let currency = account.balance_currency.as_deref().unwrap_or("EUR");
+
+    let body = format!(
+        r#"<div class="page-header">
+            <h1>Update Value</h1>
+            <p>Record a new value for {name}</p>
+        </div>
+        <div class="card" style="max-width: 28rem;">
+            <div class="card-body">
+                <form method="POST" action="{base}/leanfin/accounts/manual/{id}/value">
+                    <label for="value">New value ({currency})</label>
+                    <input type="number" id="value" name="value" required step="0.01" value="{current}">
+                    <label for="date">As of date</label>
+                    <input type="date" id="date" name="date" required>
+                    <div style="display:flex; gap:0.75rem; margin-top:1rem;">
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" style="flex:1">Record value</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script>document.getElementById('date').valueAsDate = new Date();</script>"#,
+        id = account.id
+    );
+    Html(render_page("LeanFin — Update Value", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+}
+
+#[derive(sqlx::FromRow)]
+struct ManualValueRow {
+    id: i64,
+    account_name: Option<String>,
+    balance_amount: Option<f64>,
+    balance_currency: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ManualValueForm {
+    value: f64,
+    date: String,
+}
+
+async fn manual_value_submit(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+    Form(form): Form<ManualValueForm>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    // Verify ownership and account_type
+    let owns: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual')",
+    )
+    .bind(account_id)
+    .bind(user_id.0)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(false);
+
+    if !owns {
+        return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
+    }
+
+    // Update account balance
+    let _ = sqlx::query(
+        "UPDATE accounts SET balance_amount = ? WHERE id = ?",
+    )
+    .bind(form.value)
+    .bind(account_id)
+    .execute(&state.pool)
+    .await;
+
+    // Upsert daily balance
+    let _ = sqlx::query(
+        r#"INSERT INTO daily_balances (account_id, date, balance, source)
+           VALUES (?, ?, ?, 'reported')
+           ON CONFLICT(account_id, date) DO UPDATE SET balance = excluded.balance, source = 'reported'"#,
+    )
+    .bind(account_id)
+    .bind(&form.date)
+    .bind(form.value)
+    .execute(&state.pool)
+    .await;
+
+    tracing::info!("Updated manual account {account_id} value to {}", form.value);
+
+    Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
 }
 
 // ── Link: choose bank ─────────────────────────────────────────────
@@ -215,7 +581,7 @@ async fn reauth(
 
     // Verify account belongs to this user and get bank details
     let account: Option<ReauthAccountRow> = sqlx::query_as(
-        "SELECT id, bank_name, bank_country FROM accounts WHERE id = ? AND user_id = ?",
+        "SELECT id, bank_name, bank_country FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'bank'",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -355,8 +721,6 @@ async fn callback(
 
     if let Some(reauth_id) = pending.reauth_account_id {
         // Re-authorization: update existing accounts that share the same bank session
-        // The new session may return the same or different account UIDs, so update
-        // all accounts from this bank for this user that match one of the new UIDs.
         let mut updated = 0u64;
         for account in &session.accounts {
             let result = sqlx::query(
@@ -411,8 +775,8 @@ async fn callback(
 
             let result = sqlx::query(
                 r#"INSERT OR IGNORE INTO accounts
-                   (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                   (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'bank')"#,
             )
             .bind(pending.user_id)
             .bind(&pending.bank_name)

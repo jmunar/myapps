@@ -39,6 +39,7 @@ myapps/
 │   ├── leanfin.rs           # LeanFin test binary entry point
 │   └── leanfin/             # LeanFin app tests (mirrors src/apps/leanfin/)
 │       ├── accounts.rs      # Account list + balance display tests
+│       ├── manual_accounts.rs # Manual account CRUD + value update tests
 │       ├── transactions.rs  # Dashboard, transaction list/filter tests
 │       ├── labels.rs        # Label CRUD + rules tests
 │       └── sync.rs          # Sync button + endpoint tests
@@ -61,7 +62,7 @@ myapps/
 │           ├── mod.rs       # LeanFin router
 │           ├── dashboard.rs # Main transactions page
 │           ├── transactions.rs # Transaction list + allocation editor
-│           ├── accounts.rs  # Bank account linking (OAuth flow)
+│           ├── accounts.rs  # Bank account linking (OAuth flow) + manual accounts CRUD
 │           ├── labels.rs    # Label CRUD
 │           ├── sync_handler.rs  # Sync button endpoint (POST /sync)
 │           ├── balance_evolution.rs  # Balance evolution page + data partial
@@ -89,9 +90,12 @@ After login, the top-level router serves:
 - `/leanfin/` — LeanFin sub-app (nested router)
   - `/leanfin/` — Transactions dashboard
   - `/leanfin/transactions` — Transaction list (HTMX partial)
-  - `/leanfin/accounts` — Bank account management
+  - `/leanfin/accounts` — Account management (bank + manual)
   - `POST /leanfin/accounts/{id}/reauth` — Re-authorize expired bank session
-  - `POST /leanfin/accounts/{id}/delete` — Delete account and its transactions
+  - `POST /leanfin/accounts/{id}/delete` — Delete account and its data
+  - `/leanfin/accounts/manual/new` — Create a manual account (GET form, POST submit)
+  - `/leanfin/accounts/manual/{id}/edit` — Edit manual account metadata (GET form, POST submit)
+  - `/leanfin/accounts/manual/{id}/value` — Record a new value for a manual account (GET form, POST submit)
   - `POST /leanfin/sync` — Trigger transaction sync for the user (HTMX partial)
   - `/leanfin/balance-evolution` — Balance evolution page (chart + table)
   - `/leanfin/balance-evolution/data?account_id=&days=90` — Balance data partial (HTMX)
@@ -123,14 +127,17 @@ After login, the top-level router serves:
 |--------------------|---------|-------------------------------------------|
 | id                 | INTEGER | PK, autoincrement                         |
 | user_id            | INTEGER | FK → users                                |
-| bank_name          | TEXT    | Bank name as registered in Enable Banking |
-| bank_country       | TEXT    | ISO 3166-1 alpha-2 (e.g. ES, DE)         |
+| bank_name          | TEXT    | Bank name (or account name for manual)    |
+| bank_country       | TEXT    | ISO 3166-1 alpha-2 (empty for manual)     |
 | iban               | TEXT    | Nullable                                  |
-| session_id         | TEXT    | Enable Banking session ID (consent)       |
-| account_uid        | TEXT    | Enable Banking account UID, UNIQUE        |
-| balance_amount     | REAL    | Nullable, latest balance from bank        |
-| balance_currency   | TEXT    | Nullable, ISO 4217 currency of balance    |
+| session_id         | TEXT    | Enable Banking session ID (placeholder for manual) |
+| account_uid        | TEXT    | Enable Banking account UID, UNIQUE (generated UUID for manual) |
+| balance_amount     | REAL    | Nullable, latest balance                  |
+| balance_currency   | TEXT    | Nullable, ISO 4217 currency               |
 | session_expires_at | TEXT    | ISO 8601, when consent expires            |
+| account_type       | TEXT    | 'bank' or 'manual', default 'bank'       |
+| account_name       | TEXT    | Nullable, display name for manual accounts |
+| asset_category     | TEXT    | Nullable, e.g. investment, real_estate, vehicle, loan, crypto |
 | created_at         | TEXT    | ISO 8601                                  |
 
 ### pending_links
@@ -188,7 +195,7 @@ After login, the top-level router serves:
 | account_id | INTEGER | FK → accounts                            |
 | date       | TEXT    | ISO 8601 date                            |
 | balance    | REAL    | End-of-day balance                       |
-| source     | TEXT    | 'computed', 'reported'                   |
+| source     | TEXT    | 'computed', 'reported', 'carried'        |
 | created_at | TEXT    | ISO 8601                                 |
 | UNIQUE(account_id, date) | | One row per account per day    |
 
@@ -246,7 +253,7 @@ myapps sync
   │
   ├─ Sign a fresh JWT using the private key
   │
-  ├─ For each account:
+  ├─ For each bank account (account_type = 'bank', manual accounts are skipped):
   │   ├─ Check session_expires_at
   │   ├─ If expired:
   │   │   ├─ Send ntfy notification

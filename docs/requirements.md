@@ -129,6 +129,14 @@ visibility into spending patterns.
   account dropdown including an "All accounts" aggregated view. Reconciliation
   checks compare expected vs reported balances on each sync, alerting via ntfy
   if discrepancies exceed 0.01.
+- **Manual accounts** — users can create manually tracked accounts for assets not
+  accessible through Open Banking (investments, real estate, vehicles, loans,
+  crypto). Manual accounts support CRUD operations (create, edit metadata, update
+  value with date, delete). Values are recorded as daily balance entries with
+  carry-forward gap filling for sparse updates. The accounts page is split into
+  "Bank Accounts" and "Manual Accounts" sections. Balance evolution charts and
+  the "All accounts" aggregated view include manual accounts seamlessly. The sync
+  process filters to bank accounts only, skipping manual accounts.
 
 ### Not yet implemented
 
