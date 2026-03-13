@@ -327,6 +327,26 @@ tbody tr:last-child td {
     color: var(--text-secondary);
 }
 
+/* ── Pagination ─────────────────────────────────────────────── */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--border-light);
+}
+
+.pagination-info {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.pagination-buttons {
+    display: flex;
+    gap: 0.4rem;
+}
+
 /* Empty state */
 .empty-state {
     text-align: center;

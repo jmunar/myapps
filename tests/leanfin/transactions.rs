@@ -1,5 +1,102 @@
 use crate::harness;
 
+// ── Pagination ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn transaction_list_shows_pagination_controls() {
+    let app = harness::spawn_app().await;
+    app.seed_and_login().await;
+
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+
+    // Pagination info shows "1–N of M"
+    assert!(body.contains(r#"class="pagination-info""#));
+    assert!(body.contains("of"));
+    // Pagination container exists
+    assert!(body.contains(r#"class="pagination""#));
+}
+
+#[tokio::test]
+async fn transaction_list_page_param_defaults_to_first_page() {
+    let app = harness::spawn_app().await;
+    app.seed_and_login().await;
+
+    // No page param and page=1 should return the same results
+    let response_default = app.server.get("/leanfin/transactions").await;
+    let response_page1 = app
+        .server
+        .get("/leanfin/transactions")
+        .add_query_param("page", "1")
+        .await;
+
+    assert_eq!(response_default.text(), response_page1.text());
+}
+
+#[tokio::test]
+async fn transaction_list_pagination_with_many_transactions() {
+    let app = harness::spawn_app().await;
+    app.seed_and_login().await;
+
+    // Get an existing seeded account
+    let (account_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM accounts LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    // Delete existing transactions and insert exactly 60 (page size is 50)
+    sqlx::query("DELETE FROM allocations").execute(&app.pool).await.unwrap();
+    sqlx::query("DELETE FROM transactions").execute(&app.pool).await.unwrap();
+
+    for i in 0..60 {
+        sqlx::query(
+            "INSERT INTO transactions (account_id, external_id, date, amount, currency, description, counterparty) VALUES (?, ?, ?, ?, 'EUR', ?, ?)"
+        )
+        .bind(account_id)
+        .bind(format!("ext-{i}"))
+        .bind(format!("2025-01-{:02}", (i % 28) + 1))
+        .bind(-10.0)
+        .bind(format!("Txn {i}"))
+        .bind(format!("Vendor {i}"))
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    }
+
+    // Page 1 should have Next button but no Prev
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+    assert!(body.contains("1\u{2013}50 of 60"));
+    assert!(body.contains(">Next</button>"));
+    assert!(!body.contains(">Prev</button>"));
+
+    // Page 2 should have Prev button but no Next
+    let response = app
+        .server
+        .get("/leanfin/transactions")
+        .add_query_param("page", "2")
+        .await;
+    let body = response.text();
+    assert!(body.contains("51\u{2013}60 of 60"));
+    assert!(body.contains(">Prev</button>"));
+    assert!(!body.contains(">Next</button>"));
+}
+
+#[tokio::test]
+async fn transaction_pagination_preserves_filters_in_buttons() {
+    let app = harness::spawn_app().await;
+    app.seed_and_login().await;
+
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+
+    // Pagination buttons should include hx-include for filters
+    if body.contains(">Next</button>") || body.contains(">Prev</button>") {
+        assert!(body.contains(r##"hx-include="#txn-filters""##));
+    }
+}
+
 // ── Dashboard label filter ───────────────────────────────────
 
 #[tokio::test]

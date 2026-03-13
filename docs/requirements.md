@@ -155,7 +155,11 @@ visibility into spending patterns.
   excluded from the balance evolution individual account dropdown, but their
   balances are still included in the aggregated "All accounts" view. Transactions
   from archived accounts remain visible in the transaction list.
+- **Pagination** — the transaction list paginates with 50 transactions per page.
+  Prev/Next controls appear below the table with a "from–to of total" counter.
+  Filters reset to page 1 automatically. Pagination buttons use HTMX with
+  `hx-vals` to pass the page number while preserving all active filters via
+  `hx-include`.
 
 ### Not yet implemented
-- **Pagination** — paginate beyond the current 100-transaction limit.
 - **Additional apps** — new sub-applications on the platform.
