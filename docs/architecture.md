@@ -75,6 +75,8 @@ After login, the top-level router serves:
   - `/leanfin/` — Transactions dashboard
   - `/leanfin/transactions` — Transaction list (HTMX partial)
   - `/leanfin/accounts` — Bank account management
+  - `POST /leanfin/accounts/{id}/reauth` — Re-authorize expired bank session
+  - `POST /leanfin/accounts/{id}/delete` — Delete account and its transactions
   - `/leanfin/labels` — Label CRUD
 
 ## Database Schema
@@ -115,11 +117,12 @@ After login, the top-level router serves:
 
 | Column     | Type    | Notes                                |
 |------------|---------|--------------------------------------|
-| state      | TEXT    | PK, CSRF token for OAuth callback    |
-| user_id    | INTEGER | FK → users                           |
-| bank_name  | TEXT    | Bank being linked                    |
-| country    | TEXT    | Country code                         |
-| created_at | TEXT    | ISO 8601                             |
+| state              | TEXT    | PK, CSRF token for OAuth callback              |
+| user_id            | INTEGER | FK → users                                     |
+| bank_name          | TEXT    | Bank being linked                              |
+| country            | TEXT    | Country code                                   |
+| reauth_account_id  | INTEGER | Nullable, FK → accounts (set for re-auth flow) |
+| created_at         | TEXT    | ISO 8601                                       |
 
 ### transactions
 
