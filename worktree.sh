@@ -38,6 +38,14 @@ cmd_create() {
         echo "Warning: no data/ directory found in main repo"
     fi
 
+    # Copy Claude settings.local.json (allowed permissions)
+    local settings="$REPO_DIR/.claude/settings.local.json"
+    if [ -f "$settings" ]; then
+        mkdir -p "$worktree_dir/.claude"
+        cp "$settings" "$worktree_dir/.claude/settings.local.json"
+        echo "Copied .claude/settings.local.json"
+    fi
+
     echo ""
     echo "Worktree ready at: $worktree_dir"
 
@@ -74,6 +82,30 @@ cmd_remove() {
     # branch deletion checks and future worktrees start from the latest code.
     git -C "$REPO_DIR" fetch --prune origin 2>/dev/null
     git -C "$REPO_DIR" pull --ff-only 2>/dev/null || true
+
+    # Merge .claude/settings.local.json from worktree into main repo.
+    # Combines the permissions.allow arrays (unique union) so any
+    # permissions granted during development in the worktree are preserved.
+    local wt_settings="$worktree_dir/.claude/settings.local.json"
+    local main_settings="$REPO_DIR/.claude/settings.local.json"
+    if [ -f "$wt_settings" ]; then
+        if [ -f "$main_settings" ]; then
+            local merged
+            merged=$(jq -s '
+                .[0] as $main | .[1] as $wt |
+                $main * {permissions: {allow:
+                    (($main.permissions.allow // []) + ($wt.permissions.allow // []))
+                    | unique | sort
+                }}
+            ' "$main_settings" "$wt_settings")
+            echo "$merged" > "$main_settings"
+            echo "Merged .claude/settings.local.json"
+        else
+            mkdir -p "$REPO_DIR/.claude"
+            cp "$wt_settings" "$main_settings"
+            echo "Copied .claude/settings.local.json from worktree"
+        fi
+    fi
 
     git -C "$REPO_DIR" worktree remove "$worktree_dir"
     echo "Removed worktree: $worktree_dir"
