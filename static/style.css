@@ -489,32 +489,142 @@ button:active, .btn:active {
     }
 
     main {
-        padding: 1.25rem 1rem 2rem;
+        padding: 1.25rem 0.75rem 2rem;
     }
 
     h1 { font-size: 1.35rem; }
 
+    /* ── Transaction table → card list on mobile ────────────── */
     table {
+        display: block;
         font-size: 0.8rem;
     }
 
-    thead th,
-    tbody td {
-        padding: 0.5rem 0.65rem;
+    thead {
+        display: none;
     }
 
-    /* Stack counterparty + description on mobile */
-    .txn-description-mobile {
-        display: block;
+    tbody {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    tbody tr {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto auto;
+        gap: 0.15rem 0.5rem;
+        background: var(--bg-card);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius);
+        padding: 0.6rem 0.75rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    tbody tr:hover {
+        background: var(--bg-card);
+    }
+
+    tbody tr td {
+        padding: 0;
+        border-bottom: none;
+    }
+
+    /* Row 1: date left, amount right */
+    .txn-date {
+        grid-column: 1;
+        grid-row: 1;
+        font-size: 0.7rem;
+    }
+
+    .txn-amount {
+        grid-column: 2;
+        grid-row: 1;
+        font-size: 0.85rem;
+        text-align: right;
+    }
+
+    /* Row 2: counterparty spans full width */
+    .txn-counterparty {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        font-size: 0.875rem;
+    }
+
+    /* Row 3: description spans full width */
+    .txn-description {
+        grid-column: 1 / -1;
+        grid-row: 3;
         font-size: 0.75rem;
-        color: var(--text-secondary);
-        margin-top: 0.1rem;
+    }
+
+    /* Row 4: labels span full width */
+    .txn-labels {
+        grid-column: 1 / -1;
+        grid-row: 4;
+        padding-top: 0.3rem;
+        white-space: normal;
+    }
+
+    .txn-labels .label-badge {
+        margin-bottom: 0.2rem;
+    }
+
+    /* Allocation status borders on card edges */
+    tbody tr.txn-unallocated {
+        border-left: 3px solid var(--warning);
+        background: color-mix(in srgb, var(--warning) 5%, transparent);
+    }
+
+    tbody tr.txn-unallocated .txn-date {
+        border-left: none;
+        padding-left: 0;
+    }
+
+    tbody tr.txn-misallocated {
+        border-left: 3px solid var(--negative);
+        background: color-mix(in srgb, var(--negative) 5%, transparent);
+    }
+
+    tbody tr.txn-misallocated .txn-date {
+        border-left: none;
+        padding-left: 0;
+    }
+
+    /* Allocation editor row — full width card */
+    .alloc-editor-row {
+        display: block;
+    }
+
+    .alloc-editor-row td {
+        display: block;
+    }
+
+    .alloc-add-form {
+        flex-wrap: wrap;
+    }
+
+    .alloc-add-form select {
+        min-width: 0;
+    }
+
+    .alloc-amount-input {
+        width: 5rem;
     }
 
     .account-item {
         flex-direction: column;
         align-items: flex-start;
         gap: 0.5rem;
+    }
+
+    .rule-add-form {
+        flex-wrap: wrap;
+    }
+
+    .rule-row {
+        flex-wrap: wrap;
     }
 }
 
@@ -691,6 +801,101 @@ button:active, .btn:active {
     padding: 0.15rem;
     cursor: pointer;
     background: var(--bg-card);
+}
+
+/* ── Label rules ────────────────────────────────────────────── */
+.rules-panel-container:empty {
+    display: none;
+}
+
+.rules-panel {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 0.75rem;
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.rules-panel-header {
+    padding-bottom: 0.25rem;
+}
+
+.rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.rule-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+}
+
+.rule-field {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.1rem 0.4rem;
+    background: var(--accent-light);
+    color: var(--accent);
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+.rule-pattern {
+    font-size: 0.835rem;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rule-priority {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+}
+
+.rule-add-form {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid var(--border-light);
+}
+
+.rule-add-form select {
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--text);
+}
+
+.rule-add-form input[type="text"] {
+    font-size: 0.8rem;
+    padding: 0.35rem 0.5rem;
+}
+
+.rule-add-form input[type="number"] {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    padding: 0.35rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--text);
 }
 
 /* Create label form */
