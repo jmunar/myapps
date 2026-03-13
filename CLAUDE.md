@@ -18,6 +18,7 @@ cargo run -- serve                  # Start HTTP server on 127.0.0.1:3000
 cargo run -- sync                   # Run transaction sync manually
 cargo run -- create-user            # Create a user
 cargo run -- seed --app leanfin     # Seed LeanFin demo data
+cargo run -- seed --app leanfin --reset  # Wipe and re-seed demo data
 
 # Tests
 cargo test
