@@ -39,9 +39,9 @@ visibility into spending patterns.
   counterparty name, and balance after transaction.
 - The system never modifies or deletes upstream bank data; it is append-only.
 - The transaction list can be filtered by free text (searches description and
-  counterparty), by bank account, and by allocation status (showing only
-  transactions that are not fully allocated). All filters are reactive and
-  update results as the user types or changes a selection.
+  counterparty), by bank account, by label, by date range, and by allocation
+  status (showing only transactions that are not fully allocated). All filters
+  are reactive and update results as the user types or changes a selection.
 
 ### Labeling and allocations (LeanFin)
 
@@ -125,14 +125,17 @@ visibility into spending patterns.
   on completion. The transaction list auto-refreshes after sync.
 - **Balance evolution tracking** — daily balance history for each account,
   backfilled from transactions on first sync. A dedicated Balance page shows an
-  SVG chart and data table with period selectors (30d/90d/180d/365d) and an
-  account dropdown including an "All accounts" aggregated view. Reconciliation
-  checks compare expected vs reported balances on each sync, alerting via ntfy
-  if discrepancies exceed 0.01.
+  interactive Frappe Charts line chart with period selectors (30d/90d/180d/365d)
+  and an account dropdown including an "All accounts" aggregated view.
+  Reconciliation checks compare expected vs reported balances on each sync,
+  alerting via ntfy if discrepancies exceed 0.01.
+- **Expense visualization** — a dedicated Expenses page with multi-label
+  selection (toggle pills), a Frappe Charts time series showing daily expense
+  totals per selected label, and a transaction list below the chart. Clicking a
+  data point on the chart filters the transaction list to that date. The
+  transaction list reuses the same endpoint as the Transactions page with
+  label_ids and date range filters.
 
 ### Not yet implemented
-
-- **Dashboard analytics** — spending summaries by label, monthly totals, and
-  visual charts (balance evolution charts are a first step).
 - **Pagination** — paginate beyond the current 100-transaction limit.
 - **Additional apps** — new sub-applications on the platform.

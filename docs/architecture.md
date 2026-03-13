@@ -8,6 +8,7 @@
 | HTTP framework   | Axum                            |
 | Database         | SQLite (via sqlx, runtime-checked queries) |
 | Frontend         | HTMX + server-rendered HTML     |
+| Charts           | Frappe Charts 1.6.2 (client-side)|
 | Auth             | Argon2 + server-side sessions   |
 | Bank aggregator  | Enable Banking PSD2 API         |
 | Notifications    | ntfy (HTTP push)                |
@@ -41,6 +42,7 @@ myapps/
 │       ├── accounts.rs      # Account list + balance display tests
 │       ├── transactions.rs  # Dashboard, transaction list/filter tests
 │       ├── labels.rs        # Label CRUD + rules tests
+│       ├── expenses.rs      # Expenses page + chart endpoint tests
 │       └── sync.rs          # Sync button + endpoint tests
 ├── src/
 │   ├── lib.rs               # Library crate (re-exports modules for tests)
@@ -64,14 +66,16 @@ myapps/
 │           ├── accounts.rs  # Bank account linking (OAuth flow)
 │           ├── labels.rs    # Label CRUD
 │           ├── sync_handler.rs  # Sync button endpoint (POST /sync)
-│           ├── balance_evolution.rs  # Balance evolution page + data partial
+│           ├── balance_evolution.rs  # Balance evolution page (Frappe Charts)
+│           ├── expenses.rs  # Expenses page: label selector + chart + txn list
 │           └── services/    # LeanFin-specific business logic
 │               ├── enable_banking.rs  # Enable Banking API client + JWT
 │               ├── sync.rs            # Transaction sync orchestration
 │               ├── balance.rs         # Daily balance tracking + reconciliation
+│               ├── expenses.rs        # Expense aggregation by label + date
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
-├── static/                  # CSS, JS (htmx)
+├── static/                  # CSS, JS (htmx, frappe-charts)
 ├── .claude/agents/          # Claude Code agent prompts
 │   └── frontend-tester.md   # Agent for generating integration tests
 ├── Cargo.toml
@@ -93,8 +97,10 @@ After login, the top-level router serves:
   - `POST /leanfin/accounts/{id}/reauth` — Re-authorize expired bank session
   - `POST /leanfin/accounts/{id}/delete` — Delete account and its transactions
   - `POST /leanfin/sync` — Trigger transaction sync for the user (HTMX partial)
-  - `/leanfin/balance-evolution` — Balance evolution page (chart + table)
-  - `/leanfin/balance-evolution/data?account_id=&days=90` — Balance data partial (HTMX)
+  - `/leanfin/balance-evolution` — Balance evolution page (Frappe Charts line chart)
+  - `/leanfin/balance-evolution/data?account_id=&days=90` — Balance chart data (HTMX)
+  - `/leanfin/expenses` — Expenses page (multi-label selector + chart + transaction list)
+  - `/leanfin/expenses/chart?label_ids=1,2&days=90` — Expense chart data (HTMX)
   - `/leanfin/labels` — Label CRUD
 
 ## Database Schema
