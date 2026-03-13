@@ -34,7 +34,8 @@ visibility into spending patterns.
 ### Transaction management (LeanFin)
 
 - Transactions are stored locally and deduplicated by their external ID
-  (provided by Enable Banking) scoped to the account.
+  (provided by Enable Banking) scoped to the account. Amounts are signed using
+  the `credit_debit_indicator` from the API (DBIT = negative, CRDT = positive).
 - Each transaction records at minimum: date, amount, currency, description,
   counterparty name, and balance after transaction.
 - The system never modifies or deletes upstream bank data; it is append-only.
