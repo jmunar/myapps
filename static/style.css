@@ -312,6 +312,21 @@ tbody tr:last-child td {
     color: var(--negative);
 }
 
+.account-balance {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-top: 0.25rem;
+}
+
+.txn-balance {
+    font-family: var(--font-mono);
+    font-size: 0.835rem;
+    text-align: right;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
 /* Empty state */
 .empty-state {
     text-align: center;
@@ -626,6 +641,11 @@ button:active, .btn:active {
         grid-column: 1 / -1;
         grid-row: 3;
         font-size: 0.75rem;
+    }
+
+    /* Hide balance on mobile — too dense */
+    .txn-balance {
+        display: none;
     }
 
     /* Row 4: labels span full width */

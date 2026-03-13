@@ -39,6 +39,13 @@ export MYAPPS_SERVER="user@odroid.local"
 - LeanFin-specific routes, handlers, and services live under `src/apps/leanfin/`.
 - Shared infrastructure (auth, config, db, models, layout) stays at the top level.
 
+## Testing
+
+- After any frontend change (routes, handlers, HTML templates, CSS classes used
+  in assertions), run the **frontend-tester agent**
+  (`.claude/agents/frontend-tester.md`) to generate or update integration tests.
+- Tests live in `tests/` and use `axum-test`; see the agent file for patterns.
+
 ## Documentation
 
 - [Requirements](docs/requirements.md)

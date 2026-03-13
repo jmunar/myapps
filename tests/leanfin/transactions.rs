@@ -77,3 +77,50 @@ async fn transaction_account_filter() {
     // Should not contain checking-only transactions
     assert!(!body.contains("Mercadona"));
 }
+
+#[tokio::test]
+async fn transaction_list_has_balance_column() {
+    let app = harness::spawn_app().await;
+    app.seed_and_login().await;
+
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+    assert!(body.contains("<th>Balance</th>"));
+}
+
+#[tokio::test]
+async fn transaction_balance_shows_value_when_present() {
+    let app = harness::spawn_app().await;
+    app.seed_and_login().await;
+
+    // Pick a transaction and set its balance_after
+    let (txn_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM transactions LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    sqlx::query("UPDATE transactions SET balance_after = ? WHERE id = ?")
+        .bind(1500.50_f64)
+        .bind(txn_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+    assert!(body.contains("1500.50"));
+    assert!(body.contains(r#"class="txn-balance""#));
+}
+
+#[tokio::test]
+async fn transaction_balance_shows_dash_when_null() {
+    let app = harness::spawn_app().await;
+    app.seed_and_login().await;
+
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+    // Seed data has no balance_after set, so all balances should show "—"
+    assert!(body.contains(r#"class="txn-balance">"#));
+    assert!(body.contains(">\u{2014}</td>"));
+}

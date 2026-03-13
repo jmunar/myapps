@@ -115,6 +115,9 @@ visibility into spending patterns.
 - **Integration test infrastructure** — HTTP-level tests using axum-test with
   in-memory SQLite, covering auth flows, transaction list/filtering, and label
   CRUD. A Claude Code agent automates test generation for new features.
+- **Account balances** — fetch and display account balances from Enable Banking
+  during sync. Balances are shown on the accounts page and as a running balance
+  column in the transaction list.
 
 ### Not yet implemented
 
