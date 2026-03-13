@@ -341,17 +341,15 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     Ok(count)
 }
 
-/// Set account balance and backfill daily_balances from transaction history.
+/// Set account balance and record today's reported balance.
 async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64) -> Result<()> {
-    // Set account balance
     sqlx::query("UPDATE accounts SET balance_amount = ?, balance_currency = 'EUR' WHERE id = ?")
         .bind(current_balance)
         .bind(account_id)
         .execute(pool)
         .await?;
 
-    // Backfill daily balances using the balance service
-    super::balance::backfill_daily_balances(pool, account_id, current_balance).await?;
+    super::balance::record_daily_balance(pool, account_id, current_balance).await?;
 
     Ok(())
 }

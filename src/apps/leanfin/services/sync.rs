@@ -176,23 +176,9 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
     // Daily balance tracking and reconciliation
     let mut reconciliation_warning: Option<String> = None;
     if let Some(balance) = reported_balance {
-        let has_daily: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM daily_balances WHERE account_id = ?)",
-        )
-        .bind(account.id)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(false);
-
-        if !has_daily {
-            if let Err(e) = super::balance::backfill_daily_balances(pool, account.id, balance).await {
-                tracing::warn!("Failed to backfill daily balances for '{}': {e:#}", account.bank_name);
-            }
-        } else {
-            match super::balance::check_reconciliation(pool, config, account, balance).await {
-                Ok(warning) => reconciliation_warning = warning,
-                Err(e) => tracing::warn!("Reconciliation check failed for '{}': {e:#}", account.bank_name),
-            }
+        match super::balance::check_reconciliation(pool, config, account, balance).await {
+            Ok(warning) => reconciliation_warning = warning,
+            Err(e) => tracing::warn!("Reconciliation check failed for '{}': {e:#}", account.bank_name),
         }
 
         if let Err(e) = super::balance::record_daily_balance(pool, account.id, balance).await {
