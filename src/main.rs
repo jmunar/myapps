@@ -26,6 +26,9 @@ enum Command {
         /// Which app to seed (currently only "leanfin")
         #[arg(long, default_value = "leanfin")]
         app: String,
+        /// Wipe existing demo data before re-seeding
+        #[arg(long)]
+        reset: bool,
     },
 }
 
@@ -60,8 +63,8 @@ async fn main() -> anyhow::Result<()> {
             auth::create_user(&pool, &username, &password).await?;
             tracing::info!("User '{username}' created");
         }
-        Command::Seed { app } => match app.as_str() {
-            "leanfin" => apps::leanfin::services::seed::run(&pool).await?,
+        Command::Seed { app, reset } => match app.as_str() {
+            "leanfin" => apps::leanfin::services::seed::run(&pool, reset).await?,
             other => anyhow::bail!("Unknown app: {other}. Available: leanfin"),
         },
     }
