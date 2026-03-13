@@ -6,17 +6,14 @@ a full working copy on its own branch, sharing the same git history.
 ## Quick Reference
 
 ```bash
-# Create a worktree for a new ticket
-git worktree add ../myapps-<ticket> -b feature/<ticket>
+# Create a worktree for a new ticket (copies .env and data/ automatically)
+./worktree.sh create <branch-name>
 
 # List active worktrees
-git worktree list
+./worktree.sh list
 
-# Remove a finished worktree (after merging)
-git worktree remove ../myapps-<ticket>
-
-# Prune stale worktree references
-git worktree prune
+# Remove a finished worktree (deletes merged branch automatically)
+./worktree.sh remove <branch-name>
 ```
 
 ## Starting a Claude Session per Ticket
@@ -61,7 +58,5 @@ git worktree remove ../myapps-<ticket>
   `../myapps-add-categories`.
 - Don't share `CARGO_TARGET_DIR` between worktrees — concurrent builds will
   conflict.
-- The `.env` file is not tracked by git, so copy it into new worktrees:
-  `cp .env ../myapps-<ticket>/`.
-- The `data/` directory (SQLite DB) is also gitignored — symlink or copy as
-  needed.
+- The `.env` and `data/` files are not tracked by git — `worktree.sh create`
+  copies them automatically.
