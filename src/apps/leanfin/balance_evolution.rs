@@ -29,7 +29,7 @@ async fn page(
     let base = &state.config.base_path;
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
-        "SELECT id, bank_name, iban, account_type, account_name FROM accounts WHERE user_id = ? ORDER BY bank_name",
+        "SELECT id, bank_name, iban, account_type, account_name FROM accounts WHERE user_id = ? AND archived = 0 ORDER BY bank_name",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)

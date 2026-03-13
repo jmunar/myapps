@@ -46,7 +46,17 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         pool, user_id, "Stock Portfolio", "investment", "EUR",
     ).await?;
 
-    tracing::info!("Created 2 bank accounts + 1 manual account");
+    // Create an archived bank account (old account, no longer in use)
+    let acct4 = insert_bank_account(
+        pool, user_id, "BBVA", "ES", Some("ES55 1234 0000 6789 0123 4567"),
+        "sess_fake_3", "uid_old_001", "2025-12-01T00:00:00Z",
+    ).await?;
+    sqlx::query("UPDATE accounts SET archived = 1 WHERE id = ?")
+        .bind(acct4)
+        .execute(pool)
+        .await?;
+
+    tracing::info!("Created 2 bank accounts + 1 manual account + 1 archived bank account");
 
     // Seed transactions for the last ~60 days
     let txns: &[(&str, f64, &str, &str, Option<&str>)] = &[
@@ -111,6 +121,28 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         ).await?;
     }
 
+    // Archived BBVA account — old transactions (account closed in late 2025)
+    let bbva_txns: &[(&str, f64, &str, &str, Option<&str>)] = &[
+        ("2025-11-28", -650.00, "EUR", "Rent November",              Some("Inmobiliaria López")),
+        ("2025-11-25", -38.70,  "EUR", "Weekly groceries",           Some("Mercadona")),
+        ("2025-11-20", -12.99,  "EUR", "Netflix subscription",       Some("Netflix")),
+        ("2025-11-15", -45.00,  "EUR", "Internet + phone",           Some("Movistar")),
+        ("2025-11-10", 2100.00, "EUR", "Salary November",            Some("Acme Corp")),
+        ("2025-11-05", -35.00,  "EUR", "Fuel",                       Some("Repsol")),
+        ("2025-11-01", -120.00, "EUR", "Electricity bill",           Some("Iberdrola")),
+        ("2025-10-28", -650.00, "EUR", "Rent October",               Some("Inmobiliaria López")),
+        ("2025-10-20", -52.40,  "EUR", "Groceries",                  Some("Carrefour")),
+        ("2025-10-15", -9.99,   "EUR", "Spotify subscription",       Some("Spotify")),
+        ("2025-10-10", 2100.00, "EUR", "Salary October",             Some("Acme Corp")),
+    ];
+
+    for (i, (date, amount, currency, desc, counterparty)) in bbva_txns.iter().enumerate() {
+        count += insert_transaction(
+            pool, acct4, &format!("seed_bbva_{i:03}"),
+            date, *amount, currency, desc, *counterparty,
+        ).await?;
+    }
+
     // Seed labels, rules, and allocations
     seed_labels(pool, user_id).await?;
     let alloc_count = seed_allocations(pool, user_id).await?;
@@ -118,6 +150,9 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     // Seed account balances and daily balance history
     seed_balances(pool, acct1, 3245.67).await?;
     seed_balances(pool, acct2, 8500.85).await?;
+
+    // Seed archived account final balance (frozen at time of archiving)
+    seed_balances(pool, acct4, 585.92).await?;
 
     // Seed manual account value history (sparse updates)
     seed_manual_balances(pool, acct3, &[
