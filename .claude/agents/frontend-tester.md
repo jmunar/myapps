@@ -128,12 +128,15 @@ let (id,): (i64,) = sqlx::query_as("SELECT id FROM labels WHERE name = ?")
 - `POST /leanfin/accounts/manual/{id}/edit` — form: name, category → redirect 303
 - `GET /leanfin/accounts/manual/{id}/value` — manual account value update form
 - `POST /leanfin/accounts/manual/{id}/value` — form: value, date → redirect 303
+- `POST /leanfin/accounts/{id}/archive` — archive account → redirect 303 (error redirect if unallocated)
+- `POST /leanfin/accounts/{id}/unarchive` — unarchive account → redirect 303
 
 ## Seed Data Summary
 
 The `seed_and_login()` helper creates:
 - User: demo/demo
 - 2 bank accounts: Santander (checking), ING Direct (savings)
+- 1 archived bank account: BBVA (expired session, with historical transactions from Oct-Nov 2025)
 - 1 manual account: Stock Portfolio (investment, EUR) with sparse daily balance entries
 - ~39 transactions across both accounts (with counterparties like Mercadona,
   Netflix, Starbucks, Repsol, etc.)

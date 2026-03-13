@@ -98,6 +98,8 @@ After login, the top-level router serves:
   - `/leanfin/accounts` — Account management (bank + manual)
   - `POST /leanfin/accounts/{id}/reauth` — Re-authorize expired bank session
   - `POST /leanfin/accounts/{id}/delete` — Delete account and its data
+  - `POST /leanfin/accounts/{id}/archive` — Archive account (blocked if unallocated transactions)
+  - `POST /leanfin/accounts/{id}/unarchive` — Unarchive account
   - `/leanfin/accounts/manual/new` — Create a manual account (GET form, POST submit)
   - `/leanfin/accounts/manual/{id}/edit` — Edit manual account metadata (GET form, POST submit)
   - `/leanfin/accounts/manual/{id}/value` — Record a new value for a manual account (GET form, POST submit)
@@ -145,6 +147,7 @@ After login, the top-level router serves:
 | account_type       | TEXT    | 'bank' or 'manual', default 'bank'       |
 | account_name       | TEXT    | Nullable, display name for manual accounts |
 | asset_category     | TEXT    | Nullable, e.g. investment, real_estate, vehicle, loan, crypto |
+| archived           | INTEGER | 0 or 1, default 0. Archived accounts are read-only |
 | created_at         | TEXT    | ISO 8601                                  |
 
 ### pending_links
@@ -260,7 +263,7 @@ myapps sync
   │
   ├─ Sign a fresh JWT using the private key
   │
-  ├─ For each bank account (account_type = 'bank', manual accounts are skipped):
+  ├─ For each active bank account (account_type = 'bank', archived = 0; manual and archived accounts are skipped):
   │   ├─ Check session_expires_at
   │   ├─ If expired:
   │   │   ├─ Send ntfy notification
