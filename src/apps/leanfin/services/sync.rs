@@ -86,8 +86,19 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
 }
 
 async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> Result<u64> {
-    // Fetch last 5 days for overlap safety
-    let date_from = (Utc::now() - Duration::days(5)).format("%Y-%m-%d").to_string();
+    // If the account has no transactions yet, do a full initial sync (90 days).
+    // Otherwise, fetch the last 5 days for overlap safety.
+    let has_transactions: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM transactions WHERE account_id = ?)",
+    )
+    .bind(account.id)
+    .fetch_one(pool)
+    .await?;
+
+    let lookback_days = if has_transactions { 5 } else { 90 };
+    let date_from = (Utc::now() - Duration::days(lookback_days))
+        .format("%Y-%m-%d")
+        .to_string();
 
     let transactions =
         enable_banking::get_transactions(config, &account.account_uid, &date_from).await?;
