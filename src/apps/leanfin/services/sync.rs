@@ -6,6 +6,14 @@ use crate::config::Config;
 use crate::models::Account;
 use super::enable_banking;
 
+/// Result of a sync operation, used to report status in the UI.
+pub struct SyncResult {
+    pub total_new: u64,
+    pub accounts_synced: u64,
+    pub accounts_skipped: u64,
+    pub errors: Vec<String>,
+}
+
 pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
     tracing::info!("Starting transaction sync");
 
@@ -156,4 +164,62 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
     }
 
     Ok(inserted)
+}
+
+/// Run sync for a single user's accounts, returning a structured result for UI display.
+pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> SyncResult {
+    tracing::info!("Starting sync for user {user_id}");
+
+    let accounts: Vec<Account> = sqlx::query_as(
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, created_at FROM accounts WHERE user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut result = SyncResult {
+        total_new: 0,
+        accounts_synced: 0,
+        accounts_skipped: 0,
+        errors: Vec::new(),
+    };
+
+    let now = Utc::now().naive_utc();
+
+    for account in &accounts {
+        let days_until_expiry = (account.session_expires_at - now).num_days();
+
+        if days_until_expiry <= 0 {
+            result.accounts_skipped += 1;
+            result.errors.push(format!(
+                "'{}': session expired",
+                account.bank_name,
+            ));
+            continue;
+        }
+
+        match sync_account(pool, config, account).await {
+            Ok(count) => {
+                result.total_new += count;
+                result.accounts_synced += 1;
+            }
+            Err(e) => {
+                result.accounts_skipped += 1;
+                result.errors.push(format!(
+                    "'{}': {e:#}",
+                    account.bank_name,
+                ));
+            }
+        }
+    }
+
+    tracing::info!(
+        "User {user_id} sync complete: {} new transactions, {} accounts synced, {} errors",
+        result.total_new,
+        result.accounts_synced,
+        result.errors.len(),
+    );
+
+    result
 }
