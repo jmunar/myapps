@@ -38,6 +38,7 @@ myapps/
 │   ├── auth_tests.rs        # Platform auth flow tests
 │   ├── leanfin.rs           # LeanFin test binary entry point
 │   └── leanfin/             # LeanFin app tests (mirrors src/apps/leanfin/)
+│       ├── accounts.rs      # Account list + balance display tests
 │       ├── transactions.rs  # Dashboard, transaction list/filter tests
 │       └── labels.rs        # Label CRUD + rules tests
 ├── src/
@@ -120,6 +121,8 @@ After login, the top-level router serves:
 | iban               | TEXT    | Nullable                                  |
 | session_id         | TEXT    | Enable Banking session ID (consent)       |
 | account_uid        | TEXT    | Enable Banking account UID, UNIQUE        |
+| balance_amount     | REAL    | Nullable, latest balance from bank        |
+| balance_currency   | TEXT    | Nullable, ISO 4217 currency of balance    |
 | session_expires_at | TEXT    | ISO 8601, when consent expires            |
 | created_at         | TEXT    | ISO 8601                                  |
 
@@ -233,6 +236,7 @@ myapps sync
   │   │   └─ Send Telegram warning
   │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
   │   ├─ INSERT OR IGNORE (dedup by external_id + account_id)
+  │   ├─ GET /accounts/{uid}/balances → pick best balance type → UPDATE accounts
   │   └─ Run auto-labeling rules on newly inserted transactions
   │
   └─ Log summary: "Synced 42 new transactions across 3 accounts"
