@@ -17,6 +17,9 @@ pub fn routes() -> Router<AppState> {
         .route("/labels/create", post(create_label))
         .route("/labels/{id}/delete", post(delete_label))
         .route("/labels/{id}/edit", post(edit_label))
+        .route("/labels/{id}/rules", get(list_rules))
+        .route("/labels/{id}/rules/create", post(create_rule))
+        .route("/labels/{label_id}/rules/{rule_id}/delete", post(delete_rule))
 }
 
 // ── List labels ──────────────────────────────────────────────
@@ -52,30 +55,42 @@ async fn list_labels(
     let mut items = String::new();
     for l in &labels {
         let color = l.color.as_deref().unwrap_or("#6B6B6B");
+        let id = l.id;
+        let name = &l.name;
+        let rules_url = format!("{base}/leanfin/labels/{id}/rules");
+        let delete_url = format!("{base}/leanfin/labels/{id}/delete");
+        let edit_url = format!("{base}/leanfin/labels/{id}/edit");
+
         items.push_str(&format!(
-            r#"<div class="label-item" id="label-{id}">
-                <div class="label-item-info">
-                    <span class="label-badge" style="--label-color:{color}">{name}</span>
-                    <span class="text-secondary text-sm">{rules}r / {txns}t</span>
-                </div>
-                <div class="label-item-actions">
-                    <button class="btn-icon" onclick="this.closest('.label-item').querySelector('.label-edit-form').toggleAttribute('hidden')">Edit</button>
-                    <form method="POST" action="{base}/leanfin/labels/{id}/delete" style="display:inline"
-                          onsubmit="return confirm('Delete label \'{name}\'?')">
-                        <button class="btn-icon btn-icon-danger">Delete</button>
-                    </form>
-                </div>
-                <form method="POST" action="{base}/leanfin/labels/{id}/edit" class="label-edit-form" hidden>
-                    <input type="text" name="name" value="{name}" required>
-                    <input type="color" name="color" value="{color}">
-                    <button type="submit" class="btn btn-primary btn-sm">Save</button>
-                </form>
-            </div>"#,
-            id = l.id,
-            name = l.name,
+            concat!(
+                r##"<div class="label-item" id="label-{id}">"##,
+                r##"<div class="label-item-info">"##,
+                r##"<span class="label-badge" style="--label-color:{color}">{name}</span>"##,
+                r##"<span class="text-secondary text-sm">{rule_count}r / {txn_count}t</span>"##,
+                r##"</div>"##,
+                r##"<div class="label-item-actions">"##,
+                r##"<button class="btn-icon" hx-get="{rules_url}" hx-target="#rules-{id}" hx-swap="innerHTML">Rules</button>"##,
+                r##"<button class="btn-icon" onclick="this.closest('.label-item').querySelector('.label-edit-form').toggleAttribute('hidden')">Edit</button>"##,
+                r##"<form method="POST" action="{delete_url}" style="display:inline" onsubmit="return confirm('Delete this label?')">"##,
+                r##"<button class="btn-icon btn-icon-danger">Delete</button>"##,
+                r##"</form>"##,
+                r##"</div>"##,
+                r##"<form method="POST" action="{edit_url}" class="label-edit-form" hidden>"##,
+                r##"<input type="text" name="name" value="{name}" required>"##,
+                r##"<input type="color" name="color" value="{color}">"##,
+                r##"<button type="submit" class="btn btn-primary btn-sm">Save</button>"##,
+                r##"</form>"##,
+                r##"<div id="rules-{id}" class="rules-panel-container"></div>"##,
+                r##"</div>"##,
+            ),
+            id = id,
+            name = name,
             color = color,
-            rules = l.rule_count,
-            txns = l.txn_count,
+            rule_count = l.rule_count,
+            txn_count = l.txn_count,
+            rules_url = rules_url,
+            delete_url = delete_url,
+            edit_url = edit_url,
         ));
     }
 
@@ -191,4 +206,199 @@ async fn delete_label(
         .await
         .ok();
     Redirect::to(&format!("{base}/leanfin/labels"))
+}
+
+// ── Label rules (HTMX fragments) ────────────────────────────
+
+#[derive(sqlx::FromRow)]
+struct RuleRow {
+    id: i64,
+    field: String,
+    pattern: String,
+    priority: i64,
+}
+
+fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow]) -> String {
+    let mut rows = String::new();
+    for r in rules {
+        let delete_url = format!(
+            "{base}/leanfin/labels/{label_id}/rules/{}/delete",
+            r.id
+        );
+        rows.push_str(&format!(
+            concat!(
+                r##"<div class="rule-row">"##,
+                r##"<span class="rule-field">{field}</span>"##,
+                r##"<span class="rule-pattern">contains &ldquo;<strong>{pattern}</strong>&rdquo;</span>"##,
+                r##"<span class="rule-priority text-secondary text-sm">p{priority}</span>"##,
+                r##"<form method="POST" action="{delete_url}" "##,
+                r##"hx-post="{delete_url}" "##,
+                r##"hx-target="#rules-{label_id}" "##,
+                r##"hx-swap="innerHTML" "##,
+                r##"hx-confirm="Delete this rule?" "##,
+                r##"style="display:inline">"##,
+                r##"<button class="btn-icon btn-icon-danger btn-sm">Delete</button>"##,
+                r##"</form>"##,
+                r##"</div>"##,
+            ),
+            field = r.field,
+            pattern = r.pattern,
+            priority = r.priority,
+            delete_url = delete_url,
+            label_id = label_id,
+        ));
+    }
+
+    if rows.is_empty() {
+        rows = r##"<p class="text-secondary text-sm" style="padding:0.25rem 0">No rules yet.</p>"##.into();
+    }
+
+    let create_url = format!("{base}/leanfin/labels/{label_id}/rules/create");
+    format!(
+        concat!(
+            r##"<div class="rules-panel">"##,
+            r##"<div class="rules-panel-header">"##,
+            r##"<span class="text-sm" style="font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-secondary)">Auto-labeling rules</span>"##,
+            r##"</div>"##,
+            r##"<div class="rules-list">{rows}</div>"##,
+            r##"<form class="rule-add-form" method="POST" action="{create_url}" "##,
+            r##"hx-post="{create_url}" "##,
+            r##"hx-target="#rules-{label_id}" "##,
+            r##"hx-swap="innerHTML">"##,
+            r##"<select name="field" required>"##,
+            r##"<option value="counterparty">Counterparty</option>"##,
+            r##"<option value="description">Description</option>"##,
+            r##"</select>"##,
+            r##"<input type="text" name="pattern" placeholder="contains..." required style="flex:1">"##,
+            r##"<input type="number" name="priority" value="0" title="Priority (higher wins)" style="width:3.5rem;text-align:center">"##,
+            r##"<button type="submit" class="btn btn-primary btn-sm">Add rule</button>"##,
+            r##"</form>"##,
+            r##"</div>"##,
+        ),
+        rows = rows,
+        create_url = create_url,
+        label_id = label_id,
+    )
+}
+
+async fn list_rules(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(label_id): Path<i64>,
+) -> Html<String> {
+    let base = &state.config.base_path;
+
+    let owns = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM labels WHERE id = ? AND user_id = ?",
+    )
+    .bind(label_id)
+    .bind(user_id.0)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(0);
+
+    if owns == 0 {
+        return Html(String::new());
+    }
+
+    let rules: Vec<RuleRow> = sqlx::query_as(
+        "SELECT id, field, pattern, priority FROM label_rules WHERE label_id = ? ORDER BY priority DESC, id",
+    )
+    .bind(label_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    Html(render_rules_panel(base, label_id, &rules))
+}
+
+// ── Create rule ─────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct CreateRuleForm {
+    field: String,
+    pattern: String,
+    priority: Option<i64>,
+}
+
+async fn create_rule(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(label_id): Path<i64>,
+    Form(form): Form<CreateRuleForm>,
+) -> Html<String> {
+    let base = &state.config.base_path;
+
+    let owns = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM labels WHERE id = ? AND user_id = ?",
+    )
+    .bind(label_id)
+    .bind(user_id.0)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(0);
+
+    if owns == 0 {
+        return Html(String::new());
+    }
+
+    if form.field != "description" && form.field != "counterparty" {
+        return Html(String::new());
+    }
+
+    let priority = form.priority.unwrap_or(0);
+
+    if let Err(e) = sqlx::query(
+        "INSERT INTO label_rules (label_id, field, pattern, priority) VALUES (?, ?, ?, ?)",
+    )
+    .bind(label_id)
+    .bind(&form.field)
+    .bind(&form.pattern)
+    .bind(priority)
+    .execute(&state.pool)
+    .await
+    {
+        tracing::error!("Failed to create rule: {e}");
+    }
+
+    let rules: Vec<RuleRow> = sqlx::query_as(
+        "SELECT id, field, pattern, priority FROM label_rules WHERE label_id = ? ORDER BY priority DESC, id",
+    )
+    .bind(label_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    Html(render_rules_panel(base, label_id, &rules))
+}
+
+// ── Delete rule ─────────────────────────────────────────────
+
+async fn delete_rule(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path((label_id, rule_id)): Path<(i64, i64)>,
+) -> Html<String> {
+    let base = &state.config.base_path;
+
+    sqlx::query(
+        r#"DELETE FROM label_rules
+           WHERE id = ? AND label_id IN (SELECT id FROM labels WHERE id = ? AND user_id = ?)"#,
+    )
+    .bind(rule_id)
+    .bind(label_id)
+    .bind(user_id.0)
+    .execute(&state.pool)
+    .await
+    .ok();
+
+    let rules: Vec<RuleRow> = sqlx::query_as(
+        "SELECT id, field, pattern, priority FROM label_rules WHERE label_id = ? ORDER BY priority DESC, id",
+    )
+    .bind(label_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    Html(render_rules_panel(base, label_id, &rules))
 }
