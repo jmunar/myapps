@@ -105,7 +105,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         .to_string();
 
     let transactions =
-        enable_banking::get_transactions(config, account_uid, &date_from).await?;
+        enable_banking::get_transactions(pool, config, account_uid, &date_from, Some(account.id)).await?;
 
     let mut inserted = 0u64;
 
@@ -148,7 +148,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
 
     // Fetch and store account balance (non-fatal)
     let mut reported_balance: Option<f64> = None;
-    match enable_banking::get_balances(config, account_uid).await {
+    match enable_banking::get_balances(pool, config, account_uid, Some(account.id)).await {
         Ok(balances) => {
             if let Some(best) = enable_banking::pick_best_balance(&balances) {
                 if let Ok(amount) = best.balance_amount.amount.parse::<f64>() {

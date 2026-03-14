@@ -840,7 +840,7 @@ async fn link_submit(
     }
 
     // Default to 90 days consent validity
-    match enable_banking::start_auth(&state.config, &form.bank_name, &country, &csrf_state, 90)
+    match enable_banking::start_auth(&state.pool, &state.config, &form.bank_name, &country, &csrf_state, 90)
         .await
     {
         Ok(auth_resp) => Redirect::to(&auth_resp.url).into_response(),
@@ -893,6 +893,7 @@ async fn reauth(
     }
 
     match enable_banking::start_auth(
+        &state.pool,
         &state.config,
         &account.bank_name,
         &account.bank_country,
@@ -1042,7 +1043,7 @@ async fn callback(
         .await;
 
     // Exchange code for session
-    let session = match enable_banking::create_session(&state.config, &params.code).await {
+    let session = match enable_banking::create_session(&state.pool, &state.config, &params.code).await {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("Failed to create Enable Banking session: {e:#}");
