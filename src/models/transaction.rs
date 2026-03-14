@@ -13,4 +13,5 @@ pub struct Transaction {
     pub counterparty: Option<String>,
     pub balance_after: Option<f64>,
     pub created_at: NaiveDateTime,
+    pub snapshot_id: Option<i64>,
 }

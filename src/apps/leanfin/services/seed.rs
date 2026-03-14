@@ -97,13 +97,10 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         ("2026-01-10", -75.00, "EUR", "Doctor visit copay",            Some("Sanitas")),
     ];
 
-    let mut count = 0;
-    for (i, (date, amount, currency, desc, counterparty)) in txns.iter().enumerate() {
-        count += insert_transaction(
-            pool, acct1, &format!("seed_chk_{i:03}"),
-            date, *amount, currency, desc, *counterparty,
-        ).await?;
-    }
+    // Seed bank account transactions with snapshot linking.
+    // Simulate daily syncs: create a snapshot at each "sync date", then link
+    // transactions whose booking date falls within that sync window.
+    let count = seed_bank_txns_with_snapshots(pool, acct1, txns, "seed_chk", 3245.67).await?;
 
     // Savings account — fewer, larger movements
     let savings_txns: &[(&str, f64, &str, &str, Option<&str>)] = &[
@@ -114,12 +111,7 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         ("2026-01-02", 0.85,    "EUR", "Interest payment",        Some("ING Direct")),
     ];
 
-    for (i, (date, amount, currency, desc, counterparty)) in savings_txns.iter().enumerate() {
-        count += insert_transaction(
-            pool, acct2, &format!("seed_sav_{i:03}"),
-            date, *amount, currency, desc, *counterparty,
-        ).await?;
-    }
+    let count2 = seed_bank_txns_with_snapshots(pool, acct2, savings_txns, "seed_sav", 8500.85).await?;
 
     // Archived BBVA account — old transactions (account closed in late 2025)
     let bbva_txns: &[(&str, f64, &str, &str, Option<&str>)] = &[
@@ -136,23 +128,12 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         ("2025-10-10", 2100.00, "EUR", "Salary October",             Some("Acme Corp")),
     ];
 
-    for (i, (date, amount, currency, desc, counterparty)) in bbva_txns.iter().enumerate() {
-        count += insert_transaction(
-            pool, acct4, &format!("seed_bbva_{i:03}"),
-            date, *amount, currency, desc, *counterparty,
-        ).await?;
-    }
+    let count3 = seed_bank_txns_with_snapshots(pool, acct4, bbva_txns, "seed_bbva", 585.92).await?;
+    let count = count + count2 + count3;
 
     // Seed labels, rules, and allocations
     seed_labels(pool, user_id).await?;
     let alloc_count = seed_allocations(pool, user_id).await?;
-
-    // Seed account balances and daily balance history
-    seed_balances(pool, acct1, 3245.67).await?;
-    seed_balances(pool, acct2, 8500.85).await?;
-
-    // Seed archived account final balance (frozen at time of archiving)
-    seed_balances(pool, acct4, 585.92).await?;
 
     // Seed manual account value history (sparse updates)
     seed_manual_balances(pool, acct3, &[
@@ -215,24 +196,6 @@ async fn insert_manual_account(
     Ok(id)
 }
 
-async fn insert_transaction(
-    pool: &SqlitePool,
-    account_id: i64,
-    external_id: &str,
-    date: &str,
-    amount: f64,
-    currency: &str,
-    description: &str,
-    counterparty: Option<&str>,
-) -> Result<u64> {
-    let result = sqlx::query(
-        "INSERT OR IGNORE INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, counterparty) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    )
-    .bind(account_id).bind(external_id).bind(date)
-    .bind(amount).bind(currency).bind(description).bind(counterparty)
-    .execute(pool).await?;
-    Ok(result.rows_affected())
-}
 
 async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
     let labels = &[
@@ -376,18 +339,98 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     Ok(count)
 }
 
-/// Set account balance and record today's balance snapshot.
-async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64) -> Result<()> {
+/// Seed bank account transactions with realistic snapshot linking.
+/// Simulates daily syncs: creates snapshots at regular intervals, computes
+/// the running balance backwards from the final balance, and links each
+/// transaction to the snapshot of the sync day at or after its booking date.
+async fn seed_bank_txns_with_snapshots(
+    pool: &SqlitePool,
+    account_id: i64,
+    txns: &[(&str, f64, &str, &str, Option<&str>)],
+    prefix: &str,
+    final_balance: f64,
+) -> Result<u64> {
+    use chrono::NaiveDate;
+
+    // Sort transactions by date ascending
+    let mut sorted: Vec<(NaiveDate, usize, f64, &str, &str, &str, Option<&str>)> = txns
+        .iter()
+        .enumerate()
+        .filter_map(|(i, (date, amount, currency, desc, cp))| {
+            NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .ok()
+                .map(|d| (d, i, *amount, *date, *currency, *desc, *cp))
+        })
+        .collect();
+    sorted.sort_by_key(|(d, _, _, _, _, _, _)| *d);
+
+    if sorted.is_empty() {
+        return Ok(0);
+    }
+
+    let first_date = sorted.first().unwrap().0;
+    let today = chrono::Utc::now().naive_utc().date();
+
+    // Create daily snapshot dates from first txn date to today
+    let mut snapshot_dates: Vec<NaiveDate> = Vec::new();
+    let mut d = first_date;
+    while d <= today {
+        snapshot_dates.push(d);
+        d += chrono::Duration::days(1);
+    }
+
+    // Compute balance at each snapshot date by walking backwards from final_balance.
+    // final_balance is the balance "now" (after all transactions).
+    // Subtract transactions from today backwards to get earlier balances.
+    let mut balance_at: std::collections::HashMap<NaiveDate, f64> = std::collections::HashMap::new();
+    let mut bal = final_balance;
+    // Walk from today backwards; at each snapshot date, record the balance,
+    // then subtract any transactions on that date (to get the balance before them).
+    for &sd in snapshot_dates.iter().rev() {
+        balance_at.insert(sd, bal);
+        let day_total: f64 = sorted.iter()
+            .filter(|(txd, _, _, _, _, _, _)| *txd == sd)
+            .map(|(_, _, amt, _, _, _, _)| *amt)
+            .sum();
+        bal -= day_total;
+    }
+
+    // Create snapshots and insert transactions linked to them.
+    // A transaction is linked to the snapshot of its booking date.
+    let mut count = 0u64;
+    for &sd in &snapshot_dates {
+        let date_str = sd.format("%Y-%m-%d").to_string();
+        let timestamp = format!("{date_str}T06:00:00Z"); // simulate 6AM sync
+        let snap_balance = balance_at[&sd];
+
+        let snap_id = super::balance::record_balance_snapshot(
+            pool, account_id, snap_balance, "ITAV", &timestamp,
+        ).await?;
+
+        // Insert transactions for this date, linked to this snapshot
+        for (txd, i, amount, _, currency, desc, cp) in &sorted {
+            if *txd == sd {
+                let eid = format!("{prefix}_{i:03}");
+                let result = sqlx::query(
+                    "INSERT OR IGNORE INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, counterparty, snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                )
+                .bind(account_id).bind(&eid).bind(&date_str)
+                .bind(amount).bind(currency).bind(desc).bind(cp)
+                .bind(snap_id)
+                .execute(pool).await?;
+                count += result.rows_affected();
+            }
+        }
+    }
+
+    // Update account's current balance
     sqlx::query("UPDATE leanfin_accounts SET balance_amount = ?, balance_currency = 'EUR' WHERE id = ?")
-        .bind(current_balance)
+        .bind(final_balance)
         .bind(account_id)
         .execute(pool)
         .await?;
 
-    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    super::balance::record_balance_snapshot(pool, account_id, current_balance, "ITAV", &timestamp).await?;
-
-    Ok(())
+    Ok(count)
 }
 
 /// Seed sparse balance snapshots for a manual account.

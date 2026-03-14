@@ -220,7 +220,7 @@ async fn list(
     let data_sql = format!(
         r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
-               t.created_at
+               t.created_at, t.snapshot_id
         FROM leanfin_transactions t
         JOIN leanfin_accounts a ON t.account_id = a.id{where_clause}
         ORDER BY t.date DESC LIMIT ? OFFSET ?"#
@@ -505,7 +505,7 @@ async fn txn_row(
     let txn: Option<Transaction> = sqlx::query_as(
         r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
-               t.created_at
+               t.created_at, t.snapshot_id
         FROM leanfin_transactions t
         JOIN leanfin_accounts a ON t.account_id = a.id
         WHERE t.id = ? AND a.user_id = ?"#,

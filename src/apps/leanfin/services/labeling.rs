@@ -28,7 +28,7 @@ pub async fn apply_rules(pool: &SqlitePool, user_id: i64) -> Result<u64> {
         r#"
         SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
-               t.created_at
+               t.created_at, t.snapshot_id
         FROM leanfin_transactions t
         JOIN leanfin_accounts a ON t.account_id = a.id
         WHERE a.user_id = ?
