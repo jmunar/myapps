@@ -129,8 +129,11 @@ visibility into spending patterns.
   account dropdown including an "All accounts" aggregated view. Bank account
   balances are computed on the fly from the most recent reported balance and
   transaction sums (no persisted computed rows). Manual accounts use stored
-  reported values with gap-filling. Reconciliation checks compare expected vs
-  reported balances on each sync, alerting via ntfy if discrepancies exceed 0.01.
+  reported values with gap-filling. Balance snapshots store the bank's balance
+  type (ITAV, CLAV, XPCD, ITBD, CLBD) with appropriate timestamps: intraday
+  types use the sync time, closing types use end-of-day. Reconciliation checks
+  compare expected vs reported balances only for ITAV snapshots, alerting via
+  ntfy if discrepancies exceed 0.01.
 - **Manual accounts** — users can create manually tracked accounts for assets not
   accessible through Open Banking (investments, real estate, vehicles, loans,
   crypto). Manual accounts support CRUD operations (create, edit metadata, update
