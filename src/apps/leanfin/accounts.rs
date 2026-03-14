@@ -26,6 +26,7 @@ pub fn routes() -> Router<AppState> {
         .route("/accounts/manual/new", get(manual_new_form).post(manual_new_submit))
         .route("/accounts/manual/{id}/edit", get(manual_edit_form).post(manual_edit_submit))
         .route("/accounts/manual/{id}/value", get(manual_value_form).post(manual_value_submit))
+        .route("/accounts/manual/{id}/import-csv", get(import_csv_form).post(import_csv_submit))
 }
 
 // ── List accounts ─────────────────────────────────────────────────
@@ -187,6 +188,7 @@ async fn list_accounts(
                     </div>
                     <div class="account-actions">
                         <a href="{base}/leanfin/accounts/manual/{id}/value" class="btn-icon">Update value</a>
+                        <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn-icon">Import CSV</a>
                         <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">Edit</a>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
                             <button type="submit" class="btn-icon">Archive</button>
@@ -585,6 +587,197 @@ async fn manual_value_submit(
     tracing::info!("Updated manual account {account_id} value to {}", form.value);
 
     Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
+}
+
+// ── Manual account: import CSV ───────────────────────────────────
+
+async fn import_csv_form(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    let account: Option<ManualValueRow> = sqlx::query_as(
+        "SELECT id, account_name, balance_amount, balance_currency FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
+    )
+    .bind(account_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some(account) = account else {
+        return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
+    };
+
+    let name = account.account_name.as_deref().unwrap_or("Account");
+
+    let body = format!(
+        r#"<div class="page-header">
+            <h1>Import CSV</h1>
+            <p>Bulk-import historical values for {name}</p>
+        </div>
+        <div class="card" style="max-width: 32rem;">
+            <div class="card-body">
+                <form method="POST" action="{base}/leanfin/accounts/manual/{id}/import-csv" enctype="multipart/form-data">
+                    <label for="file">CSV file</label>
+                    <input type="file" id="file" name="file" accept=".csv" required>
+                    <div class="csv-format-help" style="margin:1rem 0; padding:0.75rem; background:var(--surface-secondary, #f5f5f5); border-radius:0.375rem; font-size:0.875rem;">
+                        <strong>Expected format:</strong>
+                        <pre style="margin:0.5rem 0 0;">date,value
+2025-01-01,15000.00
+2025-02-01,15250.50</pre>
+                        <p style="margin:0.5rem 0 0;">Columns: <code>date</code> (YYYY-MM-DD) and <code>value</code> (or <code>balance</code>/<code>amount</code>). Max 1 MB.</p>
+                    </div>
+                    <div style="display:flex; gap:0.75rem; margin-top:1rem;">
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" style="flex:1">Upload &amp; import</button>
+                    </div>
+                </form>
+            </div>
+        </div>"#,
+        id = account.id
+    );
+    Html(render_page("LeanFin — Import CSV", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+}
+
+async fn import_csv_submit(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+    mut multipart: axum::extract::Multipart,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    // Verify ownership
+    let account: Option<ManualValueRow> = sqlx::query_as(
+        "SELECT id, account_name, balance_amount, balance_currency FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
+    )
+    .bind(account_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some(account) = account else {
+        return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
+    };
+
+    let name = account.account_name.as_deref().unwrap_or("Account");
+
+    // Extract file from multipart
+    let mut csv_bytes: Option<Vec<u8>> = None;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if field.name() == Some("file") {
+            match field.bytes().await {
+                Ok(bytes) => csv_bytes = Some(bytes.to_vec()),
+                Err(e) => {
+                    return render_import_error(base, name, account_id, &format!("Failed to read file: {e}")).into_response();
+                }
+            }
+        }
+    }
+
+    let Some(csv_bytes) = csv_bytes else {
+        return render_import_error(base, name, account_id, "No file uploaded").into_response();
+    };
+
+    match super::services::csv_import::import_csv_balances(&state.pool, account_id, &csv_bytes).await {
+        Ok(result) if !result.skipped.is_empty() => {
+            // Validation errors — show all problems
+            let mut error_list = String::new();
+            for s in &result.skipped {
+                error_list.push_str(&format!(
+                    "<li>Line {}: {}</li>",
+                    s.line,
+                    html_escape(&s.reason)
+                ));
+            }
+
+            let body = format!(
+                r#"<div class="page-header">
+                    <h1>Import Failed</h1>
+                    <p>Fix the errors below and re-upload</p>
+                </div>
+                <div class="card" style="max-width: 32rem;">
+                    <div class="card-body">
+                        <div class="alert alert-error">
+                            <strong>{count} error(s) found — no rows were imported.</strong>
+                            <ul style="margin:0.5rem 0 0; padding-left:1.25rem;">{error_list}</ul>
+                        </div>
+                        <div style="display:flex; gap:0.75rem; margin-top:1rem;">
+                            <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn btn-secondary">Try again</a>
+                            <a href="{base}/leanfin/accounts" class="btn btn-secondary">Back to accounts</a>
+                        </div>
+                    </div>
+                </div>"#,
+                count = result.skipped.len(),
+                id = account_id
+            );
+            Html(render_page("LeanFin — Import Failed", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+        }
+        Ok(result) => {
+            // Success
+            let balance_info = match result.latest_balance {
+                Some((date, val)) => format!("Latest value: {val:.2} as of {date}"),
+                None => String::new(),
+            };
+
+            let body = format!(
+                r#"<div class="page-header">
+                    <h1>Import Complete</h1>
+                    <p>Successfully imported values for {name}</p>
+                </div>
+                <div class="card" style="max-width: 32rem;">
+                    <div class="card-body">
+                        <div class="alert alert-success">
+                            <strong>{count} row(s) imported.</strong>
+                            <p style="margin:0.25rem 0 0;">{balance_info}</p>
+                        </div>
+                        <div style="margin-top:1rem;">
+                            <a href="{base}/leanfin/accounts" class="btn btn-secondary">Back to accounts</a>
+                        </div>
+                    </div>
+                </div>"#,
+                count = result.imported
+            );
+
+            tracing::info!("Imported {count} CSV rows for manual account {account_id}", count = result.imported);
+            Html(render_page("LeanFin — Import Complete", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+        }
+        Err(e) => {
+            render_import_error(base, name, account_id, &e.to_string()).into_response()
+        }
+    }
+}
+
+fn render_import_error(base: &str, name: &str, account_id: i64, error: &str) -> Html<String> {
+    let body = format!(
+        r#"<div class="page-header">
+            <h1>Import Failed</h1>
+            <p>Could not import values for {name}</p>
+        </div>
+        <div class="card" style="max-width: 32rem;">
+            <div class="card-body">
+                <div class="alert alert-error">{error}</div>
+                <div style="display:flex; gap:0.75rem; margin-top:1rem;">
+                    <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn btn-secondary">Try again</a>
+                    <a href="{base}/leanfin/accounts" class="btn btn-secondary">Back to accounts</a>
+                </div>
+            </div>
+        </div>"#,
+        id = account_id,
+        error = html_escape(error)
+    );
+    Html(render_page("LeanFin — Import Failed", &leanfin_nav(base, "accounts"), &body, base))
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 // ── Link: choose bank ─────────────────────────────────────────────
