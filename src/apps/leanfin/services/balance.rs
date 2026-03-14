@@ -6,43 +6,83 @@ use std::collections::HashMap;
 use crate::config::Config;
 use crate::models::Account;
 
-/// Upsert today's balance as a `reported` row.
-pub async fn record_daily_balance(
+/// Determine the timestamp to store for a given balance type.
+/// - ITAV, XPCD, ITBD → now (intraday snapshots)
+/// - CLAV, CLBD → close of business ({reference_date}T23:59:59Z or today)
+pub fn timestamp_for_balance_type(balance_type: &str, reference_date: Option<&str>) -> String {
+    match balance_type {
+        "CLAV" | "CLBD" => {
+            let date = reference_date.unwrap_or_else(|| {
+                // Leak is fine for a short-lived string; avoids lifetime issues.
+                // In practice reference_date is almost always Some.
+                Box::leak(Utc::now().format("%Y-%m-%d").to_string().into_boxed_str())
+            });
+            format!("{date}T23:59:59Z")
+        }
+        _ => Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+    }
+}
+
+/// Extract the date portion (YYYY-MM-DD) from a full ISO 8601 timestamp.
+pub fn date_from_timestamp(ts: &str) -> &str {
+    if ts.len() >= 10 { &ts[..10] } else { ts }
+}
+
+/// Insert (or replace same-day duplicate) a balance snapshot.
+pub async fn record_balance_snapshot(
     pool: &SqlitePool,
     account_id: i64,
     balance: f64,
+    balance_type: &str,
+    timestamp: &str,
 ) -> Result<()> {
-    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let date = date_from_timestamp(timestamp);
 
+    // Remove existing snapshot for same account + type + day, then insert.
     sqlx::query(
-        r#"INSERT INTO daily_balances (account_id, date, balance, source)
-           VALUES (?, ?, ?, 'reported')
-           ON CONFLICT(account_id, date) DO UPDATE SET balance = excluded.balance, source = 'reported'"#,
+        "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = ? AND date = ?",
     )
     .bind(account_id)
-    .bind(&today)
+    .bind(balance_type)
+    .bind(date)
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        r#"INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+           VALUES (?, ?, ?, ?, ?)"#,
+    )
+    .bind(account_id)
+    .bind(timestamp)
+    .bind(date)
     .bind(balance)
+    .bind(balance_type)
     .execute(pool)
     .await?;
 
     Ok(())
 }
 
-/// Compare previous reported balance + sum of new transactions vs the new
-/// reported balance. If the discrepancy exceeds 0.01, send an ntfy alert.
-/// Returns a warning string if there's a mismatch, or None.
+/// Compare previous ITAV balance + sum of new transactions vs the new ITAV
+/// balance. If the discrepancy exceeds 0.01, send an ntfy alert.
+/// Only runs when both old and new balances are ITAV.
 pub async fn check_reconciliation(
     pool: &SqlitePool,
     config: &Config,
     account: &Account,
     new_balance: f64,
+    balance_type: &str,
 ) -> Result<Option<String>> {
-    // Get the most recent reported balance before today
+    // Only reconcile ITAV balances
+    if balance_type != "ITAV" {
+        return Ok(None);
+    }
+
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
     let prev: Option<PrevBalance> = sqlx::query_as(
-        r#"SELECT date, balance FROM daily_balances
-           WHERE account_id = ? AND source = 'reported' AND date < ?
+        r#"SELECT date, balance FROM balance_snapshots
+           WHERE account_id = ? AND balance_type = 'ITAV' AND date < ?
            ORDER BY date DESC LIMIT 1"#,
     )
     .bind(account.id)
@@ -51,7 +91,6 @@ pub async fn check_reconciliation(
     .await?;
 
     let Some(prev) = prev else {
-        // No previous reported balance — nothing to reconcile against
         return Ok(None);
     };
 
@@ -99,7 +138,6 @@ pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint
         .date();
     let today = Utc::now().naive_utc().date();
 
-    // Build a map of date -> BalancePoint
     let mut point_map: HashMap<NaiveDate, &BalancePoint> = HashMap::new();
     for p in series {
         if let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") {
@@ -107,7 +145,6 @@ pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint
         }
     }
 
-    // Determine the range: from the later of (cutoff, first data point) to today
     let first_date = series.iter()
         .filter_map(|p| NaiveDate::parse_from_str(&p.date, "%Y-%m-%d").ok())
         .min()
@@ -134,16 +171,13 @@ pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint
             result.push(BalancePoint {
                 date: date_str,
                 balance: point.balance,
-                source: point.source.clone(),
             });
         } else if let Some(bal) = last_balance {
             result.push(BalancePoint {
                 date: date_str,
                 balance: bal,
-                source: "carried".to_string(),
             });
         }
-        // If no last_balance yet (before first data point), skip this date
         date += Duration::days(1);
     }
 
@@ -164,7 +198,6 @@ pub async fn get_balance_series(
         .to_string();
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
-    // Check account type
     let account_type: String = sqlx::query_scalar(
         "SELECT account_type FROM accounts WHERE id = ?",
     )
@@ -174,7 +207,7 @@ pub async fn get_balance_series(
 
     if account_type == "manual" {
         let rows: Vec<BalancePoint> = sqlx::query_as(
-            r#"SELECT date, balance, source FROM daily_balances
+            r#"SELECT date, balance FROM balance_snapshots
                WHERE account_id = ? AND date >= ?
                ORDER BY date ASC"#,
         )
@@ -187,8 +220,8 @@ pub async fn get_balance_series(
 
     // Bank account: find the most recent reported balance at or before today
     let anchor: Option<BalancePoint> = sqlx::query_as(
-        r#"SELECT date, balance, source FROM daily_balances
-           WHERE account_id = ? AND source = 'reported' AND date <= ?
+        r#"SELECT date, balance FROM balance_snapshots
+           WHERE account_id = ? AND date <= ?
            ORDER BY date DESC LIMIT 1"#,
     )
     .bind(account_id)
@@ -230,7 +263,6 @@ pub async fn get_balance_series(
         backward_points.push(BalancePoint {
             date: date_str.clone(),
             balance,
-            source: "computed".to_string(),
         });
         if let Some(&day_total) = sum_map.get(&date_str) {
             balance -= day_total;
@@ -252,7 +284,6 @@ pub async fn get_balance_series(
             forward_points.push(BalancePoint {
                 date: date_str,
                 balance,
-                source: "computed".to_string(),
             });
             date += Duration::days(1);
         }
@@ -263,7 +294,6 @@ pub async fn get_balance_series(
 }
 
 /// Query aggregated daily balance series across all accounts for a user.
-/// Fetches per-account series then aggregates by date.
 pub async fn get_aggregated_balance_series(
     pool: &SqlitePool,
     user_id: i64,
@@ -287,11 +317,7 @@ pub async fn get_aggregated_balance_series(
 
     let mut result: Vec<BalancePoint> = date_totals
         .into_iter()
-        .map(|(date, balance)| BalancePoint {
-            date,
-            balance,
-            source: "aggregated".to_string(),
-        })
+        .map(|(date, balance)| BalancePoint { date, balance })
         .collect();
 
     result.sort_by(|a, b| a.date.cmp(&b.date));
@@ -315,5 +341,4 @@ struct PrevBalance {
 pub struct BalancePoint {
     pub date: String,
     pub balance: f64,
-    pub source: String,
 }

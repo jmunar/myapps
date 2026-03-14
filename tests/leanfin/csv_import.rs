@@ -73,15 +73,15 @@ async fn successful_import_updates_balances() {
     assert!(body.contains("3 row(s) imported"), "missing import count: {body}");
     assert!(body.contains("Import Complete"), "missing success page");
 
-    // Verify daily_balances rows
+    // Verify balance_snapshots rows
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM daily_balances WHERE account_id = ? AND date IN ('2027-06-01','2027-07-01','2027-08-01')",
+        "SELECT COUNT(*) FROM balance_snapshots WHERE account_id = ? AND date IN ('2027-06-01','2027-07-01','2027-08-01')",
     )
     .bind(id)
     .fetch_one(&app.pool)
     .await
     .unwrap();
-    assert_eq!(count, 3, "expected 3 daily_balances rows");
+    assert_eq!(count, 3, "expected 3 balance_snapshots rows");
 
     // Verify account balance updated to latest
     let (balance,): (f64,) =
@@ -129,7 +129,7 @@ async fn invalid_rows_reject_entire_import() {
 
     // No rows should have been written
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM daily_balances WHERE account_id = ? AND date = '2025-06-01'",
+        "SELECT COUNT(*) FROM balance_snapshots WHERE account_id = ? AND date = '2025-06-01'",
     )
     .bind(id)
     .fetch_one(&app.pool)
@@ -238,7 +238,7 @@ async fn duplicate_import_is_idempotent() {
 
     // Should still only have 2 rows (not 4)
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM daily_balances WHERE account_id = ? AND date IN ('2025-06-01','2025-07-01')",
+        "SELECT COUNT(*) FROM balance_snapshots WHERE account_id = ? AND date IN ('2025-06-01','2025-07-01')",
     )
     .bind(id)
     .fetch_one(&app.pool)

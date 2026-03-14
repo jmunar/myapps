@@ -103,8 +103,8 @@ async fn data_endpoint_returns_empty_state_when_no_balance_data() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
-    // Delete all daily balances
-    sqlx::query("DELETE FROM daily_balances")
+    // Delete all balance snapshots
+    sqlx::query("DELETE FROM balance_snapshots")
         .execute(&app.pool)
         .await
         .unwrap();

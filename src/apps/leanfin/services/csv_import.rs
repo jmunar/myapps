@@ -116,12 +116,21 @@ pub async fn import_csv_balances(
     let mut tx = pool.begin().await?;
 
     for (date, value) in &rows {
+        let timestamp = format!("{date}T00:00:00Z");
+        // Delete existing snapshot for same day, then insert
         sqlx::query(
-            r#"INSERT INTO daily_balances (account_id, date, balance, source)
-               VALUES (?, ?, ?, 'reported')
-               ON CONFLICT(account_id, date) DO UPDATE SET balance = excluded.balance, source = 'reported'"#,
+            "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = 'MANUAL' AND date = ?",
         )
         .bind(account_id)
+        .bind(date)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            r#"INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+               VALUES (?, ?, ?, ?, 'MANUAL')"#,
+        )
+        .bind(account_id)
+        .bind(&timestamp)
         .bind(date)
         .bind(value)
         .execute(&mut *tx)
@@ -133,7 +142,7 @@ pub async fn import_csv_balances(
     if let Some((date, value)) = latest {
         // Only update account balance if this is the latest date overall
         let has_newer: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM daily_balances WHERE account_id = ? AND date > ?)",
+            "SELECT EXISTS(SELECT 1 FROM balance_snapshots WHERE account_id = ? AND date > ?)",
         )
         .bind(account_id)
         .bind(date)

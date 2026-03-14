@@ -376,7 +376,7 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     Ok(count)
 }
 
-/// Set account balance and record today's reported balance.
+/// Set account balance and record today's balance snapshot.
 async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64) -> Result<()> {
     sqlx::query("UPDATE accounts SET balance_amount = ?, balance_currency = 'EUR' WHERE id = ?")
         .bind(current_balance)
@@ -384,20 +384,23 @@ async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64)
         .execute(pool)
         .await?;
 
-    super::balance::record_daily_balance(pool, account_id, current_balance).await?;
+    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    super::balance::record_balance_snapshot(pool, account_id, current_balance, "ITAV", &timestamp).await?;
 
     Ok(())
 }
 
-/// Seed sparse daily balance entries for a manual account.
+/// Seed sparse balance snapshots for a manual account.
 async fn seed_manual_balances(pool: &SqlitePool, account_id: i64, values: &[(&str, f64)]) -> Result<()> {
     let mut last_value = 0.0;
     for (date, value) in values {
+        let timestamp = format!("{date}T00:00:00Z");
         sqlx::query(
-            r#"INSERT OR IGNORE INTO daily_balances (account_id, date, balance, source)
-               VALUES (?, ?, ?, 'reported')"#,
+            r#"INSERT OR IGNORE INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+               VALUES (?, ?, ?, ?, 'MANUAL')"#,
         )
         .bind(account_id)
+        .bind(&timestamp)
         .bind(date)
         .bind(value)
         .execute(pool)

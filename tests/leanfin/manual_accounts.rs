@@ -190,7 +190,7 @@ async fn value_update_form_renders() {
 }
 
 #[tokio::test]
-async fn value_update_records_daily_balance() {
+async fn value_update_records_balance_snapshot() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
@@ -224,9 +224,9 @@ async fn value_update_records_daily_balance() {
         "balance_amount not updated: {balance}"
     );
 
-    // Verify daily_balances entry created
+    // Verify balance_snapshots entry created
     let (db_balance,): (f64,) = sqlx::query_as(
-        "SELECT balance FROM daily_balances WHERE account_id = ? AND date = '2026-03-13'",
+        "SELECT balance FROM balance_snapshots WHERE account_id = ? AND date = '2026-03-13' AND balance_type = 'MANUAL'",
     )
     .bind(id)
     .fetch_one(&app.pool)
@@ -234,7 +234,7 @@ async fn value_update_records_daily_balance() {
     .unwrap();
     assert!(
         (db_balance - 17500.0).abs() < 0.01,
-        "daily_balance not recorded: {db_balance}"
+        "balance snapshot not recorded: {db_balance}"
     );
 }
 

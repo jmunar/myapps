@@ -147,13 +147,13 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
     }
 
     // Fetch and store account balance (non-fatal)
-    let mut reported_balance: Option<f64> = None;
+    let mut best_balance: Option<(f64, String)> = None; // (amount, balance_type)
     match enable_banking::get_balances(pool, config, account_uid, Some(account.id)).await {
         Ok(balances) => {
             if let Some(best) = enable_banking::pick_best_balance(&balances) {
                 if let Ok(amount) = best.balance_amount.amount.parse::<f64>() {
                     let currency = &best.balance_amount.currency;
-                    reported_balance = Some(amount);
+                    best_balance = Some((amount, best.balance_type.clone()));
                     if let Err(e) = sqlx::query(
                         "UPDATE accounts SET balance_amount = ?, balance_currency = ? WHERE id = ?",
                     )
@@ -165,6 +165,17 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
                     {
                         tracing::warn!("Failed to update balance for '{}': {e:#}", account.bank_name);
                     }
+
+                    // Record balance snapshot
+                    let timestamp = super::balance::timestamp_for_balance_type(
+                        &best.balance_type,
+                        best.reference_date.as_deref(),
+                    );
+                    if let Err(e) = super::balance::record_balance_snapshot(
+                        pool, account.id, amount, &best.balance_type, &timestamp,
+                    ).await {
+                        tracing::warn!("Failed to record balance snapshot for '{}': {e:#}", account.bank_name);
+                    }
                 }
             }
         }
@@ -173,16 +184,12 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         }
     }
 
-    // Daily balance tracking and reconciliation
+    // Reconciliation (ITAV only)
     let mut reconciliation_warning: Option<String> = None;
-    if let Some(balance) = reported_balance {
-        match super::balance::check_reconciliation(pool, config, account, balance).await {
+    if let Some((balance, ref balance_type)) = best_balance {
+        match super::balance::check_reconciliation(pool, config, account, balance, balance_type).await {
             Ok(warning) => reconciliation_warning = warning,
             Err(e) => tracing::warn!("Reconciliation check failed for '{}': {e:#}", account.bank_name),
-        }
-
-        if let Err(e) = super::balance::record_daily_balance(pool, account.id, balance).await {
-            tracing::warn!("Failed to record daily balance for '{}': {e:#}", account.bank_name);
         }
     }
 
