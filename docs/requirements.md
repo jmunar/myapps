@@ -138,7 +138,9 @@ visibility into spending patterns.
   carry-forward gap filling for sparse updates. The accounts page is split into
   "Bank Accounts" and "Manual Accounts" sections. Balance evolution charts and
   the "All accounts" aggregated view include manual accounts seamlessly. The sync
-  process filters to bank accounts only, skipping manual accounts.
+  process filters to bank accounts only, skipping manual accounts. Users can
+  bulk-import historical balance data from CSV files (two-column format:
+  date + value) with all-or-nothing validation and idempotent upserts.
 - **Expense visualization** — a dedicated Expenses page with multi-label
   selection (toggle pills), a Frappe Charts time series showing daily totals per
   selected label (both credit and debit transactions), and a transaction list

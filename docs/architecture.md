@@ -48,6 +48,7 @@ myapps/
 │   ├── leanfin.rs           # LeanFin test binary entry point
 │   └── leanfin/             # LeanFin app tests (mirrors src/apps/leanfin/)
 │       ├── accounts.rs      # Account list + balance display tests
+│       ├── csv_import.rs     # CSV import for manual accounts tests
 │       ├── manual_accounts.rs # Manual account CRUD + value update tests
 │       ├── transactions.rs  # Dashboard, transaction list/filter tests
 │       ├── labels.rs        # Label CRUD + rules tests
@@ -81,6 +82,7 @@ myapps/
 │               ├── enable_banking.rs  # Enable Banking API client + JWT
 │               ├── sync.rs            # Transaction sync orchestration
 │               ├── balance.rs         # Daily balance tracking + reconciliation
+│               ├── csv_import.rs      # CSV bulk import for manual account balances
 │               ├── expenses.rs        # Expense aggregation by label + date
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
@@ -110,6 +112,7 @@ After login, the top-level router serves:
   - `/leanfin/accounts/manual/new` — Create a manual account (GET form, POST submit)
   - `/leanfin/accounts/manual/{id}/edit` — Edit manual account metadata (GET form, POST submit)
   - `/leanfin/accounts/manual/{id}/value` — Record a new value for a manual account (GET form, POST submit)
+  - `/leanfin/accounts/manual/{id}/import-csv` — Bulk-import balance history from CSV (GET form, POST multipart upload)
   - `POST /leanfin/sync` — Trigger transaction sync for the user (HTMX partial)
   - `/leanfin/balance-evolution` — Balance evolution page (Frappe Charts line chart)
   - `/leanfin/balance-evolution/data?account_id=&days=90` — Balance chart data (HTMX)
