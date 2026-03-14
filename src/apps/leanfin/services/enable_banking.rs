@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
+use std::time::Instant;
 
 use crate::config::Config;
 
@@ -205,10 +207,41 @@ pub fn pick_best_balance(balances: &[BankBalance]) -> Option<&BankBalance> {
     balances.first()
 }
 
+// ── Payload logging ──────────────────────────────────────────────
+
+async fn save_payload(
+    pool: &SqlitePool,
+    account_id: Option<i64>,
+    method: &str,
+    endpoint: &str,
+    request_body: Option<&str>,
+    response_body: &str,
+    status_code: u16,
+    duration_ms: u64,
+) {
+    if let Err(e) = sqlx::query(
+        r#"INSERT INTO api_payloads (account_id, method, endpoint, request_body, response_body, status_code, duration_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+    )
+    .bind(account_id)
+    .bind(method)
+    .bind(endpoint)
+    .bind(request_body)
+    .bind(response_body)
+    .bind(status_code as i32)
+    .bind(duration_ms as i64)
+    .execute(pool)
+    .await
+    {
+        tracing::warn!("Failed to save API payload: {e:#}");
+    }
+}
+
 // ── API calls ─────────────────────────────────────────────────────
 
 /// Start bank authorization. Returns the URL to redirect the user to.
 pub async fn start_auth(
+    pool: &SqlitePool,
     config: &Config,
     bank_name: &str,
     country: &str,
@@ -235,6 +268,9 @@ pub async fn start_auth(
         psu_type: "personal".to_string(),
     };
 
+    let request_json = serde_json::to_string(&body).unwrap_or_default();
+    let start = Instant::now();
+
     let resp = client(config)?
         .post(format!("{API_BASE}/auth"))
         .json(&body)
@@ -242,44 +278,54 @@ pub async fn start_auth(
         .await
         .context("failed to send auth request")?;
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("Enable Banking auth failed ({status}): {body}");
+    let status_code = resp.status().as_u16();
+    let text = resp.text().await.context("failed to read auth response")?;
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    save_payload(pool, None, "POST", "/auth", Some(&request_json), &text, status_code, duration_ms).await;
+
+    if status_code >= 400 {
+        anyhow::bail!("Enable Banking auth failed ({status_code}): {text}");
     }
 
-    resp.json()
-        .await
-        .context("failed to parse auth response")
+    serde_json::from_str(&text).context("failed to parse auth response")
 }
 
 /// Exchange authorization code for a session with account list.
-pub async fn create_session(config: &Config, code: &str) -> Result<SessionResponse> {
+pub async fn create_session(pool: &SqlitePool, config: &Config, code: &str) -> Result<SessionResponse> {
+    let request_body = SessionRequest {
+        code: code.to_string(),
+    };
+    let request_json = serde_json::to_string(&request_body).unwrap_or_default();
+    let start = Instant::now();
+
     let resp = client(config)?
         .post(format!("{API_BASE}/sessions"))
-        .json(&SessionRequest {
-            code: code.to_string(),
-        })
+        .json(&request_body)
         .send()
         .await
         .context("failed to send session request")?;
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("Enable Banking session failed ({status}): {body}");
+    let status_code = resp.status().as_u16();
+    let text = resp.text().await.context("failed to read session response")?;
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    save_payload(pool, None, "POST", "/sessions", Some(&request_json), &text, status_code, duration_ms).await;
+
+    if status_code >= 400 {
+        anyhow::bail!("Enable Banking session failed ({status_code}): {text}");
     }
 
-    resp.json()
-        .await
-        .context("failed to parse session response")
+    serde_json::from_str(&text).context("failed to parse session response")
 }
 
 /// Fetch transactions for an account. Handles pagination automatically.
 pub async fn get_transactions(
+    pool: &SqlitePool,
     config: &Config,
     account_uid: &str,
     date_from: &str,
+    account_id: Option<i64>,
 ) -> Result<Vec<BankTransaction>> {
     let http = client(config)?;
     let mut all = Vec::new();
@@ -296,18 +342,25 @@ pub async fn get_transactions(
             None => http.get(&url).query(&[("date_from", date_from)]),
         };
 
+        let start = Instant::now();
+
         let raw = req
             .send()
             .await
             .context("failed to send transactions request")?;
 
-        if !raw.status().is_success() {
-            let status = raw.status();
-            let body = raw.text().await.unwrap_or_default();
-            anyhow::bail!("Enable Banking transactions failed ({status}): {body}");
+        let status_code = raw.status().as_u16();
+        let text = raw.text().await.context("failed to read transactions response")?;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        save_payload(pool, account_id, "GET", "/accounts/{uid}/transactions", None, &text, status_code, duration_ms).await;
+
+        if status_code >= 400 {
+            anyhow::bail!("Enable Banking transactions failed ({status_code}): {text}");
         }
 
-        let resp: TransactionsResponse = raw.json().await?;
+        let resp: TransactionsResponse = serde_json::from_str(&text)
+            .context("failed to parse transactions response")?;
 
         tracing::info!(
             "Transactions page {page}: {} items (total so far: {})",
@@ -327,19 +380,25 @@ pub async fn get_transactions(
 }
 
 /// Fetch balances for an account.
-pub async fn get_balances(config: &Config, account_uid: &str) -> Result<Vec<BankBalance>> {
+pub async fn get_balances(pool: &SqlitePool, config: &Config, account_uid: &str, account_id: Option<i64>) -> Result<Vec<BankBalance>> {
+    let start = Instant::now();
+
     let resp = client(config)?
         .get(format!("{API_BASE}/accounts/{account_uid}/balances"))
         .send()
         .await
         .context("failed to send balances request")?;
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("Enable Banking balances failed ({status}): {body}");
+    let status_code = resp.status().as_u16();
+    let text = resp.text().await.context("failed to read balances response")?;
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    save_payload(pool, account_id, "GET", "/accounts/{uid}/balances", None, &text, status_code, duration_ms).await;
+
+    if status_code >= 400 {
+        anyhow::bail!("Enable Banking balances failed ({status_code}): {text}");
     }
 
-    let data: BalancesResponse = resp.json().await.context("failed to parse balances response")?;
+    let data: BalancesResponse = serde_json::from_str(&text).context("failed to parse balances response")?;
     Ok(data.balances)
 }

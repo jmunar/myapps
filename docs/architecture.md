@@ -209,6 +209,23 @@ After login, the top-level router serves:
 | created_at | TEXT    | ISO 8601                                 |
 | UNIQUE(account_id, date) | | One row per account per day    |
 
+### api_payloads
+
+| Column        | Type     | Notes                                          |
+|---------------|----------|------------------------------------------------|
+| id            | INTEGER  | PK, autoincrement                              |
+| account_id    | INTEGER  | Nullable, FK → accounts (ON DELETE SET NULL)   |
+| provider      | TEXT     | NOT NULL, default 'enable_banking'             |
+| method        | TEXT     | NOT NULL, 'GET' or 'POST'                      |
+| endpoint      | TEXT     | NOT NULL, e.g. '/accounts/{uid}/transactions'  |
+| request_body  | TEXT     | Nullable, JSON string (NULL for GET requests)  |
+| response_body | TEXT     | Nullable, raw JSON response                    |
+| status_code   | INTEGER  | NOT NULL, HTTP status code                     |
+| duration_ms   | INTEGER  | NOT NULL, round-trip time in milliseconds      |
+| created_at    | DATETIME | NOT NULL, default now                          |
+
+Indexes: `account_id`, `created_at`.
+
 ### transaction_labels
 
 | Column         | Type    | Notes                      |
@@ -271,9 +288,11 @@ myapps sync
   │   ├─ If expiring within 7 days:
   │   │   └─ Send ntfy warning
   │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
+  │   ├─ Save raw request/response payload to api_payloads table
   │   ├─ Apply credit_debit_indicator: DBIT → negative, CRDT → positive
   │   ├─ INSERT OR IGNORE (dedup by external_id + account_id)
   │   ├─ GET /accounts/{uid}/balances → pick best balance type → UPDATE accounts
+  │   ├─ Save raw request/response payload to api_payloads table
   │   ├─ Reconciliation check (expected vs reported balance, ntfy alert if off)
   │   ├─ Upsert today's daily_balance as 'reported'
   │   └─ Run auto-labeling rules on newly inserted transactions
