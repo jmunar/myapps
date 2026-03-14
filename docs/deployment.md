@@ -34,6 +34,7 @@ This avoids the complexity of cross-compilation toolchains (linkers, Docker,
   ```bash
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
+- whisper.cpp + ffmpeg (for VoiceToText) — see [whisper.cpp section](#whispercpp-voicetotext) below
 
 #### Passwordless sudo (recommended)
 
@@ -164,6 +165,8 @@ ENABLE_BANKING_APP_ID=              # UUID from Enable Banking control panel
 ENABLE_BANKING_KEY_PATH=/opt/myapps/private.pem   # RSA private key
 NTFY_URL=http://127.0.0.1:8090              # ntfy server (local)
 NTFY_TOPIC=                                 # ntfy topic name
+WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli   # whisper.cpp binary
+WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 BIND_ADDR=127.0.0.1:3000
 ```
 
@@ -271,6 +274,81 @@ MyApps connects to ntfy locally — no need to go through nginx.
 Install the ntfy app ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy),
 [iOS](https://apps.apple.com/app/ntfy/id1625396347)), add your server
 `https://ntfy.munarriz.mooo.com`, and subscribe to the `myapps` topic.
+
+## whisper.cpp (VoiceToText)
+
+whisper.cpp is the speech-to-text engine used by the VoiceToText app. It runs
+entirely on CPU using ARM NEON SIMD — no GPU or NPU required.
+
+### Install build dependencies
+
+```bash
+sudo apt install -y build-essential cmake ffmpeg
+```
+
+ffmpeg is needed to convert uploaded audio to the 16 kHz mono WAV format that
+whisper.cpp expects.
+
+### Build whisper.cpp
+
+```bash
+cd /opt
+sudo git clone https://github.com/ggml-org/whisper.cpp.git
+cd whisper.cpp
+sudo cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+sudo cmake --build build -j4
+```
+
+The binary will be at `/opt/whisper.cpp/build/bin/whisper-cli`.
+
+### Download models
+
+```bash
+cd /opt/whisper.cpp
+
+# Base model (recommended — good accuracy, ~1-2 min per minute of audio)
+sudo ./models/download-ggml-model.sh base
+
+# Tiny model (optional — faster, less accurate, ~30-60s per minute of audio)
+sudo ./models/download-ggml-model.sh tiny
+```
+
+Model sizes on disk: tiny ~75 MB, base ~142 MB. At runtime they use roughly
+2x their disk size in RAM.
+
+### Configure MyApps
+
+Add to `/opt/myapps/.env`:
+
+```bash
+WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli
+WHISPER_MODELS_DIR=/opt/whisper.cpp/models
+```
+
+Both have defaults (`whisper-cli` and `models` respectively), so if you symlink
+the binary into `$PATH` and keep models in a `models/` directory relative to the
+working dir, you can skip these.
+
+### Verify
+
+```bash
+# Test transcription with a sample file
+/opt/whisper.cpp/build/bin/whisper-cli \
+    -m /opt/whisper.cpp/models/ggml-base.bin \
+    -f /opt/whisper.cpp/samples/jfk.wav \
+    --no-timestamps
+```
+
+### Performance on Odroid N2
+
+| Model | RAM at runtime | ~Time per 1 min audio | Notes |
+|-------|---------------|----------------------|-------|
+| tiny  | ~200 MB       | 30–60s               | Near real-time |
+| base  | ~400 MB       | 60–120s              | Recommended for async use |
+| small | ~1.2 GB       | 3–5 min              | Feasible but slow |
+
+The background worker processes one job at a time to avoid memory pressure.
+With 4 GB RAM, tiny and base fit comfortably alongside the Axum server.
 
 ## nginx + HTTPS
 
