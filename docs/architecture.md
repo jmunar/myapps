@@ -102,7 +102,15 @@ myapps/
 ├── static/                  # CSS, JS (htmx, frappe-charts, d3), PWA assets (icon, sw.js, manifest)
 ├── .claude/agents/          # Claude Code agent prompts
 │   └── frontend-tester.md   # Agent for generating integration tests
+├── .github/
+│   ├── workflows/
+│   │   ├── ci.yml           # PR/push: fmt check + clippy + tests
+│   │   └── audit.yml        # Cargo security audit (weekly + on lock changes)
+│   └── dependabot.yml       # Weekly Cargo + Actions dependency updates
 ├── Cargo.toml
+├── Makefile                 # Dev shortcuts: fmt, lint, test, check, audit, build, run
+├── rustfmt.toml             # Formatting config (edition 2024)
+├── .editorconfig            # Editor-agnostic whitespace/encoding
 ├── .env.example             # Example environment variables
 ├── CLAUDE.md
 └── deploy.sh                # Rsync + build on server + restart script

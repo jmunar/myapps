@@ -92,6 +92,16 @@ visibility into spending patterns.
   private key (`.pem`) is stored on the server, not in the repository.
 - No secrets are committed to the repository.
 
+### CI/CD
+
+- GitHub Actions enforces formatting (rustfmt), linting (clippy with
+  warnings-as-errors), and tests on every push and pull request.
+- A scheduled security audit (`cargo audit`) runs weekly and on Cargo.toml/lock
+  changes.
+- Dependabot opens weekly PRs for Cargo dependency updates and GitHub Actions
+  version bumps.
+- A Makefile provides local shortcuts that mirror CI checks (`make check`).
+
 ### Deployment
 
 - Development happens on a separate machine (not the server).

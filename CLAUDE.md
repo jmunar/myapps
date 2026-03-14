@@ -24,14 +24,30 @@ cargo run -- seed --app leanfin --reset  # Wipe and re-seed demo data
 cargo run -- seed --app mindflow   # Seed MindFlow demo data
 cargo run -- seed --app mindflow --reset  # Wipe and re-seed demo data
 
-# Tests
-cargo test
+# Makefile shortcuts
+make check                          # fmt-check + clippy + test (same as CI)
+make fmt                            # Auto-format code
+make lint                           # Run clippy with -D warnings
+make test                           # Run all tests
+make audit                          # Security audit (cargo audit)
+make build                          # Release build
+make run                            # Start dev server
 
 # Deploy to server (rsyncs source, builds on Odroid, installs + restarts)
 export MYAPPS_SERVER="user@odroid.local"
 ./deploy.sh setup               # First time only
 ./deploy.sh deploy              # Build + install + restart
 ```
+
+## CI/CD
+
+- **GitHub Actions CI** (`.github/workflows/ci.yml`) runs on every push to
+  `main` and on PRs: format check, clippy (warnings-as-errors), and tests.
+- **Security audit** (`.github/workflows/audit.yml`) runs on Cargo.toml/lock
+  changes and weekly via `cargo audit`.
+- **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for Cargo
+  dependency updates and GitHub Actions version bumps.
+- `make check` runs the same checks locally before pushing.
 
 ## Project Conventions
 
