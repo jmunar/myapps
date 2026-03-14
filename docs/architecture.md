@@ -60,6 +60,7 @@ myapps/
 │   ├── routes/              # Top-level router, auth routes, app launcher
 │   │   ├── mod.rs           # Router setup, AppState, build_router(), nests sub-apps
 │   │   ├── auth.rs          # Login/logout
+│   │   ├── pwa.rs           # PWA manifest + service worker endpoints
 │   │   └── launcher.rs      # App launcher page (root /)
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # ntfy push notifications
@@ -97,7 +98,7 @@ myapps/
 │           └── services/
 │               ├── transcriber.rs  # ffmpeg conversion + whisper-cli subprocess
 │               └── worker.rs       # Background job worker (polls pending jobs)
-├── static/                  # CSS, JS (htmx, frappe-charts, d3)
+├── static/                  # CSS, JS (htmx, frappe-charts, d3), PWA assets (icon, sw.js, manifest)
 ├── .claude/agents/          # Claude Code agent prompts
 │   └── frontend-tester.md   # Agent for generating integration tests
 ├── Cargo.toml
@@ -111,6 +112,8 @@ myapps/
 After login, the top-level router serves:
 
 - `/` — App launcher (grid of available apps)
+- `/manifest.json` — PWA manifest (dynamic, base_path-aware)
+- `/sw.js` — Service worker (dynamic, base_path injected)
 - `/login`, `/logout` — Authentication (public)
 - `/leanfin/` — LeanFin sub-app (nested router)
   - `/leanfin/` — Transactions dashboard

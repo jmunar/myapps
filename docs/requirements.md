@@ -68,6 +68,9 @@ visibility into spending patterns.
 ### User interface
 
 - Web application (responsive, mobile-friendly).
+- Progressive Web App (PWA) — installable on mobile and desktop via web app
+  manifest, service worker for offline static asset caching and network-first
+  HTML page loading.
 - Future: Android app (wrap the web app or build native).
 
 ## Non-Functional Requirements
