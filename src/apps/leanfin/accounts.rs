@@ -360,12 +360,14 @@ async fn manual_new_submit(
     match result {
         Ok(r) => {
             let account_id = r.last_insert_rowid();
-            // Record initial daily balance
+            // Record initial balance snapshot
+            let timestamp = format!("{}T23:59:59Z", &form.date);
             let _ = sqlx::query(
-                r#"INSERT OR REPLACE INTO daily_balances (account_id, date, balance, source)
-                   VALUES (?, ?, ?, 'reported')"#,
+                r#"INSERT OR REPLACE INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+                   VALUES (?, ?, ?, ?, 'MANUAL')"#,
             )
             .bind(account_id)
+            .bind(&timestamp)
             .bind(&form.date)
             .bind(form.initial_value)
             .execute(&state.pool)
@@ -572,13 +574,21 @@ async fn manual_value_submit(
     .execute(&state.pool)
     .await;
 
-    // Upsert daily balance
+    // Upsert balance snapshot (delete same-day MANUAL, then insert)
+    let timestamp = format!("{}T23:59:59Z", &form.date);
     let _ = sqlx::query(
-        r#"INSERT INTO daily_balances (account_id, date, balance, source)
-           VALUES (?, ?, ?, 'reported')
-           ON CONFLICT(account_id, date) DO UPDATE SET balance = excluded.balance, source = 'reported'"#,
+        "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = 'MANUAL' AND date = ?",
     )
     .bind(account_id)
+    .bind(&form.date)
+    .execute(&state.pool)
+    .await;
+    let _ = sqlx::query(
+        r#"INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+           VALUES (?, ?, ?, ?, 'MANUAL')"#,
+    )
+    .bind(account_id)
+    .bind(&timestamp)
     .bind(&form.date)
     .bind(form.value)
     .execute(&state.pool)

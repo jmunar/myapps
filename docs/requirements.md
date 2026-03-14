@@ -126,11 +126,18 @@ visibility into spending patterns.
   on completion. The transaction list auto-refreshes after sync.
 - **Balance evolution tracking** — a dedicated Balance page shows an interactive
   Frappe Charts line chart with period selectors (30d/90d/180d/365d) and an
-  account dropdown including an "All accounts" aggregated view. Bank account
-  balances are computed on the fly from the most recent reported balance and
-  transaction sums (no persisted computed rows). Manual accounts use stored
-  reported values with gap-filling. Reconciliation checks compare expected vs
-  reported balances on each sync, alerting via ntfy if discrepancies exceed 0.01.
+  account dropdown including an "All accounts" aggregated view. Each sync
+  fetches balances first, records a snapshot, then fetches transactions and
+  links them to that snapshot via `snapshot_id`. Bank account balances between
+  snapshots are interpolated using only the transactions linked to the next
+  snapshot, ensuring exact attribution. Clicking a data point on the chart
+  shows the transactions for that date below. Manual accounts use stored
+  reported values with gap-filling. Balance snapshots store the bank's balance
+  type (ITAV, CLAV, XPCD, ITBD, CLBD) with appropriate timestamps: intraday
+  types use the sync time, closing types use end-of-day. Reconciliation checks
+  use snapshot-linked transactions (`b1 - b0 == SUM(txns where snapshot_id =
+  b1)`), running only for ITAV snapshots and alerting via ntfy if discrepancies
+  exceed 0.01.
 - **Manual accounts** — users can create manually tracked accounts for assets not
   accessible through Open Banking (investments, real estate, vehicles, loans,
   crypto). Manual accounts support CRUD operations (create, edit metadata, update

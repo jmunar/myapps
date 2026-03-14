@@ -74,7 +74,7 @@ myapps/
 │           └── services/    # LeanFin-specific business logic
 │               ├── enable_banking.rs  # Enable Banking API client + JWT
 │               ├── sync.rs            # Transaction sync orchestration
-│               ├── balance.rs         # Daily balance tracking + reconciliation
+│               ├── balance.rs         # Balance snapshots, series computation + reconciliation
 │               ├── csv_import.rs      # CSV bulk import for manual account balances
 │               ├── expenses.rs        # Expense aggregation by label + date
 │               ├── labeling.rs        # Auto-labeling engine
@@ -178,6 +178,7 @@ After login, the top-level router serves:
 | counterparty    | TEXT    | Nullable                           |
 | balance_after   | REAL    | Nullable                           |
 | created_at      | TEXT    | When we first stored it            |
+| snapshot_id     | INTEGER | Nullable FK → balance_snapshots (ON DELETE SET NULL) |
 | UNIQUE(external_id, account_id) |  | Deduplication constraint  |
 
 ### labels
@@ -200,17 +201,18 @@ After login, the top-level router serves:
 | pattern   | TEXT    | Keyword for text fields; "min,max" for amount_range |
 | priority  | INTEGER | Higher wins on conflict, default 0     |
 
-### daily_balances
+### balance_snapshots
 
-| Column     | Type    | Notes                                    |
-|------------|---------|------------------------------------------|
-| id         | INTEGER | PK, autoincrement                        |
-| account_id | INTEGER | FK → accounts                            |
-| date       | TEXT    | ISO 8601 date                            |
-| balance    | REAL    | End-of-day balance                       |
-| source     | TEXT    | 'computed', 'reported', 'carried'        |
-| created_at | TEXT    | ISO 8601                                 |
-| UNIQUE(account_id, date) | | One row per account per day    |
+| Column       | Type    | Notes                                          |
+|--------------|---------|------------------------------------------------|
+| id           | INTEGER | PK, autoincrement                              |
+| account_id   | INTEGER | FK → accounts                                  |
+| timestamp    | TEXT    | Full ISO 8601 datetime of the snapshot         |
+| date         | TEXT    | Date portion (YYYY-MM-DD), redundant for indexing |
+| balance      | REAL    | Balance at this point in time                  |
+| balance_type | TEXT    | ITAV, CLAV, XPCD, ITBD, CLBD, or MANUAL       |
+| created_at   | TEXT    | ISO 8601                                       |
+| UNIQUE(account_id, balance_type, timestamp) | | |
 
 ### api_payloads
 
@@ -290,14 +292,12 @@ myapps sync
   │   │   └─ Skip
   │   ├─ If expiring within 7 days:
   │   │   └─ Send ntfy warning
+  │   ├─ GET /accounts/{uid}/balances → pick best type → UPDATE accounts
+  │   ├─ Record balance snapshot → get snapshot_id
   │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
-  │   ├─ Save raw request/response payload to api_payloads table
   │   ├─ Apply credit_debit_indicator: DBIT → negative, CRDT → positive
-  │   ├─ INSERT OR IGNORE (dedup by external_id + account_id)
-  │   ├─ GET /accounts/{uid}/balances → pick best balance type → UPDATE accounts
-  │   ├─ Save raw request/response payload to api_payloads table
-  │   ├─ Reconciliation check (expected vs reported balance, ntfy alert if off)
-  │   ├─ Upsert today's daily_balance as 'reported'
+  │   ├─ INSERT OR IGNORE with snapshot_id (dedup by external_id + account_id)
+  │   ├─ Reconciliation (ITAV only): b1 - b0 == SUM(txns where snapshot_id = b1)
   │   └─ Run auto-labeling rules on newly inserted transactions
   │
   └─ Log summary: "Synced 42 new transactions across 3 accounts"

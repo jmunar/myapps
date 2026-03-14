@@ -188,6 +188,8 @@ pub struct BalancesResponse {
 pub struct BankBalance {
     pub balance_amount: BalanceAmountFull,
     pub balance_type: String,
+    #[serde(default)]
+    pub reference_date: Option<String>,
 }
 
 #[derive(Deserialize)]

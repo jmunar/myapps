@@ -96,13 +96,34 @@ async fn page(
                 <div class="loading">Loading balance data</div>
             </div>
         </div>
+        <div class="card mt-2" id="balance-txn-card" style="display:none">
+            <div class="card-header">
+                <h2>Transactions</h2>
+                <span id="balance-txn-date" class="text-sm text-secondary"></span>
+            </div>
+            <div id="balance-txn-table"></div>
+        </div>
         <script>
-        function selectPeriod(btn, days) {{
-            document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('period-btn-active'));
-            btn.classList.add('period-btn-active');
-            document.getElementById('balance-days').value = days;
-            htmx.trigger(document.querySelector('#balance-controls select'), 'change');
-        }}
+        (function() {{
+            var basePath = '{base}';
+
+            window.selectPeriod = function(btn, days) {{
+                document.querySelectorAll('.period-btn').forEach(function(b) {{ b.classList.remove('period-btn-active'); }});
+                btn.classList.add('period-btn-active');
+                document.getElementById('balance-days').value = days;
+                htmx.trigger(document.querySelector('#balance-controls select'), 'change');
+                document.getElementById('balance-txn-card').style.display = 'none';
+            }};
+
+            window.loadBalanceTxn = function(accountId, date) {{
+                var url = basePath + '/leanfin/transactions?date_from=' + date + '&date_to=' + date;
+                if (accountId) url += '&account_id=' + accountId;
+                var card = document.getElementById('balance-txn-card');
+                card.style.display = '';
+                document.getElementById('balance-txn-date').textContent = date;
+                htmx.ajax('GET', url, '#balance-txn-table');
+            }};
+        }})();
         </script>"##,
     );
 
@@ -176,6 +197,8 @@ async fn data(
     let labels_json = format!("[{}]", labels.join(","));
     let values_json = format!("[{}]", values.join(","));
 
+    let account_id_str = params.account_id.map_or(String::new(), |id| id.to_string());
+
     let html = format!(
         r##"<div id="balance-chart" class="frappe-chart-container"></div>
         <script>
@@ -183,9 +206,11 @@ async fn data(
             var el = document.getElementById('balance-chart');
             if (!el) return;
             el.innerHTML = '';
-            new frappe.Chart(el, {{
+            var dates = {labels_json};
+            var accountId = '{account_id_str}';
+            var chart = new frappe.Chart(el, {{
                 data: {{
-                    labels: {labels_json},
+                    labels: dates,
                     datasets: [{{ values: {values_json} }}]
                 }},
                 type: 'line',
@@ -193,7 +218,7 @@ async fn data(
                 colors: ['#1A6B5A'],
                 lineOptions: {{
                     regionFill: 1,
-                    hideDots: 1
+                    hideDots: 0
                 }},
                 axisOptions: {{
                     xIsSeries: true,
@@ -201,6 +226,13 @@ async fn data(
                 }},
                 tooltipOptions: {{
                     formatTooltipY: function(d) {{ return d.toLocaleString(undefined, {{minimumFractionDigits: 2, maximumFractionDigits: 2}}); }}
+                }},
+                isNavigable: true
+            }});
+            chart.parent.addEventListener('data-select', function(e) {{
+                var idx = e.index;
+                if (idx != null && dates[idx]) {{
+                    window.loadBalanceTxn(accountId, dates[idx]);
                 }}
             }});
         }})();
