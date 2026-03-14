@@ -161,5 +161,12 @@ visibility into spending patterns.
   `hx-vals` to pass the page number while preserving all active filters via
   `hx-include`.
 
+- **API payload logging** — all Enable Banking API calls (auth, session creation,
+  transaction fetches, balance fetches) persist the full request/response bodies,
+  HTTP status codes, and round-trip durations to an `api_payloads` table. This
+  provides an audit trail for debugging sync issues, reconciliation mismatches,
+  and provider behavior changes. Payloads are linked to the relevant account when
+  available; pre-account calls (auth, sessions) store a NULL account_id.
+
 ### Not yet implemented
 - **Additional apps** — new sub-applications on the platform.
