@@ -63,7 +63,9 @@ visibility into spending patterns.
 
 - The system notifies the user when a bank consent is expired or about to
   expire (e.g. 7 days before).
-- Notification channel: ntfy (open-source, self-hostable, simple HTTP push).
+- Notification channel: Web Push (standard browser push notifications via the
+  Push API with VAPID authentication). Works on Android, iOS 16.4+, and desktop
+  browsers. Users grant permission from the app launcher page.
 
 ### User interface
 
@@ -139,7 +141,7 @@ visibility into spending patterns.
   type (ITAV, CLAV, XPCD, ITBD, CLBD) with appropriate timestamps: intraday
   types use the sync time, closing types use end-of-day. Reconciliation checks
   use snapshot-linked transactions (`b1 - b0 == SUM(txns where snapshot_id =
-  b1)`), running only for ITAV snapshots and alerting via ntfy if discrepancies
+  b1)`), running only for ITAV snapshots and alerting via push notification if discrepancies
   exceed 0.01.
 - **Manual accounts** — users can create manually tracked accounts for assets not
   accessible through Open Banking (investments, real estate, vehicles, loans,
@@ -211,7 +213,7 @@ connections on an interactive mind map.
 - **Sub-categories** — hierarchical nesting within categories.
 - **Alerts** — overdue actions, stale thoughts.
 - **Date range filtering** on the mind map.
-- **ntfy integration** for push notifications.
+- **Web Push integration** for push notifications.
 - **Local LLM integration** — async auto-categorization, action extraction,
   connection finding via Llama-3.2-1B-Instruct.
 
@@ -237,7 +239,8 @@ users upload audio and are notified when the result is ready.
 - **Job tracking** — each transcription is a job with status
   (pending/processing/done/failed), timing, and error messages. The job list
   auto-polls via HTMX when active jobs exist.
-- **ntfy notifications** — push notification sent on job completion or failure.
+- **Web Push notifications** — browser push notification sent on job completion
+  or failure.
 - **Job detail page** — view transcription text, processing time, and metadata.
   Includes a re-transcribe form to submit the same audio with a different model
   for comparison.
