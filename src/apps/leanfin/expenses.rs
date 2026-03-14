@@ -186,7 +186,7 @@ async fn chart_data(
         return Html("<div class=\"empty-state\"><p>No labels selected.</p></div>".into());
     }
 
-    let series = expenses::get_expense_series(&state.pool, user_id.0, &label_ids, params.days)
+    let series = expenses::get_expense_series(&state.pool, &state.config, user_id.0, &label_ids, params.days)
         .await
         .unwrap_or_default();
 

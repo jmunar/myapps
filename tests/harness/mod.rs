@@ -40,6 +40,7 @@ pub async fn spawn_app() -> TestApp {
         ntfy_topic: None,
         bind_addr: "127.0.0.1:0".into(),
         base_path: String::new(),
+        timezone: chrono_tz::UTC,
     };
 
     let app = myapps::routes::build_router(pool.clone(), config);
@@ -71,7 +72,8 @@ impl TestApp {
 
     /// Seed full LeanFin demo data and log in as the demo user.
     pub async fn seed_and_login(&self) {
-        myapps::apps::leanfin::services::seed::run(&self.pool, false)
+        let config = myapps::config::Config::from_env().unwrap();
+        myapps::apps::leanfin::services::seed::run(&self.pool, &config, false)
             .await
             .unwrap();
 

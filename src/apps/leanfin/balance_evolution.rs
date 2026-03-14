@@ -154,11 +154,11 @@ async fn data(
             return Html("<div class=\"empty-state\"><p>Account not found.</p></div>".into());
         }
 
-        balance::get_balance_series(&state.pool, account_id, params.days)
+        balance::get_balance_series(&state.pool, &state.config, account_id, params.days)
             .await
             .unwrap_or_default()
     } else {
-        balance::get_aggregated_balance_series(&state.pool, user_id.0, params.days)
+        balance::get_aggregated_balance_series(&state.pool, &state.config, user_id.0, params.days)
             .await
             .unwrap_or_default()
     };

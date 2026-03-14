@@ -1,6 +1,8 @@
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::Duration;
 use sqlx::SqlitePool;
+
+use crate::config::Config;
 
 /// A single data point: one label on one date.
 #[derive(sqlx::FromRow)]
@@ -15,6 +17,7 @@ pub struct ExpensePoint {
 /// Get daily expense totals grouped by label for the given label IDs and period.
 pub async fn get_expense_series(
     pool: &SqlitePool,
+    config: &Config,
     user_id: i64,
     label_ids: &[i64],
     days: i64,
@@ -23,7 +26,7 @@ pub async fn get_expense_series(
         return Ok(vec![]);
     }
 
-    let cutoff = (Utc::now() - Duration::days(days))
+    let cutoff = (config.today() - Duration::days(days))
         .format("%Y-%m-%d")
         .to_string();
 

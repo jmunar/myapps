@@ -100,7 +100,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
     .await?;
 
     let lookback_days = if has_transactions { 5 } else { 90 };
-    let date_from = (Utc::now() - Duration::days(lookback_days))
+    let date_from = (config.today() - Duration::days(lookback_days))
         .format("%Y-%m-%d")
         .to_string();
 
@@ -181,7 +181,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
             Err(e) => tracing::warn!("Reconciliation check failed for '{}': {e:#}", account.bank_name),
         }
 
-        if let Err(e) = super::balance::record_daily_balance(pool, account.id, balance).await {
+        if let Err(e) = super::balance::record_daily_balance(pool, config, account.id, balance).await {
             tracing::warn!("Failed to record daily balance for '{}': {e:#}", account.bank_name);
         }
     }

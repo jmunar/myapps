@@ -2,8 +2,9 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 
 use crate::auth;
+use crate::config::Config;
 
-pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
+pub async fn run(pool: &SqlitePool, config: &Config, reset: bool) -> Result<()> {
     if reset {
         // Delete the demo user; ON DELETE CASCADE wipes all related data
         let result = sqlx::query("DELETE FROM users WHERE username = 'demo'")
@@ -148,11 +149,11 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     let alloc_count = seed_allocations(pool, user_id).await?;
 
     // Seed account balances and daily balance history
-    seed_balances(pool, acct1, 3245.67).await?;
-    seed_balances(pool, acct2, 8500.85).await?;
+    seed_balances(pool, config, acct1, 3245.67).await?;
+    seed_balances(pool, config, acct2, 8500.85).await?;
 
     // Seed archived account final balance (frozen at time of archiving)
-    seed_balances(pool, acct4, 585.92).await?;
+    seed_balances(pool, config, acct4, 585.92).await?;
 
     // Seed manual account value history (sparse updates)
     seed_manual_balances(pool, acct3, &[
@@ -377,14 +378,14 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
 }
 
 /// Set account balance and record today's reported balance.
-async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64) -> Result<()> {
+async fn seed_balances(pool: &SqlitePool, config: &Config, account_id: i64, current_balance: f64) -> Result<()> {
     sqlx::query("UPDATE accounts SET balance_amount = ?, balance_currency = 'EUR' WHERE id = ?")
         .bind(current_balance)
         .bind(account_id)
         .execute(pool)
         .await?;
 
-    super::balance::record_daily_balance(pool, account_id, current_balance).await?;
+    super::balance::record_daily_balance(pool, config, account_id, current_balance).await?;
 
     Ok(())
 }

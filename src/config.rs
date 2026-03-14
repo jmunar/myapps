@@ -1,5 +1,8 @@
 use std::env;
 
+use chrono::NaiveDate;
+use chrono_tz::Tz;
+
 pub struct Config {
     pub database_url: String,
     pub base_url: Option<String>,
@@ -11,6 +14,9 @@ pub struct Config {
     /// URL prefix derived from BASE_URL path (e.g. "/leanfin").
     /// Empty string means served at root.
     pub base_path: String,
+    /// IANA timezone for date calculations (e.g. "Europe/Madrid").
+    /// Defaults to UTC if not set.
+    pub timezone: Tz,
 }
 
 impl Config {
@@ -22,6 +28,11 @@ impl Config {
             .map(|u| u.path().trim_end_matches('/').to_string())
             .unwrap_or_default();
 
+        let timezone: Tz = env::var("TIMEZONE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(chrono_tz::UTC);
+
         Ok(Self {
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "sqlite://data/leanfin.db".to_string()),
@@ -32,7 +43,13 @@ impl Config {
             ntfy_topic: env::var("NTFY_TOPIC").ok(),
             bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".to_string()),
             base_path,
+            timezone,
         })
+    }
+
+    /// Returns today's date in the configured timezone.
+    pub fn today(&self) -> NaiveDate {
+        chrono::Utc::now().with_timezone(&self.timezone).date_naive()
     }
 
     /// Returns Enable Banking config, or error if not fully configured.

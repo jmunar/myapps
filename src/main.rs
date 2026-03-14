@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("User '{username}' created");
         }
         Command::Seed { app, reset } => match app.as_str() {
-            "leanfin" => apps::leanfin::services::seed::run(&pool, reset).await?,
+            "leanfin" => apps::leanfin::services::seed::run(&pool, &config, reset).await?,
             other => anyhow::bail!("Unknown app: {other}. Available: leanfin"),
         },
     }
