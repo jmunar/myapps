@@ -211,3 +211,32 @@ connections on an interactive mind map.
 - **ntfy integration** for push notifications.
 - **Local LLM integration** — async auto-categorization, action extraction,
   connection finding via Llama-3.2-1B-Instruct.
+
+### VoiceToText (third sub-application)
+
+VoiceToText is an audio transcription application that converts speech to text
+using whisper.cpp running locally on the Odroid N2. Transcription is async —
+users upload audio and are notified when the result is ready.
+
+#### Implemented
+
+- **Audio upload** — multipart file upload accepting common audio formats
+  (wav, mp3, ogg, webm, m4a, flac). Files stored in `data/voice_uploads/`.
+- **Browser recording** — in-browser microphone capture via the MediaRecorder
+  API. Records as webm and uploads directly.
+- **Model selection** — users choose between Whisper tiny (faster, less
+  accurate) and base (better accuracy, slower) models at upload time.
+- **Background transcription worker** — a tokio task polls for pending jobs
+  every 5 seconds, processes one at a time. Converts audio to 16kHz mono WAV
+  via ffmpeg, then runs whisper-cli as a subprocess.
+- **Job tracking** — each transcription is a job with status
+  (pending/processing/done/failed), timing, and error messages. The job list
+  auto-polls via HTMX when active jobs exist.
+- **ntfy notifications** — push notification sent on job completion or failure.
+- **Job detail page** — view transcription text, processing time, and metadata.
+
+#### Not yet implemented
+- **Language selection** — currently auto-detected; allow explicit language choice.
+- **Max duration enforcement** — limit upload size/duration to bound processing time.
+- **Seed data** — demo jobs for development.
+- **Integration tests** — frontend tests for upload and job list pages.
