@@ -65,7 +65,7 @@ async fn data_endpoint_returns_frappe_chart_for_specific_account() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -104,13 +104,13 @@ async fn data_endpoint_returns_empty_state_when_no_balance_data() {
     app.seed_and_login().await;
 
     // Delete all balance snapshots
-    sqlx::query("DELETE FROM balance_snapshots")
+    sqlx::query("DELETE FROM leanfin_balance_snapshots")
         .execute(&app.pool)
         .await
         .unwrap();
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -148,7 +148,7 @@ async fn data_endpoint_contains_balance_data_in_json() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -172,7 +172,7 @@ async fn data_endpoint_renders_frappe_chart_container() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -195,7 +195,7 @@ async fn data_endpoint_uses_accent_color() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -223,7 +223,7 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
         .unwrap();
 
     sqlx::query(
-        "INSERT INTO accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type) VALUES (?, 'TestBank', 'ES', 'sess', 'uid_test', '2027-01-01T00:00:00Z', 'bank')"
+        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type) VALUES (?, 'TestBank', 'ES', 'sess', 'uid_test', '2027-01-01T00:00:00Z', 'bank')"
     )
     .bind(user_id.0)
     .execute(&app.pool)
@@ -231,7 +231,7 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
     .unwrap();
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'TestBank'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'TestBank'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -240,7 +240,7 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let timestamp = format!("{today}T06:00:00Z");
     let snap_result = sqlx::query(
-        "INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type) VALUES (?, ?, ?, 1000.0, 'ITAV')"
+        "INSERT INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type) VALUES (?, ?, ?, 1000.0, 'ITAV')"
     )
     .bind(account_id)
     .bind(&timestamp)
@@ -259,7 +259,7 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
         .to_string();
 
     sqlx::query(
-        "INSERT INTO transactions (account_id, external_id, date, amount, currency, description, snapshot_id) VALUES (?, 'tx1', ?, -50.0, 'EUR', 'Purchase', ?)"
+        "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, snapshot_id) VALUES (?, 'tx1', ?, -50.0, 'EUR', 'Purchase', ?)"
     )
     .bind(account_id)
     .bind(&yesterday)
@@ -269,7 +269,7 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO transactions (account_id, external_id, date, amount, currency, description, snapshot_id) VALUES (?, 'tx2', ?, -100.0, 'EUR', 'Big purchase', ?)"
+        "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, snapshot_id) VALUES (?, 'tx2', ?, -100.0, 'EUR', 'Big purchase', ?)"
     )
     .bind(account_id)
     .bind(&two_days_ago)
@@ -308,7 +308,7 @@ async fn data_endpoint_chart_is_navigable_with_drill_down() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();

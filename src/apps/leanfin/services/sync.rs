@@ -19,7 +19,7 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
     tracing::info!("Starting transaction sync");
 
     let accounts: Vec<Account> = sqlx::query_as(
-        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived, created_at FROM accounts WHERE account_type = 'bank' AND archived = 0",
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived, created_at FROM leanfin_accounts WHERE account_type = 'bank' AND archived = 0",
     )
     .fetch_all(pool)
     .await?;
@@ -101,7 +101,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
                     best_balance = Some((amount, best.balance_type.clone()));
 
                     if let Err(e) = sqlx::query(
-                        "UPDATE accounts SET balance_amount = ?, balance_currency = ? WHERE id = ?",
+                        "UPDATE leanfin_accounts SET balance_amount = ?, balance_currency = ? WHERE id = ?",
                     )
                     .bind(amount)
                     .bind(currency)
@@ -132,7 +132,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
 
     // 2. Fetch and insert transactions, linking to the snapshot
     let has_transactions: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM transactions WHERE account_id = ?)",
+        "SELECT EXISTS(SELECT 1 FROM leanfin_transactions WHERE account_id = ?)",
     )
     .bind(account.id)
     .fetch_one(pool)
@@ -167,7 +167,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
             .and_then(|a| a.parse().ok());
 
         let result = sqlx::query(
-            r#"INSERT OR IGNORE INTO transactions
+            r#"INSERT OR IGNORE INTO leanfin_transactions
                (account_id, external_id, date, amount, currency, description, counterparty, balance_after, snapshot_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
         )
@@ -215,7 +215,7 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
     tracing::info!("Starting sync for user {user_id}");
 
     let accounts: Vec<Account> = sqlx::query_as(
-        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived, created_at FROM accounts WHERE user_id = ? AND account_type = 'bank' AND archived = 0",
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived, created_at FROM leanfin_accounts WHERE user_id = ? AND account_type = 'bank' AND archived = 0",
     )
     .bind(user_id)
     .fetch_all(pool)

@@ -40,7 +40,7 @@ pub async fn record_balance_snapshot(
 
     // Remove existing snapshot for same account + type + day, then insert.
     sqlx::query(
-        "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = ? AND date = ?",
+        "DELETE FROM leanfin_balance_snapshots WHERE account_id = ? AND balance_type = ? AND date = ?",
     )
     .bind(account_id)
     .bind(balance_type)
@@ -49,7 +49,7 @@ pub async fn record_balance_snapshot(
     .await?;
 
     let result = sqlx::query(
-        r#"INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+        r#"INSERT INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
            VALUES (?, ?, ?, ?, ?)"#,
     )
     .bind(account_id)
@@ -81,7 +81,7 @@ pub async fn check_reconciliation(
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
     let prev: Option<PrevBalance> = sqlx::query_as(
-        r#"SELECT date, balance FROM balance_snapshots
+        r#"SELECT date, balance FROM leanfin_balance_snapshots
            WHERE account_id = ? AND balance_type = 'ITAV' AND date < ?
            ORDER BY date DESC LIMIT 1"#,
     )
@@ -97,7 +97,7 @@ pub async fn check_reconciliation(
     // Sum only the transactions that are new in this snapshot
     let txn_sum: Option<f64> = if let Some(sid) = snapshot_id {
         sqlx::query_scalar(
-            "SELECT SUM(amount) FROM transactions WHERE snapshot_id = ?",
+            "SELECT SUM(amount) FROM leanfin_transactions WHERE snapshot_id = ?",
         )
         .bind(sid)
         .fetch_one(pool)
@@ -105,7 +105,7 @@ pub async fn check_reconciliation(
     } else {
         // Fallback: date-based (legacy, when snapshot_id is unavailable)
         sqlx::query_scalar(
-            r#"SELECT SUM(amount) FROM transactions
+            r#"SELECT SUM(amount) FROM leanfin_transactions
                WHERE account_id = ? AND date > ? AND date <= ?"#,
         )
         .bind(account.id)
@@ -209,7 +209,7 @@ pub async fn get_balance_series(
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
     let account_type: String = sqlx::query_scalar(
-        "SELECT account_type FROM accounts WHERE id = ?",
+        "SELECT account_type FROM leanfin_accounts WHERE id = ?",
     )
     .bind(account_id)
     .fetch_one(pool)
@@ -217,7 +217,7 @@ pub async fn get_balance_series(
 
     if account_type == "manual" {
         let rows: Vec<BalancePoint> = sqlx::query_as(
-            r#"SELECT date, balance FROM balance_snapshots
+            r#"SELECT date, balance FROM leanfin_balance_snapshots
                WHERE account_id = ? AND date >= ?
                ORDER BY date ASC"#,
         )
@@ -230,7 +230,7 @@ pub async fn get_balance_series(
 
     // Bank account: fetch all snapshots in range, ordered by date
     let snapshots: Vec<Snapshot> = sqlx::query_as(
-        r#"SELECT id, date, balance FROM balance_snapshots
+        r#"SELECT id, date, balance FROM leanfin_balance_snapshots
            WHERE account_id = ? AND date >= ?
            ORDER BY date ASC"#,
     )
@@ -241,7 +241,7 @@ pub async fn get_balance_series(
 
     // Also fetch the most recent snapshot before cutoff (for backward walk)
     let pre_cutoff: Option<Snapshot> = sqlx::query_as(
-        r#"SELECT id, date, balance FROM balance_snapshots
+        r#"SELECT id, date, balance FROM leanfin_balance_snapshots
            WHERE account_id = ? AND date < ?
            ORDER BY date DESC LIMIT 1"#,
     )
@@ -268,7 +268,7 @@ pub async fn get_balance_series(
     let first_date = NaiveDate::parse_from_str(&first.date, "%Y-%m-%d")?;
     if first_date > cutoff_date {
         let backward_sums: Vec<DailySum> = sqlx::query_as(
-            r#"SELECT date, SUM(amount) as total FROM transactions
+            r#"SELECT date, SUM(amount) as total FROM leanfin_transactions
                WHERE snapshot_id = ? AND date < ?
                GROUP BY date"#,
         )
@@ -325,7 +325,7 @@ pub async fn get_balance_series(
 
         let sum_map: HashMap<String, f64> = if let Some(nsid) = next_snapshot_id {
             let sums: Vec<DailySum> = sqlx::query_as(
-                r#"SELECT date, SUM(amount) as total FROM transactions
+                r#"SELECT date, SUM(amount) as total FROM leanfin_transactions
                    WHERE snapshot_id = ?
                    GROUP BY date"#,
             )
@@ -337,7 +337,7 @@ pub async fn get_balance_series(
             // After the last snapshot, use all transactions without a snapshot
             // that fall after this snapshot's date (legacy/future data)
             let sums: Vec<DailySum> = sqlx::query_as(
-                r#"SELECT date, SUM(amount) as total FROM transactions
+                r#"SELECT date, SUM(amount) as total FROM leanfin_transactions
                    WHERE account_id = ? AND date > ? AND snapshot_id IS NULL
                    GROUP BY date"#,
             )
@@ -391,7 +391,7 @@ pub async fn get_aggregated_balance_series(
     days: i64,
 ) -> Result<Vec<BalancePoint>> {
     let account_ids: Vec<(i64,)> = sqlx::query_as(
-        "SELECT id FROM accounts WHERE user_id = ?",
+        "SELECT id FROM leanfin_accounts WHERE user_id = ?",
     )
     .bind(user_id)
     .fetch_all(pool)

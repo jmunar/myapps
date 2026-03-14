@@ -29,7 +29,7 @@ async fn page(
     let base = &state.config.base_path;
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
-        "SELECT id, bank_name, iban, account_type, account_name FROM accounts WHERE user_id = ? AND archived = 0 ORDER BY bank_name",
+        "SELECT id, bank_name, iban, account_type, account_name FROM leanfin_accounts WHERE user_id = ? AND archived = 0 ORDER BY bank_name",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -163,7 +163,7 @@ async fn data(
     let series = if let Some(account_id) = params.account_id {
         // Verify account belongs to user
         let owns: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ? AND user_id = ?)",
+            "SELECT EXISTS(SELECT 1 FROM leanfin_accounts WHERE id = ? AND user_id = ?)",
         )
         .bind(account_id)
         .bind(user_id.0)

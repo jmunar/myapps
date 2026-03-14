@@ -28,7 +28,7 @@ async fn page(
     let base = &state.config.base_path;
 
     let labels: Vec<LabelOption> = sqlx::query_as(
-        "SELECT id, name, color FROM labels WHERE user_id = ? ORDER BY name",
+        "SELECT id, name, color FROM leanfin_labels WHERE user_id = ? ORDER BY name",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)

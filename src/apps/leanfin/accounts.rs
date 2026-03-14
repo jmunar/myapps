@@ -52,7 +52,7 @@ async fn list_accounts(
     };
 
     let accounts: Vec<AccountRow> = sqlx::query_as(
-        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived FROM accounts WHERE user_id = ?",
+        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived FROM leanfin_accounts WHERE user_id = ?",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -344,7 +344,7 @@ async fn manual_new_submit(
 
     let uid = format!("manual_{}", uuid::Uuid::new_v4());
     let result = sqlx::query(
-        r#"INSERT INTO accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_amount, balance_currency)
+        r#"INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_amount, balance_currency)
            VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?, ?)"#,
     )
     .bind(user_id.0)
@@ -363,7 +363,7 @@ async fn manual_new_submit(
             // Record initial balance snapshot
             let timestamp = format!("{}T23:59:59Z", &form.date);
             let _ = sqlx::query(
-                r#"INSERT OR REPLACE INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+                r#"INSERT OR REPLACE INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
                    VALUES (?, ?, ?, ?, 'MANUAL')"#,
             )
             .bind(account_id)
@@ -393,7 +393,7 @@ async fn manual_edit_form(
     let base = &state.config.base_path;
 
     let account: Option<ManualAccountRow> = sqlx::query_as(
-        "SELECT id, account_name, asset_category FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
+        "SELECT id, account_name, asset_category FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -465,7 +465,7 @@ async fn manual_edit_submit(
     let base = &state.config.base_path;
 
     let _ = sqlx::query(
-        "UPDATE accounts SET account_name = ?, bank_name = ?, asset_category = ? WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
+        "UPDATE leanfin_accounts SET account_name = ?, bank_name = ?, asset_category = ? WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
     )
     .bind(&form.name)
     .bind(&form.name)
@@ -488,7 +488,7 @@ async fn manual_value_form(
     let base = &state.config.base_path;
 
     let account: Option<ManualValueRow> = sqlx::query_as(
-        "SELECT id, account_name, balance_amount, balance_currency FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
+        "SELECT id, account_name, balance_amount, balance_currency FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -553,7 +553,7 @@ async fn manual_value_submit(
 
     // Verify ownership and account_type
     let owns: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0)",
+        "SELECT EXISTS(SELECT 1 FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0)",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -567,7 +567,7 @@ async fn manual_value_submit(
 
     // Update account balance
     let _ = sqlx::query(
-        "UPDATE accounts SET balance_amount = ? WHERE id = ?",
+        "UPDATE leanfin_accounts SET balance_amount = ? WHERE id = ?",
     )
     .bind(form.value)
     .bind(account_id)
@@ -577,14 +577,14 @@ async fn manual_value_submit(
     // Upsert balance snapshot (delete same-day MANUAL, then insert)
     let timestamp = format!("{}T23:59:59Z", &form.date);
     let _ = sqlx::query(
-        "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = 'MANUAL' AND date = ?",
+        "DELETE FROM leanfin_balance_snapshots WHERE account_id = ? AND balance_type = 'MANUAL' AND date = ?",
     )
     .bind(account_id)
     .bind(&form.date)
     .execute(&state.pool)
     .await;
     let _ = sqlx::query(
-        r#"INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+        r#"INSERT INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
            VALUES (?, ?, ?, ?, 'MANUAL')"#,
     )
     .bind(account_id)
@@ -609,7 +609,7 @@ async fn import_csv_form(
     let base = &state.config.base_path;
 
     let account: Option<ManualValueRow> = sqlx::query_as(
-        "SELECT id, account_name, balance_amount, balance_currency FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
+        "SELECT id, account_name, balance_amount, balance_currency FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -662,7 +662,7 @@ async fn import_csv_submit(
 
     // Verify ownership
     let account: Option<ManualValueRow> = sqlx::query_as(
-        "SELECT id, account_name, balance_amount, balance_currency FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
+        "SELECT id, account_name, balance_amount, balance_currency FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -836,7 +836,7 @@ async fn link_submit(
 
     // Store state in a pending_links table for CSRF validation on callback
     if let Err(e) = sqlx::query(
-        "INSERT INTO pending_links (state, user_id, bank_name, country) VALUES (?, ?, ?, ?)",
+        "INSERT INTO leanfin_pending_links (state, user_id, bank_name, country) VALUES (?, ?, ?, ?)",
     )
     .bind(&csrf_state)
     .bind(user_id.0)
@@ -872,7 +872,7 @@ async fn reauth(
 
     // Verify account belongs to this user and get bank details
     let account: Option<ReauthAccountRow> = sqlx::query_as(
-        "SELECT id, bank_name, bank_country FROM accounts WHERE id = ? AND user_id = ? AND account_type = 'bank'",
+        "SELECT id, bank_name, bank_country FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'bank'",
     )
     .bind(account_id)
     .bind(user_id.0)
@@ -888,7 +888,7 @@ async fn reauth(
 
     // Store pending link with reauth_account_id so callback knows to update
     if let Err(e) = sqlx::query(
-        "INSERT INTO pending_links (state, user_id, bank_name, country, reauth_account_id) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO leanfin_pending_links (state, user_id, bank_name, country, reauth_account_id) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(&csrf_state)
     .bind(user_id.0)
@@ -939,14 +939,14 @@ async fn archive_account(
     // Check for unallocated transactions (bank accounts only — manual accounts have no transactions)
     let has_unallocated: bool = sqlx::query_scalar(
         r#"SELECT EXISTS(
-            SELECT 1 FROM transactions t
-            JOIN accounts a ON t.account_id = a.id
+            SELECT 1 FROM leanfin_transactions t
+            JOIN leanfin_accounts a ON t.account_id = a.id
             WHERE a.id = ? AND a.user_id = ?
               AND t.id NOT IN (
-                SELECT al.transaction_id FROM allocations al
+                SELECT al.transaction_id FROM leanfin_allocations al
                 GROUP BY al.transaction_id
                 HAVING ABS(SUM(al.amount) - ABS(
-                    (SELECT t2.amount FROM transactions t2 WHERE t2.id = al.transaction_id)
+                    (SELECT t2.amount FROM leanfin_transactions t2 WHERE t2.id = al.transaction_id)
                 )) < 0.01
               )
         )"#,
@@ -965,7 +965,7 @@ async fn archive_account(
         .into_response();
     }
 
-    let _ = sqlx::query("UPDATE accounts SET archived = 1 WHERE id = ? AND user_id = ?")
+    let _ = sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE id = ? AND user_id = ?")
         .bind(account_id)
         .bind(user_id.0)
         .execute(&state.pool)
@@ -982,7 +982,7 @@ async fn unarchive_account(
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
 
-    let _ = sqlx::query("UPDATE accounts SET archived = 0 WHERE id = ? AND user_id = ?")
+    let _ = sqlx::query("UPDATE leanfin_accounts SET archived = 0 WHERE id = ? AND user_id = ?")
         .bind(account_id)
         .bind(user_id.0)
         .execute(&state.pool)
@@ -1001,7 +1001,7 @@ async fn delete_account(
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
 
-    let result = sqlx::query("DELETE FROM accounts WHERE id = ? AND user_id = ?")
+    let result = sqlx::query("DELETE FROM leanfin_accounts WHERE id = ? AND user_id = ?")
         .bind(account_id)
         .bind(user_id.0)
         .execute(&state.pool)
@@ -1035,7 +1035,7 @@ async fn callback(
 
     // Validate CSRF state and get the pending link info
     let pending: Option<PendingLink> = sqlx::query_as(
-        "SELECT state, user_id, bank_name, country, reauth_account_id FROM pending_links WHERE state = ?",
+        "SELECT state, user_id, bank_name, country, reauth_account_id FROM leanfin_pending_links WHERE state = ?",
     )
     .bind(&params.state)
     .fetch_optional(&state.pool)
@@ -1047,7 +1047,7 @@ async fn callback(
     };
 
     // Clean up the pending link
-    let _ = sqlx::query("DELETE FROM pending_links WHERE state = ?")
+    let _ = sqlx::query("DELETE FROM leanfin_pending_links WHERE state = ?")
         .bind(&params.state)
         .execute(&state.pool)
         .await;
@@ -1081,7 +1081,7 @@ async fn callback(
         let mut updated = 0u64;
         for account in &session.accounts {
             let result = sqlx::query(
-                "UPDATE accounts SET session_id = ?, session_expires_at = ? WHERE account_uid = ? AND user_id = ?",
+                "UPDATE leanfin_accounts SET session_id = ?, session_expires_at = ? WHERE account_uid = ? AND user_id = ?",
             )
             .bind(&session.session_id)
             .bind(expires_at)
@@ -1102,7 +1102,7 @@ async fn callback(
             if let Some(first) = session.accounts.first() {
                 let iban = first.account_id.as_ref().and_then(|id| id.iban.as_deref());
                 let _ = sqlx::query(
-                    "UPDATE accounts SET session_id = ?, account_uid = ?, iban = COALESCE(?, iban), session_expires_at = ? WHERE id = ? AND user_id = ?",
+                    "UPDATE leanfin_accounts SET session_id = ?, account_uid = ?, iban = COALESCE(?, iban), session_expires_at = ? WHERE id = ? AND user_id = ?",
                 )
                 .bind(&session.session_id)
                 .bind(&first.uid)
@@ -1131,7 +1131,7 @@ async fn callback(
                 .and_then(|id| id.iban.as_deref());
 
             let result = sqlx::query(
-                r#"INSERT OR IGNORE INTO accounts
+                r#"INSERT OR IGNORE INTO leanfin_accounts
                    (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type)
                    VALUES (?, ?, ?, ?, ?, ?, ?, 'bank')"#,
             )
