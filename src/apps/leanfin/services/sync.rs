@@ -42,7 +42,9 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
                 account.id
             );
             crate::services::notify::send(
+                pool,
                 config,
+                "LeanFin",
                 &format!(
                     "Bank session expired for '{}'. Please re-authorize.",
                     account.bank_name
@@ -54,7 +56,9 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
 
         if days_until_expiry <= 7 {
             crate::services::notify::send(
+                pool,
                 config,
+                "LeanFin",
                 &format!(
                     "Bank session for '{}' expires in {} days. Re-authorize soon.",
                     account.bank_name, days_until_expiry

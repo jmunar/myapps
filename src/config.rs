@@ -6,8 +6,9 @@ pub struct Config {
     pub base_url: Option<String>,
     pub enable_banking_app_id: Option<String>,
     pub enable_banking_key_path: Option<String>,
-    pub ntfy_url: Option<String>,
-    pub ntfy_topic: Option<String>,
+    pub vapid_private_key: Option<String>,
+    pub vapid_public_key: Option<String>,
+    pub vapid_subject: Option<String>,
     pub bind_addr: String,
     /// URL prefix derived from BASE_URL path (e.g. "/myapps").
     /// Empty string means served at root.
@@ -33,8 +34,9 @@ impl Config {
             base_url,
             enable_banking_app_id: env::var("ENABLE_BANKING_APP_ID").ok(),
             enable_banking_key_path: env::var("ENABLE_BANKING_KEY_PATH").ok(),
-            ntfy_url: env::var("NTFY_URL").ok(),
-            ntfy_topic: env::var("NTFY_TOPIC").ok(),
+            vapid_private_key: env::var("VAPID_PRIVATE_KEY").ok().filter(|s| !s.is_empty()),
+            vapid_public_key: env::var("VAPID_PUBLIC_KEY").ok().filter(|s| !s.is_empty()),
+            vapid_subject: env::var("VAPID_SUBJECT").ok().filter(|s| !s.is_empty()),
             bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".to_string()),
             base_path,
             whisper_cli_path: env::var("WHISPER_CLI_PATH")

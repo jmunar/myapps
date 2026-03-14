@@ -45,7 +45,36 @@ pub fn render_page(title: &str, nav_items: &[NavItem], body_html: &str, base_pat
 <body>
     <script>
     if ("serviceWorker" in navigator) {{
-        navigator.serviceWorker.register("{base_path}/sw.js", {{ scope: "{base_path}/" }});
+        navigator.serviceWorker.register("{base_path}/sw.js", {{ scope: "{base_path}/" }})
+            .then(function(reg) {{
+                if (!("PushManager" in window)) return;
+                if (Notification.permission !== "granted") return;
+                reg.pushManager.getSubscription().then(function(sub) {{
+                    if (sub) return;
+                    fetch("{base_path}/push/vapid-key").then(function(r) {{ return r.text(); }}).then(function(key) {{
+                        var padding = (4 - key.length % 4) % 4;
+                        var b64 = key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(padding);
+                        var raw = atob(b64);
+                        var arr = new Uint8Array(raw.length);
+                        for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+                        return reg.pushManager.subscribe({{ userVisibleOnly: true, applicationServerKey: arr }});
+                    }}).then(function(sub) {{
+                        if (!sub) return;
+                        var key = sub.getKey("p256dh");
+                        var auth = sub.getKey("auth");
+                        var body = {{
+                            endpoint: sub.endpoint,
+                            p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(key))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""),
+                            auth: btoa(String.fromCharCode.apply(null, new Uint8Array(auth))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")
+                        }};
+                        fetch("{base_path}/push/subscribe", {{
+                            method: "POST",
+                            headers: {{ "Content-Type": "application/json" }},
+                            body: JSON.stringify(body)
+                        }});
+                    }});
+                }});
+            }});
     }}
     </script>
     <nav>

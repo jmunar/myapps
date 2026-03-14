@@ -1,5 +1,5 @@
 // BASE_PATH is injected by the server before this file.
-const CACHE_NAME = "myapps-v1";
+const CACHE_NAME = "myapps-v2";
 const STATIC_ASSETS = [
   BASE_PATH + "/static/style.css",
   BASE_PATH + "/static/htmx.min.js",
@@ -50,5 +50,34 @@ self.addEventListener("fetch", (event) => {
   // Default: network with cache fallback
   event.respondWith(
     fetch(request).catch(() => caches.match(request))
+  );
+});
+
+self.addEventListener("push", (event) => {
+  let data = { title: "MyApps", body: "" };
+  try {
+    data = event.data.json();
+  } catch (e) {
+    data.body = event.data ? event.data.text() : "";
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: BASE_PATH + "/static/icon.svg",
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.includes(BASE_PATH) && "focus" in client) {
+          return client.focus();
+        }
+      }
+      return clients.openWindow(BASE_PATH + "/");
+    })
   );
 });

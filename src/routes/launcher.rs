@@ -41,7 +41,58 @@ async fn index(
                     <p>Audio transcription with Whisper</p>
                 </div>
             </a>
-        </div>"#
+        </div>
+        <div id="push-status" style="text-align:center;margin-top:1.5rem;font-size:0.9rem;color:#888;"></div>
+        <script>
+        (function() {{
+            var el = document.getElementById("push-status");
+            if (!("Notification" in window) || !("PushManager" in window)) return;
+            if (Notification.permission === "granted") {{
+                el.textContent = "Notifications enabled";
+            }} else if (Notification.permission === "denied") {{
+                el.textContent = "Notifications blocked (check browser settings)";
+            }} else {{
+                var btn = document.createElement("button");
+                btn.textContent = "Enable notifications";
+                btn.className = "btn btn-secondary";
+                btn.onclick = function() {{
+                    Notification.requestPermission().then(function(perm) {{
+                        if (perm === "granted") {{
+                            el.textContent = "Notifications enabled";
+                            // Trigger subscription via SW registration
+                            navigator.serviceWorker.ready.then(function(reg) {{
+                                fetch("{base}/push/vapid-key").then(function(r) {{ return r.text(); }}).then(function(key) {{
+                                    var padding = (4 - key.length % 4) % 4;
+                                    var b64 = key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(padding);
+                                    var raw = atob(b64);
+                                    var arr = new Uint8Array(raw.length);
+                                    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+                                    return reg.pushManager.subscribe({{ userVisibleOnly: true, applicationServerKey: arr }});
+                                }}).then(function(sub) {{
+                                    if (!sub) return;
+                                    var key = sub.getKey("p256dh");
+                                    var auth = sub.getKey("auth");
+                                    var body = {{
+                                        endpoint: sub.endpoint,
+                                        p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(key))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""),
+                                        auth: btoa(String.fromCharCode.apply(null, new Uint8Array(auth))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")
+                                    }};
+                                    fetch("{base}/push/subscribe", {{
+                                        method: "POST",
+                                        headers: {{ "Content-Type": "application/json" }},
+                                        body: JSON.stringify(body)
+                                    }});
+                                }});
+                            }});
+                        }} else {{
+                            el.textContent = "Notifications blocked";
+                        }}
+                    }});
+                }};
+                el.appendChild(btn);
+            }}
+        }})();
+        </script>"#
     );
     Html(render_page("MyApps", &nav, &body, base))
 }
