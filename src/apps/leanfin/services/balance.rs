@@ -261,6 +261,48 @@ pub async fn get_balance_series(
 
     let mut result: Vec<BalancePoint> = Vec::new();
 
+    // Walk backwards from the first snapshot using its linked transactions.
+    // This covers the initial sync case where all historical transactions
+    // are linked to the first (and only) snapshot.
+    let first = all_snapshots[0];
+    let first_date = NaiveDate::parse_from_str(&first.date, "%Y-%m-%d")?;
+    if first_date > cutoff_date {
+        let backward_sums: Vec<DailySum> = sqlx::query_as(
+            r#"SELECT date, SUM(amount) as total FROM transactions
+               WHERE snapshot_id = ? AND date < ?
+               GROUP BY date"#,
+        )
+        .bind(first.id)
+        .bind(&first.date)
+        .fetch_all(pool)
+        .await?;
+
+        if !backward_sums.is_empty() {
+            let bw_map: HashMap<String, f64> = backward_sums
+                .into_iter()
+                .map(|ds| (ds.date, ds.total))
+                .collect();
+
+            let mut balance = first.balance;
+            let mut date = first_date;
+            // Walk backwards: subtract each day's transactions to get prior balance
+            while date > cutoff_date {
+                let date_str = date.format("%Y-%m-%d").to_string();
+                if let Some(&day_total) = bw_map.get(&date_str) {
+                    balance -= day_total;
+                }
+                date -= Duration::days(1);
+                let prev_str = date.format("%Y-%m-%d").to_string();
+                if date >= cutoff_date {
+                    result.push(BalancePoint {
+                        date: prev_str,
+                        balance,
+                    });
+                }
+            }
+        }
+    }
+
     // For each pair of consecutive snapshots, interpolate using linked transactions
     for i in 0..all_snapshots.len() {
         let s = all_snapshots[i];
