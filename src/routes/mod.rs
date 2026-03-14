@@ -27,6 +27,7 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
     let protected = Router::new()
         .merge(launcher::routes())
         .nest("/leanfin", crate::apps::leanfin::router())
+        .nest("/voice", crate::apps::voice_to_text::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_auth,
@@ -45,6 +46,11 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
 
 pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
     let bind_addr = config.bind_addr.clone();
+    let worker_config = Arc::new(config.clone());
+
+    // Start background voice transcription worker
+    crate::apps::voice_to_text::services::worker::spawn(pool.clone(), worker_config);
+
     let app = build_router(pool, config);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;

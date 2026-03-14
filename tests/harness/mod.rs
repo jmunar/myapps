@@ -40,6 +40,8 @@ pub async fn spawn_app() -> TestApp {
         ntfy_topic: None,
         bind_addr: "127.0.0.1:0".into(),
         base_path: String::new(),
+        whisper_cli_path: "whisper-cli".into(),
+        whisper_models_dir: "models".into(),
     };
 
     let app = myapps::routes::build_router(pool.clone(), config);
