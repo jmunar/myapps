@@ -1,5 +1,6 @@
 mod auth;
 mod launcher;
+mod pwa;
 
 use crate::config::Config;
 use axum::{Router, middleware};
@@ -40,6 +41,7 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
     Router::new()
         .merge(protected)
         .merge(public)
+        .merge(pwa::routes())
         .nest_service("/static", ServeDir::new("static"))
         .layer(CookieManagerLayer::new())
         .with_state(state)

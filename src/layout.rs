@@ -26,17 +26,28 @@ pub fn render_page(title: &str, nav_items: &[NavItem], body_html: &str, base_pat
     }
 
     format!(
-        r#"<!DOCTYPE html>
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1B2030">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>{title}</title>
     <link rel="stylesheet" href="{base_path}/static/style.css">
+    <link rel="manifest" href="{base_path}/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="{base_path}/static/icon.svg">
+    <link rel="apple-touch-icon" href="{base_path}/static/icon.svg">
     <script src="{base_path}/static/htmx.min.js"></script>
     <script src="{base_path}/static/frappe-charts.min.umd.js"></script>
 </head>
 <body>
+    <script>
+    if ("serviceWorker" in navigator) {{
+        navigator.serviceWorker.register("{base_path}/sw.js", {{ scope: "{base_path}/" }});
+    }}
+    </script>
     <nav>
         <a href="{base_path}/" class="brand">MyApps</a>
         {nav_html}
@@ -45,6 +56,6 @@ pub fn render_page(title: &str, nav_items: &[NavItem], body_html: &str, base_pat
         {body_html}
     </main>
 </body>
-</html>"#
+</html>"##
     )
 }

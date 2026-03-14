@@ -15,15 +15,26 @@ async fn login_page(
 ) -> Html<String> {
     let base = &state.config.base_path;
     Html(format!(
-        r#"<!DOCTYPE html>
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1B2030">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>MyApps — Login</title>
     <link rel="stylesheet" href="{base}/static/style.css">
+    <link rel="manifest" href="{base}/manifest.json">
+    <link rel="icon" type="image/svg+xml" href="{base}/static/icon.svg">
+    <link rel="apple-touch-icon" href="{base}/static/icon.svg">
 </head>
 <body class="login-page">
+    <script>
+    if ("serviceWorker" in navigator) {{
+        navigator.serviceWorker.register("{base}/sw.js", {{ scope: "{base}/" }});
+    }}
+    </script>
     <div class="login-card">
         <div class="login-brand">
             <h1>MyApps</h1>
@@ -42,7 +53,7 @@ async fn login_page(
         </div>
     </div>
 </body>
-</html>"#
+</html>"##
     ))
 }
 
