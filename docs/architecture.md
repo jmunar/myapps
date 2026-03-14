@@ -15,6 +15,13 @@
 | Reverse proxy    | nginx + certbot                 |
 | Process manager  | systemd                         |
 
+## Timezone Handling
+
+All date calculations (balance tracking, sync lookback, expense cutoffs) use the
+configured timezone (`TIMEZONE` env var, IANA format like `Europe/Madrid`).
+Transaction dates from bank APIs are in local time, so the server must agree on
+what "today" means. If `TIMEZONE` is not set, it defaults to UTC.
+
 ## Binary Structure
 
 A single binary with subcommands:

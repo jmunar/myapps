@@ -168,5 +168,11 @@ visibility into spending patterns.
   and provider behavior changes. Payloads are linked to the relevant account when
   available; pre-account calls (auth, sessions) store a NULL account_id.
 
+- **Timezone-aware date calculations** — all server-side "today" calculations
+  (balance tracking, sync lookback, expense cutoffs) use a configurable timezone
+  (`TIMEZONE` env var, IANA format). This ensures transactions from bank APIs
+  (which use local dates) are correctly matched to the right day for balance
+  computation, even in the early-morning hours when UTC and local time disagree.
+
 ### Not yet implemented
 - **Additional apps** — new sub-applications on the platform.
