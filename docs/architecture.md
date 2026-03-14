@@ -62,7 +62,7 @@ myapps/
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # ntfy push notifications
 │   └── apps/                # Sub-applications
-│       └── leanfin/         # LeanFin expense tracker
+│       ├── leanfin/         # LeanFin expense tracker
 │           ├── mod.rs       # LeanFin router
 │           ├── dashboard.rs # Main transactions page
 │           ├── transactions.rs # Transaction list + allocation editor
@@ -79,7 +79,16 @@ myapps/
 │               ├── expenses.rs        # Expense aggregation by label + date
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
-├── static/                  # CSS, JS (htmx, frappe-charts)
+│       └── mindflow/        # MindFlow thought capture + mind map
+│           ├── mod.rs       # MindFlow router + nav
+│           ├── mind_map.rs  # Mind map page (D3.js) + map data JSON endpoint
+│           ├── categories.rs # Category CRUD
+│           ├── thoughts.rs  # Thought capture, detail, comments, actions
+│           ├── inbox.rs     # Inbox (uncategorized thoughts) + bulk recategorize
+│           ├── actions.rs   # Actions list, toggle, delete
+│           └── services/
+│               └── seed.rs  # Demo data seeding
+├── static/                  # CSS, JS (htmx, frappe-charts, d3)
 ├── .claude/agents/          # Claude Code agent prompts
 │   └── frontend-tester.md   # Agent for generating integration tests
 ├── Cargo.toml
@@ -112,6 +121,27 @@ After login, the top-level router serves:
   - `/leanfin/expenses` — Expenses page (multi-label selector + chart + transaction list)
   - `/leanfin/expenses/chart?label_ids=1,2&days=90` — Expense chart data (HTMX)
   - `/leanfin/labels` — Label CRUD
+- `/mindflow/` — MindFlow sub-app (nested router)
+  - `/mindflow/` — Mind map page (D3.js visualization + quick capture)
+  - `/mindflow/map-data` — Mind map JSON data (categories + thoughts as nodes/links)
+  - `/mindflow/categories` — Category CRUD
+  - `POST /mindflow/categories/create` — Create category
+  - `POST /mindflow/categories/{id}/edit` — Edit category
+  - `POST /mindflow/categories/{id}/archive` — Archive category
+  - `POST /mindflow/categories/{id}/unarchive` — Unarchive category
+  - `POST /mindflow/categories/{id}/delete` — Delete category
+  - `POST /mindflow/capture` — Quick thought capture (HTMX partial)
+  - `/mindflow/thoughts/{id}` — Thought detail (comments, actions, recategorize)
+  - `POST /mindflow/thoughts/{id}/comment` — Add comment (HTMX partial)
+  - `POST /mindflow/thoughts/{id}/archive` — Toggle thought archive status
+  - `POST /mindflow/thoughts/{id}/recategorize` — Change thought category
+  - `POST /mindflow/thoughts/{id}/action` — Create action from thought
+  - `POST /mindflow/thoughts/{id}/sub-thought` — Create nested sub-thought
+  - `/mindflow/inbox` — Uncategorized thoughts list
+  - `POST /mindflow/inbox/recategorize` — Bulk recategorize selected thoughts
+  - `/mindflow/actions` — All actions list
+  - `POST /mindflow/actions/{id}/toggle` — Toggle action done/pending
+  - `POST /mindflow/actions/{id}/delete` — Delete action
 
 ## Database Schema
 
@@ -238,6 +268,56 @@ Indexes: `account_id`, `created_at`.
 | label_id       | INTEGER | FK → labels                |
 | source         | TEXT    | 'auto' or 'manual'        |
 | PRIMARY KEY (transaction_id, label_id) | | |
+
+### mindflow_categories
+
+| Column     | Type    | Notes                                  |
+|------------|---------|----------------------------------------|
+| id         | INTEGER | PK, autoincrement                      |
+| user_id    | INTEGER | FK → users                             |
+| name       | TEXT    | NOT NULL, UNIQUE(user_id, name)        |
+| color      | TEXT    | NOT NULL, default '#6B6B6B'            |
+| icon       | TEXT    | Nullable                               |
+| parent_id  | INTEGER | Nullable FK → mindflow_categories      |
+| archived   | INTEGER | 0 or 1, default 0                      |
+| position   | INTEGER | Ordering, default 0                    |
+| created_at | TEXT    | ISO 8601                               |
+
+### mindflow_thoughts
+
+| Column            | Type    | Notes                                 |
+|-------------------|---------|---------------------------------------|
+| id                | INTEGER | PK, autoincrement                     |
+| user_id           | INTEGER | FK → users                            |
+| category_id       | INTEGER | Nullable FK → mindflow_categories     |
+| parent_thought_id | INTEGER | Nullable FK → mindflow_thoughts (nesting) |
+| content           | TEXT    | NOT NULL                              |
+| status            | TEXT    | 'active' or 'archived'                |
+| created_at        | TEXT    | ISO 8601                              |
+| updated_at        | TEXT    | ISO 8601                              |
+
+### mindflow_comments
+
+| Column     | Type    | Notes                                  |
+|------------|---------|----------------------------------------|
+| id         | INTEGER | PK, autoincrement                      |
+| thought_id | INTEGER | FK → mindflow_thoughts, ON DELETE CASCADE |
+| content    | TEXT    | NOT NULL                               |
+| created_at | TEXT    | ISO 8601                               |
+
+### mindflow_actions
+
+| Column       | Type    | Notes                                |
+|--------------|---------|--------------------------------------|
+| id           | INTEGER | PK, autoincrement                    |
+| thought_id   | INTEGER | FK → mindflow_thoughts, ON DELETE CASCADE |
+| user_id      | INTEGER | FK → users                           |
+| title        | TEXT    | NOT NULL                             |
+| due_date     | TEXT    | Nullable, ISO 8601 date              |
+| priority     | TEXT    | 'low', 'medium', 'high'             |
+| status       | TEXT    | 'pending' or 'done'                  |
+| created_at   | TEXT    | ISO 8601                             |
+| completed_at | TEXT    | Nullable, set when status → done     |
 
 ## Authentication Flow
 

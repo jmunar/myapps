@@ -173,5 +173,37 @@ visibility into spending patterns.
   and provider behavior changes. Payloads are linked to the relevant account when
   available; pre-account calls (auth, sessions) store a NULL account_id.
 
-### Not yet implemented
-- **Additional apps** — new sub-applications on the platform.
+### MindFlow (second sub-application)
+
+MindFlow is a personal thought capture and mind map application. Users jot
+thoughts throughout the day, categorize them into topics, and visualize the
+connections on an interactive mind map.
+
+#### Implemented
+
+- **Categories CRUD** — predefined categories with name, color, and optional icon.
+  Categories can be created, edited, archived, and deleted (if no thoughts
+  reference them).
+- **Thought capture** — quick inline capture from the mind map page with optional
+  category picker. Uncategorized thoughts land in the Inbox.
+- **Mind map visualization** — D3.js force-directed graph showing categories as
+  large colored nodes and thoughts as smaller linked nodes. Supports zoom, drag,
+  and click-to-navigate to thought details.
+- **Thought detail** — full view of a thought with category badge, recategorize
+  dropdown, archive toggle, inline comment thread (HTMX), action creation, and
+  nested sub-thoughts displayed as a recursive tree.
+- **Inbox** — list of uncategorized thoughts with bulk recategorize via checkboxes
+  and category dropdown.
+- **Actions** — to-do items linked to thoughts, with priority (low/medium/high),
+  optional due date, toggle done/pending, and delete. Actions page shows all
+  actions sorted by status and priority.
+- **Seed data** — `cargo run -- seed --app mindflow` populates demo categories,
+  thoughts, comments, and actions.
+
+#### Not yet implemented
+- **Sub-categories** — hierarchical nesting within categories.
+- **Alerts** — overdue actions, stale thoughts.
+- **Date range filtering** on the mind map.
+- **ntfy integration** for push notifications.
+- **Local LLM integration** — async auto-categorization, action extraction,
+  connection finding via Llama-3.2-1B-Instruct.

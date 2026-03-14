@@ -1,8 +1,9 @@
 # MyApps
 
-Multi-app personal platform. LeanFin (personal expense management) is the first
-sub-application. After login, users see an app launcher and can navigate into
-individual apps. All apps share auth, DB, layout/styling, and config.
+Multi-app personal platform. LeanFin (personal expense management) and MindFlow
+(thought capture & mind map) are the current sub-applications. After login, users
+see an app launcher and can navigate into individual apps. All apps share auth,
+DB, layout/styling, and config.
 
 ## Stack
 
@@ -19,6 +20,8 @@ cargo run -- sync                   # Run transaction sync manually
 cargo run -- create-user            # Create a user
 cargo run -- seed --app leanfin     # Seed LeanFin demo data
 cargo run -- seed --app leanfin --reset  # Wipe and re-seed demo data
+cargo run -- seed --app mindflow   # Seed MindFlow demo data
+cargo run -- seed --app mindflow --reset  # Wipe and re-seed demo data
 
 # Tests
 cargo test
@@ -38,7 +41,9 @@ export MYAPPS_SERVER="user@odroid.local"
 - Keep memory footprint minimal — avoid unnecessary allocations and large
   dependencies.
 - LeanFin-specific routes, handlers, and services live under `src/apps/leanfin/`.
+- MindFlow-specific routes, handlers, and services live under `src/apps/mindflow/`.
 - Shared infrastructure (auth, config, db, models, layout) stays at the top level.
+- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`).
 
 ## Testing
 
