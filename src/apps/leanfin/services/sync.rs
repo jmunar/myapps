@@ -90,8 +90,47 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
 async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> Result<(u64, Option<String>)> {
     let account_uid = &account.account_uid;
 
-    // If the account has no transactions yet, do a full initial sync (90 days).
-    // Otherwise, fetch the last 5 days for overlap safety.
+    // 1. Fetch and store balance snapshot first (non-fatal)
+    let mut snapshot_id: Option<i64> = None;
+    let mut best_balance: Option<(f64, String)> = None; // (amount, balance_type)
+    match enable_banking::get_balances(pool, config, account_uid, Some(account.id)).await {
+        Ok(balances) => {
+            if let Some(best) = enable_banking::pick_best_balance(&balances) {
+                if let Ok(amount) = best.balance_amount.amount.parse::<f64>() {
+                    let currency = &best.balance_amount.currency;
+                    best_balance = Some((amount, best.balance_type.clone()));
+
+                    if let Err(e) = sqlx::query(
+                        "UPDATE accounts SET balance_amount = ?, balance_currency = ? WHERE id = ?",
+                    )
+                    .bind(amount)
+                    .bind(currency)
+                    .bind(account.id)
+                    .execute(pool)
+                    .await
+                    {
+                        tracing::warn!("Failed to update balance for '{}': {e:#}", account.bank_name);
+                    }
+
+                    let timestamp = super::balance::timestamp_for_balance_type(
+                        &best.balance_type,
+                        best.reference_date.as_deref(),
+                    );
+                    match super::balance::record_balance_snapshot(
+                        pool, account.id, amount, &best.balance_type, &timestamp,
+                    ).await {
+                        Ok(id) => snapshot_id = Some(id),
+                        Err(e) => tracing::warn!("Failed to record balance snapshot for '{}': {e:#}", account.bank_name),
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to fetch balances for '{}': {e:#}", account.bank_name);
+        }
+    }
+
+    // 2. Fetch and insert transactions, linking to the snapshot
     let has_transactions: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM transactions WHERE account_id = ?)",
     )
@@ -116,7 +155,7 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         let amount = match tx.credit_debit_indicator.as_deref() {
             Some("DBIT") => -raw_amount.abs(),
             Some("CRDT") => raw_amount.abs(),
-            _ => raw_amount, // fallback: trust the sign as-is
+            _ => raw_amount,
         };
         let currency = &tx.transaction_amount.currency;
         let description = tx.description();
@@ -129,8 +168,8 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
 
         let result = sqlx::query(
             r#"INSERT OR IGNORE INTO transactions
-               (account_id, external_id, date, amount, currency, description, counterparty, balance_after)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+               (account_id, external_id, date, amount, currency, description, counterparty, balance_after, snapshot_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
         )
         .bind(account.id)
         .bind(&external_id)
@@ -140,60 +179,23 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         .bind(&description)
         .bind(&counterparty)
         .bind(balance_after)
+        .bind(snapshot_id)
         .execute(pool)
         .await?;
 
         inserted += result.rows_affected();
     }
 
-    // Fetch and store account balance (non-fatal)
-    let mut best_balance: Option<(f64, String)> = None; // (amount, balance_type)
-    match enable_banking::get_balances(pool, config, account_uid, Some(account.id)).await {
-        Ok(balances) => {
-            if let Some(best) = enable_banking::pick_best_balance(&balances) {
-                if let Ok(amount) = best.balance_amount.amount.parse::<f64>() {
-                    let currency = &best.balance_amount.currency;
-                    best_balance = Some((amount, best.balance_type.clone()));
-                    if let Err(e) = sqlx::query(
-                        "UPDATE accounts SET balance_amount = ?, balance_currency = ? WHERE id = ?",
-                    )
-                    .bind(amount)
-                    .bind(currency)
-                    .bind(account.id)
-                    .execute(pool)
-                    .await
-                    {
-                        tracing::warn!("Failed to update balance for '{}': {e:#}", account.bank_name);
-                    }
-
-                    // Record balance snapshot
-                    let timestamp = super::balance::timestamp_for_balance_type(
-                        &best.balance_type,
-                        best.reference_date.as_deref(),
-                    );
-                    if let Err(e) = super::balance::record_balance_snapshot(
-                        pool, account.id, amount, &best.balance_type, &timestamp,
-                    ).await {
-                        tracing::warn!("Failed to record balance snapshot for '{}': {e:#}", account.bank_name);
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            tracing::warn!("Failed to fetch balances for '{}': {e:#}", account.bank_name);
-        }
-    }
-
-    // Reconciliation (ITAV only)
+    // 3. Reconciliation (ITAV only, using snapshot-linked transactions)
     let mut reconciliation_warning: Option<String> = None;
     if let Some((balance, ref balance_type)) = best_balance {
-        match super::balance::check_reconciliation(pool, config, account, balance, balance_type).await {
+        match super::balance::check_reconciliation(pool, config, account, balance, balance_type, snapshot_id).await {
             Ok(warning) => reconciliation_warning = warning,
             Err(e) => tracing::warn!("Reconciliation check failed for '{}': {e:#}", account.bank_name),
         }
     }
 
-    // Run auto-labeling on newly fetched transactions
+    // 4. Auto-labeling on newly fetched transactions
     if inserted > 0 {
         match super::labeling::apply_rules(pool, account.user_id).await {
             Ok(labeled) => {

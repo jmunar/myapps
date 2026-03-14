@@ -35,7 +35,7 @@ pub async fn record_balance_snapshot(
     balance: f64,
     balance_type: &str,
     timestamp: &str,
-) -> Result<()> {
+) -> Result<i64> {
     let date = date_from_timestamp(timestamp);
 
     // Remove existing snapshot for same account + type + day, then insert.
@@ -48,7 +48,7 @@ pub async fn record_balance_snapshot(
     .execute(pool)
     .await?;
 
-    sqlx::query(
+    let result = sqlx::query(
         r#"INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
            VALUES (?, ?, ?, ?, ?)"#,
     )
@@ -60,11 +60,11 @@ pub async fn record_balance_snapshot(
     .execute(pool)
     .await?;
 
-    Ok(())
+    Ok(result.last_insert_rowid())
 }
 
-/// Compare previous ITAV balance + sum of new transactions vs the new ITAV
-/// balance. If the discrepancy exceeds 0.01, send an ntfy alert.
+/// Compare previous ITAV balance + new transactions (linked to this snapshot)
+/// vs the new ITAV balance. If the discrepancy exceeds 0.01, send an ntfy alert.
 /// Only runs when both old and new balances are ITAV.
 pub async fn check_reconciliation(
     pool: &SqlitePool,
@@ -72,8 +72,8 @@ pub async fn check_reconciliation(
     account: &Account,
     new_balance: f64,
     balance_type: &str,
+    snapshot_id: Option<i64>,
 ) -> Result<Option<String>> {
-    // Only reconcile ITAV balances
     if balance_type != "ITAV" {
         return Ok(None);
     }
@@ -94,16 +94,26 @@ pub async fn check_reconciliation(
         return Ok(None);
     };
 
-    // Sum transactions between previous date (exclusive) and today (inclusive)
-    let txn_sum: Option<f64> = sqlx::query_scalar(
-        r#"SELECT SUM(amount) FROM transactions
-           WHERE account_id = ? AND date > ? AND date <= ?"#,
-    )
-    .bind(account.id)
-    .bind(&prev.date)
-    .bind(&today)
-    .fetch_one(pool)
-    .await?;
+    // Sum only the transactions that are new in this snapshot
+    let txn_sum: Option<f64> = if let Some(sid) = snapshot_id {
+        sqlx::query_scalar(
+            "SELECT SUM(amount) FROM transactions WHERE snapshot_id = ?",
+        )
+        .bind(sid)
+        .fetch_one(pool)
+        .await?
+    } else {
+        // Fallback: date-based (legacy, when snapshot_id is unavailable)
+        sqlx::query_scalar(
+            r#"SELECT SUM(amount) FROM transactions
+               WHERE account_id = ? AND date > ? AND date <= ?"#,
+        )
+        .bind(account.id)
+        .bind(&prev.date)
+        .bind(&today)
+        .fetch_one(pool)
+        .await?
+    };
 
     let txn_sum = txn_sum.unwrap_or(0.0);
     let expected = prev.balance + txn_sum;
@@ -218,79 +228,118 @@ pub async fn get_balance_series(
         return Ok(fill_balance_gaps(&rows, days));
     }
 
-    // Bank account: find the most recent reported balance at or before today
-    let anchor: Option<BalancePoint> = sqlx::query_as(
-        r#"SELECT date, balance FROM balance_snapshots
-           WHERE account_id = ? AND date <= ?
-           ORDER BY date DESC LIMIT 1"#,
-    )
-    .bind(account_id)
-    .bind(&today)
-    .fetch_optional(pool)
-    .await?;
-
-    let Some(anchor) = anchor else {
-        return Ok(Vec::new());
-    };
-
-    // Fetch daily transaction sums for the range
-    let daily_sums: Vec<DailySum> = sqlx::query_as(
-        r#"SELECT date, SUM(amount) as total FROM transactions
+    // Bank account: fetch all snapshots in range, ordered by date
+    let snapshots: Vec<Snapshot> = sqlx::query_as(
+        r#"SELECT id, date, balance FROM balance_snapshots
            WHERE account_id = ? AND date >= ?
-           GROUP BY date"#,
+           ORDER BY date ASC"#,
     )
     .bind(account_id)
     .bind(&cutoff)
     .fetch_all(pool)
     .await?;
 
-    let sum_map: HashMap<String, f64> = daily_sums
-        .into_iter()
-        .map(|ds| (ds.date, ds.total))
-        .collect();
+    // Also fetch the most recent snapshot before cutoff (for backward walk)
+    let pre_cutoff: Option<Snapshot> = sqlx::query_as(
+        r#"SELECT id, date, balance FROM balance_snapshots
+           WHERE account_id = ? AND date < ?
+           ORDER BY date DESC LIMIT 1"#,
+    )
+    .bind(account_id)
+    .bind(&cutoff)
+    .fetch_optional(pool)
+    .await?;
 
-    let anchor_date = NaiveDate::parse_from_str(&anchor.date, "%Y-%m-%d")?;
+    let all_snapshots: Vec<&Snapshot> = pre_cutoff.iter().chain(snapshots.iter()).collect();
+
+    if all_snapshots.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let cutoff_date = NaiveDate::parse_from_str(&cutoff, "%Y-%m-%d")?;
     let today_date = NaiveDate::parse_from_str(&today, "%Y-%m-%d")?;
 
-    // Walk backwards from anchor to cutoff
-    let mut backward_points: Vec<BalancePoint> = Vec::new();
-    let mut balance = anchor.balance;
-    let mut date = anchor_date;
+    let mut result: Vec<BalancePoint> = Vec::new();
 
-    while date >= cutoff_date {
-        let date_str = date.format("%Y-%m-%d").to_string();
-        backward_points.push(BalancePoint {
-            date: date_str.clone(),
-            balance,
-        });
-        if let Some(&day_total) = sum_map.get(&date_str) {
-            balance -= day_total;
-        }
-        date -= Duration::days(1);
-    }
-    backward_points.reverse();
+    // For each pair of consecutive snapshots, interpolate using linked transactions
+    for i in 0..all_snapshots.len() {
+        let s = all_snapshots[i];
+        let s_date = NaiveDate::parse_from_str(&s.date, "%Y-%m-%d")?;
 
-    // Walk forward from anchor to today
-    let mut forward_points: Vec<BalancePoint> = Vec::new();
-    if anchor_date < today_date {
-        balance = anchor.balance;
-        date = anchor_date + Duration::days(1);
-        while date <= today_date {
+        // Determine the end date for this segment
+        let end_date = if i + 1 < all_snapshots.len() {
+            let next = all_snapshots[i + 1];
+            NaiveDate::parse_from_str(&next.date, "%Y-%m-%d")?
+        } else {
+            today_date
+        };
+
+        // Fetch daily sums of NEW transactions in the next snapshot (if any)
+        let next_snapshot_id = if i + 1 < all_snapshots.len() {
+            Some(all_snapshots[i + 1].id)
+        } else {
+            None
+        };
+
+        let sum_map: HashMap<String, f64> = if let Some(nsid) = next_snapshot_id {
+            let sums: Vec<DailySum> = sqlx::query_as(
+                r#"SELECT date, SUM(amount) as total FROM transactions
+                   WHERE snapshot_id = ?
+                   GROUP BY date"#,
+            )
+            .bind(nsid)
+            .fetch_all(pool)
+            .await?;
+            sums.into_iter().map(|ds| (ds.date, ds.total)).collect()
+        } else {
+            // After the last snapshot, use all transactions without a snapshot
+            // that fall after this snapshot's date (legacy/future data)
+            let sums: Vec<DailySum> = sqlx::query_as(
+                r#"SELECT date, SUM(amount) as total FROM transactions
+                   WHERE account_id = ? AND date > ? AND snapshot_id IS NULL
+                   GROUP BY date"#,
+            )
+            .bind(account_id)
+            .bind(&s.date)
+            .fetch_all(pool)
+            .await?;
+            sums.into_iter().map(|ds| (ds.date, ds.total)).collect()
+        };
+
+        // Walk from s_date to end_date (exclusive of end_date if there's a next snapshot)
+        let mut balance = s.balance;
+        let mut date = s_date;
+        let walk_end = if next_snapshot_id.is_some() { end_date } else { end_date + Duration::days(1) };
+
+        while date < walk_end {
             let date_str = date.format("%Y-%m-%d").to_string();
-            if let Some(&day_total) = sum_map.get(&date_str) {
+            if date >= cutoff_date && date <= today_date {
+                result.push(BalancePoint {
+                    date: date_str.clone(),
+                    balance,
+                });
+            }
+            // Accumulate transactions for the next day
+            let next_date = (date + Duration::days(1)).format("%Y-%m-%d").to_string();
+            if let Some(&day_total) = sum_map.get(&next_date) {
                 balance += day_total;
             }
-            forward_points.push(BalancePoint {
-                date: date_str,
-                balance,
-            });
             date += Duration::days(1);
         }
     }
 
-    backward_points.extend(forward_points);
-    Ok(backward_points)
+    // Deduplicate by date (in case of overlapping segments, keep last)
+    let mut seen = HashMap::new();
+    for p in &result {
+        seen.insert(p.date.clone(), p.balance);
+    }
+    let mut deduped: Vec<BalancePoint> = seen
+        .into_iter()
+        .map(|(date, balance)| BalancePoint { date, balance })
+        .collect();
+    deduped.sort_by(|a, b| a.date.cmp(&b.date));
+
+    Ok(deduped)
 }
 
 /// Query aggregated daily balance series across all accounts for a user.
@@ -333,6 +382,13 @@ struct DailySum {
 
 #[derive(sqlx::FromRow)]
 struct PrevBalance {
+    date: String,
+    balance: f64,
+}
+
+#[derive(sqlx::FromRow)]
+struct Snapshot {
+    id: i64,
     date: String,
     balance: f64,
 }

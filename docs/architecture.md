@@ -178,6 +178,7 @@ After login, the top-level router serves:
 | counterparty    | TEXT    | Nullable                           |
 | balance_after   | REAL    | Nullable                           |
 | created_at      | TEXT    | When we first stored it            |
+| snapshot_id     | INTEGER | Nullable FK → balance_snapshots (ON DELETE SET NULL) |
 | UNIQUE(external_id, account_id) |  | Deduplication constraint  |
 
 ### labels
@@ -291,14 +292,12 @@ myapps sync
   │   │   └─ Skip
   │   ├─ If expiring within 7 days:
   │   │   └─ Send ntfy warning
+  │   ├─ GET /accounts/{uid}/balances → pick best type → UPDATE accounts
+  │   ├─ Record balance snapshot → get snapshot_id
   │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
-  │   ├─ Save raw request/response payload to api_payloads table
   │   ├─ Apply credit_debit_indicator: DBIT → negative, CRDT → positive
-  │   ├─ INSERT OR IGNORE (dedup by external_id + account_id)
-  │   ├─ GET /accounts/{uid}/balances → pick best balance type → UPDATE accounts
-  │   ├─ Save raw request/response payload to api_payloads table
-  │   ├─ Reconciliation check (ITAV only: expected vs reported balance, ntfy alert if off)
-  │   ├─ Record balance snapshot with type (ITAV/CLAV/etc.) and appropriate timestamp
+  │   ├─ INSERT OR IGNORE with snapshot_id (dedup by external_id + account_id)
+  │   ├─ Reconciliation (ITAV only): b1 - b0 == SUM(txns where snapshot_id = b1)
   │   └─ Run auto-labeling rules on newly inserted transactions
   │
   └─ Log summary: "Synced 42 new transactions across 3 accounts"
