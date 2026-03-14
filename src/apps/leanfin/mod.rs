@@ -7,8 +7,8 @@ pub mod services;
 mod sync_handler;
 mod transactions;
 
-use axum::Router;
 use crate::routes::AppState;
+use axum::Router;
 
 /// LeanFin sub-application router.
 /// All routes are relative — the top-level router nests this under `/leanfin`.

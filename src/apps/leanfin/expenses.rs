@@ -2,11 +2,11 @@ use axum::{Extension, Router, response::Html, routing::get};
 use serde::Deserialize;
 use std::collections::{BTreeSet, HashMap};
 
+use super::dashboard::leanfin_nav;
+use super::services::expenses;
 use crate::auth::UserId;
 use crate::layout::render_page;
 use crate::routes::AppState;
-use super::dashboard::leanfin_nav;
-use super::services::expenses;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -43,7 +43,12 @@ async fn page(
         <div class="card">
             <div class="empty-state"><p>No labels yet. Create labels and allocate transactions first.</p></div>
         </div>"#;
-        return Html(render_page("LeanFin — Expenses", &leanfin_nav(base, "expenses"), body, base));
+        return Html(render_page(
+            "LeanFin — Expenses",
+            &leanfin_nav(base, "expenses"),
+            body,
+            base,
+        ));
     }
 
     let mut label_pills = String::new();
@@ -157,7 +162,12 @@ async fn page(
         </script>"##,
     );
 
-    Html(render_page("LeanFin — Expenses", &leanfin_nav(base, "expenses"), &body, base))
+    Html(render_page(
+        "LeanFin — Expenses",
+        &leanfin_nav(base, "expenses"),
+        &body,
+        base,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -206,7 +216,9 @@ async fn chart_data(
             label_info.push((
                 p.label_id,
                 p.label_name.clone(),
-                p.label_color.clone().unwrap_or_else(|| "#6B6B6B".to_string()),
+                p.label_color
+                    .clone()
+                    .unwrap_or_else(|| "#6B6B6B".to_string()),
             ));
         }
     }
@@ -254,12 +266,19 @@ async fn chart_data(
         ));
     }
 
-    let mut colors: Vec<String> = label_info.iter().map(|(_, _, c)| format!("'{c}'")).collect();
+    let mut colors: Vec<String> = label_info
+        .iter()
+        .map(|(_, _, c)| format!("'{c}'"))
+        .collect();
     if label_info.len() > 1 {
         colors.push("'#000000'".to_string());
     }
 
-    let label_ids_str = label_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
+    let label_ids_str = label_ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
 
     let html = format!(
         r##"<div id="expenses-frappe-chart" class="frappe-chart-container"></div>

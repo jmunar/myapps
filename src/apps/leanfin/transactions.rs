@@ -6,16 +6,19 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::routes::AppState;
 use crate::auth::UserId;
 use crate::models::Transaction;
+use crate::routes::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/transactions", get(list))
         .route("/transactions/{txn_id}/allocations", get(alloc_editor))
         .route("/transactions/{txn_id}/allocations/add", post(alloc_add))
-        .route("/transactions/{txn_id}/allocations/{alloc_id}/delete", post(alloc_delete))
+        .route(
+            "/transactions/{txn_id}/allocations/{alloc_id}/delete",
+            post(alloc_delete),
+        )
         .route("/transactions/{txn_id}/row", get(txn_row))
 }
 
@@ -32,6 +35,7 @@ struct AllocRow {
 }
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 struct LabelInfo {
     id: i64,
     name: String,
@@ -67,8 +71,14 @@ fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
 
 fn render_row(t: &Transaction, txn_allocs: &[&AllocRow], base: &str) -> String {
     let counterparty = t.counterparty.as_deref().unwrap_or("—");
-    let sign = if t.amount < 0.0 { "negative" } else { "positive" };
-    let balance = t.balance_after.map_or("—".to_string(), |b| format!("{b:.2}"));
+    let sign = if t.amount < 0.0 {
+        "negative"
+    } else {
+        "positive"
+    };
+    let balance = t
+        .balance_after
+        .map_or("—".to_string(), |b| format!("{b:.2}"));
     let badge_html = render_badges(txn_allocs, base, t.id);
 
     let allocated: f64 = txn_allocs.iter().map(|a| a.amount).sum();
@@ -208,9 +218,12 @@ async fn list(
         .unwrap_or(0);
 
     if total == 0 {
-        return Html(r#"<div class="empty-state">
+        return Html(
+            r#"<div class="empty-state">
             <p>No transactions yet. Link a bank account and run a sync to get started.</p>
-        </div>"#.to_string());
+        </div>"#
+                .to_string(),
+        );
     }
 
     let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -247,17 +260,12 @@ async fn list(
     for id in &txn_ids {
         alloc_query = alloc_query.bind(id);
     }
-    let allocs: Vec<AllocRow> = alloc_query
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default();
+    let allocs: Vec<AllocRow> = alloc_query.fetch_all(&state.pool).await.unwrap_or_default();
 
     let mut rows = String::new();
     for t in &transactions {
-        let txn_allocs: Vec<&AllocRow> = allocs
-            .iter()
-            .filter(|a| a.transaction_id == t.id)
-            .collect();
+        let txn_allocs: Vec<&AllocRow> =
+            allocs.iter().filter(|a| a.transaction_id == t.id).collect();
         rows.push_str(&render_row(t, &txn_allocs, base));
     }
 
@@ -382,15 +390,15 @@ async fn alloc_editor(
     }
 
     // Label picker options
-    let mut options = String::from(r#"<option value="" disabled selected>Choose label...</option>"#);
+    let mut options =
+        String::from(r#"<option value="" disabled selected>Choose label...</option>"#);
     for l in &labels {
         // Skip labels already allocated
         let already = allocs.iter().any(|a| a.label_id == l.id);
-        if already { continue; }
-        options.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
-            l.id, l.name,
-        ));
+        if already {
+            continue;
+        }
+        options.push_str(&format!(r#"<option value="{}">{}</option>"#, l.id, l.name,));
     }
 
     let remaining_class = if remaining.abs() < 0.01 {
@@ -446,14 +454,13 @@ async fn alloc_add(
     Form(form): Form<AddAllocForm>,
 ) -> Html<String> {
     // Verify label belongs to user
-    let owns: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM leanfin_labels WHERE id = ? AND user_id = ?",
-    )
-    .bind(form.label_id)
-    .bind(user_id.0)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let owns: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE id = ? AND user_id = ?")
+            .bind(form.label_id)
+            .bind(user_id.0)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     if owns.is_some() {
         sqlx::query(

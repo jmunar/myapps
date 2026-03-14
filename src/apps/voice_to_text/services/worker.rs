@@ -4,9 +4,9 @@ use std::time::Instant;
 
 use sqlx::SqlitePool;
 
+use super::transcriber;
 use crate::config::Config;
 use crate::services::notify;
-use super::transcriber;
 
 #[derive(sqlx::FromRow)]
 struct PendingJob {
@@ -72,7 +72,11 @@ async fn process_next(pool: &SqlitePool, config: &Config) -> anyhow::Result<()> 
             .execute(pool)
             .await?;
 
-            tracing::info!(job_id = job.id, elapsed_secs = elapsed, "Transcription complete");
+            tracing::info!(
+                job_id = job.id,
+                elapsed_secs = elapsed,
+                "Transcription complete"
+            );
             notify::send(
                 pool,
                 config,

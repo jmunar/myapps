@@ -16,9 +16,7 @@ pub fn push_routes() -> Router<AppState> {
         .route("/push/unsubscribe", post(unsubscribe))
 }
 
-async fn manifest(
-    state: axum::extract::State<AppState>,
-) -> impl IntoResponse {
+async fn manifest(state: axum::extract::State<AppState>) -> impl IntoResponse {
     let base = &state.config.base_path;
     let body = serde_json::json!({
         "name": "MyApps",
@@ -44,9 +42,7 @@ async fn manifest(
     )
 }
 
-async fn service_worker(
-    state: axum::extract::State<AppState>,
-) -> impl IntoResponse {
+async fn service_worker(state: axum::extract::State<AppState>) -> impl IntoResponse {
     let base = &state.config.base_path;
     let scope = if base.is_empty() {
         "/".to_string()
@@ -65,9 +61,7 @@ async fn service_worker(
         .unwrap()
 }
 
-async fn vapid_key(
-    state: axum::extract::State<AppState>,
-) -> impl IntoResponse {
+async fn vapid_key(state: axum::extract::State<AppState>) -> impl IntoResponse {
     match &state.config.vapid_public_key {
         Some(key) => (StatusCode::OK, key.clone()),
         None => (StatusCode::NOT_FOUND, "VAPID not configured".to_string()),

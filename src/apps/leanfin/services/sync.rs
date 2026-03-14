@@ -2,9 +2,9 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use sqlx::SqlitePool;
 
+use super::enable_banking;
 use crate::config::Config;
 use crate::models::Account;
-use super::enable_banking;
 
 /// Result of a sync operation, used to report status in the UI.
 pub struct SyncResult {
@@ -91,7 +91,11 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
 }
 
 /// Returns (inserted_count, optional reconciliation warning).
-async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> Result<(u64, Option<String>)> {
+async fn sync_account(
+    pool: &SqlitePool,
+    config: &Config,
+    account: &Account,
+) -> Result<(u64, Option<String>)> {
     let account_uid = &account.account_uid;
 
     // 1. Fetch and store balance snapshot first (non-fatal)
@@ -99,12 +103,13 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
     let mut best_balance: Option<(f64, String)> = None; // (amount, balance_type)
     match enable_banking::get_balances(pool, config, account_uid, Some(account.id)).await {
         Ok(balances) => {
-            if let Some(best) = enable_banking::pick_best_balance(&balances) {
-                if let Ok(amount) = best.balance_amount.amount.parse::<f64>() {
-                    let currency = &best.balance_amount.currency;
-                    best_balance = Some((amount, best.balance_type.clone()));
+            if let Some(best) = enable_banking::pick_best_balance(&balances)
+                && let Ok(amount) = best.balance_amount.amount.parse::<f64>()
+            {
+                let currency = &best.balance_amount.currency;
+                best_balance = Some((amount, best.balance_type.clone()));
 
-                    if let Err(e) = sqlx::query(
+                if let Err(e) = sqlx::query(
                         "UPDATE leanfin_accounts SET balance_amount = ?, balance_currency = ? WHERE id = ?",
                     )
                     .bind(amount)
@@ -116,21 +121,32 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
                         tracing::warn!("Failed to update balance for '{}': {e:#}", account.bank_name);
                     }
 
-                    let timestamp = super::balance::timestamp_for_balance_type(
-                        &best.balance_type,
-                        best.reference_date.as_deref(),
-                    );
-                    match super::balance::record_balance_snapshot(
-                        pool, account.id, amount, &best.balance_type, &timestamp,
-                    ).await {
-                        Ok(id) => snapshot_id = Some(id),
-                        Err(e) => tracing::warn!("Failed to record balance snapshot for '{}': {e:#}", account.bank_name),
-                    }
+                let timestamp = super::balance::timestamp_for_balance_type(
+                    &best.balance_type,
+                    best.reference_date.as_deref(),
+                );
+                match super::balance::record_balance_snapshot(
+                    pool,
+                    account.id,
+                    amount,
+                    &best.balance_type,
+                    &timestamp,
+                )
+                .await
+                {
+                    Ok(id) => snapshot_id = Some(id),
+                    Err(e) => tracing::warn!(
+                        "Failed to record balance snapshot for '{}': {e:#}",
+                        account.bank_name
+                    ),
                 }
             }
         }
         Err(e) => {
-            tracing::warn!("Failed to fetch balances for '{}': {e:#}", account.bank_name);
+            tracing::warn!(
+                "Failed to fetch balances for '{}': {e:#}",
+                account.bank_name
+            );
         }
     }
 
@@ -148,7 +164,8 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         .to_string();
 
     let transactions =
-        enable_banking::get_transactions(pool, config, account_uid, &date_from, Some(account.id)).await?;
+        enable_banking::get_transactions(pool, config, account_uid, &date_from, Some(account.id))
+            .await?;
 
     let mut inserted = 0u64;
 
@@ -193,9 +210,21 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
     // 3. Reconciliation (ITAV only, using snapshot-linked transactions)
     let mut reconciliation_warning: Option<String> = None;
     if let Some((balance, ref balance_type)) = best_balance {
-        match super::balance::check_reconciliation(pool, config, account, balance, balance_type, snapshot_id).await {
+        match super::balance::check_reconciliation(
+            pool,
+            config,
+            account,
+            balance,
+            balance_type,
+            snapshot_id,
+        )
+        .await
+        {
             Ok(warning) => reconciliation_warning = warning,
-            Err(e) => tracing::warn!("Reconciliation check failed for '{}': {e:#}", account.bank_name),
+            Err(e) => tracing::warn!(
+                "Reconciliation check failed for '{}': {e:#}",
+                account.bank_name
+            ),
         }
     }
 
@@ -204,7 +233,10 @@ async fn sync_account(pool: &SqlitePool, config: &Config, account: &Account) -> 
         match super::labeling::apply_rules(pool, account.user_id).await {
             Ok(labeled) => {
                 if labeled > 0 {
-                    tracing::info!("Account '{}': auto-labeled {labeled} transactions", account.bank_name);
+                    tracing::info!(
+                        "Account '{}': auto-labeled {labeled} transactions",
+                        account.bank_name
+                    );
                 }
             }
             Err(e) => tracing::warn!("Auto-labeling failed: {e:#}"),
@@ -241,10 +273,9 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
 
         if days_until_expiry <= 0 {
             result.accounts_skipped += 1;
-            result.errors.push(format!(
-                "'{}': session expired",
-                account.bank_name,
-            ));
+            result
+                .errors
+                .push(format!("'{}': session expired", account.bank_name,));
             continue;
         }
 
@@ -258,10 +289,9 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
             }
             Err(e) => {
                 result.accounts_skipped += 1;
-                result.errors.push(format!(
-                    "'{}': {e:#}",
-                    account.bank_name,
-                ));
+                result
+                    .errors
+                    .push(format!("'{}': {e:#}", account.bank_name,));
             }
         }
     }

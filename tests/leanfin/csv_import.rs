@@ -22,14 +22,8 @@ async fn import_csv_form_renders_for_manual_account_owner() {
         body.contains("multipart/form-data"),
         "missing multipart enctype"
     );
-    assert!(
-        body.contains(r#"name="file""#),
-        "missing file input"
-    );
-    assert!(
-        body.contains("YYYY-MM-DD"),
-        "missing format instructions"
-    );
+    assert!(body.contains(r#"name="file""#), "missing file input");
+    assert!(body.contains("YYYY-MM-DD"), "missing format instructions");
 }
 
 #[tokio::test]
@@ -59,18 +53,16 @@ async fn successful_import_updates_balances() {
     let response = app
         .server
         .post(&format!("/leanfin/accounts/manual/{id}/import-csv"))
-        .multipart(
-            axum_test::multipart::MultipartForm::new()
-                .add_part(
-                    "file",
-                    axum_test::multipart::Part::bytes(csv.as_bytes().to_vec())
-                        .file_name("data.csv")
-,
-                ),
-        )
+        .multipart(axum_test::multipart::MultipartForm::new().add_part(
+            "file",
+            axum_test::multipart::Part::bytes(csv.as_bytes().to_vec()).file_name("data.csv"),
+        ))
         .await;
     let body = response.text();
-    assert!(body.contains("3 row(s) imported"), "missing import count: {body}");
+    assert!(
+        body.contains("3 row(s) imported"),
+        "missing import count: {body}"
+    );
     assert!(body.contains("Import Complete"), "missing success page");
 
     // Verify balance_snapshots rows
@@ -113,14 +105,10 @@ async fn invalid_rows_reject_entire_import() {
     let response = app
         .server
         .post(&format!("/leanfin/accounts/manual/{id}/import-csv"))
-        .multipart(
-            axum_test::multipart::MultipartForm::new().add_part(
-                "file",
-                axum_test::multipart::Part::bytes(csv.as_bytes().to_vec())
-                    .file_name("data.csv")
-,
-            ),
-        )
+        .multipart(axum_test::multipart::MultipartForm::new().add_part(
+            "file",
+            axum_test::multipart::Part::bytes(csv.as_bytes().to_vec()).file_name("data.csv"),
+        ))
         .await;
     let body = response.text();
     assert!(body.contains("Import Failed"), "should show failure page");
@@ -155,14 +143,10 @@ async fn missing_columns_rejected() {
     let response = app
         .server
         .post(&format!("/leanfin/accounts/manual/{id}/import-csv"))
-        .multipart(
-            axum_test::multipart::MultipartForm::new().add_part(
-                "file",
-                axum_test::multipart::Part::bytes(csv.as_bytes().to_vec())
-                    .file_name("data.csv")
-,
-            ),
-        )
+        .multipart(axum_test::multipart::MultipartForm::new().add_part(
+            "file",
+            axum_test::multipart::Part::bytes(csv.as_bytes().to_vec()).file_name("data.csv"),
+        ))
         .await;
     let body = response.text();
     assert!(body.contains("Import Failed"), "should show failure page");
@@ -187,14 +171,10 @@ async fn empty_file_rejected() {
     let response = app
         .server
         .post(&format!("/leanfin/accounts/manual/{id}/import-csv"))
-        .multipart(
-            axum_test::multipart::MultipartForm::new().add_part(
-                "file",
-                axum_test::multipart::Part::bytes(Vec::new())
-                    .file_name("empty.csv")
-,
-            ),
-        )
+        .multipart(axum_test::multipart::MultipartForm::new().add_part(
+            "file",
+            axum_test::multipart::Part::bytes(Vec::new()).file_name("empty.csv"),
+        ))
         .await;
     let body = response.text();
     assert!(body.contains("Import Failed"), "should show failure page");
@@ -217,8 +197,7 @@ async fn duplicate_import_is_idempotent() {
     let form = || {
         axum_test::multipart::MultipartForm::new().add_part(
             "file",
-            axum_test::multipart::Part::bytes(csv.as_bytes().to_vec())
-                .file_name("data.csv"),
+            axum_test::multipart::Part::bytes(csv.as_bytes().to_vec()).file_name("data.csv"),
         )
     };
 
@@ -234,7 +213,10 @@ async fn duplicate_import_is_idempotent() {
         .multipart(form())
         .await;
     let body = response.text();
-    assert!(body.contains("2 row(s) imported"), "second import should also succeed");
+    assert!(
+        body.contains("2 row(s) imported"),
+        "second import should also succeed"
+    );
 
     // Should still only have 2 rows (not 4)
     let (count,): (i64,) = sqlx::query_as(
@@ -244,7 +226,10 @@ async fn duplicate_import_is_idempotent() {
     .fetch_one(&app.pool)
     .await
     .unwrap();
-    assert_eq!(count, 2, "should have exactly 2 rows after duplicate import");
+    assert_eq!(
+        count, 2,
+        "should have exactly 2 rows after duplicate import"
+    );
 }
 
 #[tokio::test]
@@ -290,15 +275,14 @@ async fn balance_alias_column_accepted() {
     let response = app
         .server
         .post(&format!("/leanfin/accounts/manual/{id}/import-csv"))
-        .multipart(
-            axum_test::multipart::MultipartForm::new().add_part(
-                "file",
-                axum_test::multipart::Part::bytes(csv.as_bytes().to_vec())
-                    .file_name("data.csv")
-,
-            ),
-        )
+        .multipart(axum_test::multipart::MultipartForm::new().add_part(
+            "file",
+            axum_test::multipart::Part::bytes(csv.as_bytes().to_vec()).file_name("data.csv"),
+        ))
         .await;
     let body = response.text();
-    assert!(body.contains("1 row(s) imported"), "balance alias not accepted");
+    assert!(
+        body.contains("1 row(s) imported"),
+        "balance alias not accepted"
+    );
 }

@@ -6,10 +6,10 @@ use axum::{
 };
 use serde::Deserialize;
 
+use super::mindflow_nav;
 use crate::auth::UserId;
 use crate::layout::render_page;
 use crate::routes::AppState;
-use super::mindflow_nav;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -22,6 +22,7 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 struct CategoryRow {
     id: i64,
     name: String,
@@ -54,7 +55,11 @@ async fn list(
     let mut items = String::new();
     for c in &categories {
         let icon = c.icon.as_deref().unwrap_or("");
-        let archived_class = if c.archived != 0 { " category-archived" } else { "" };
+        let archived_class = if c.archived != 0 {
+            " category-archived"
+        } else {
+            ""
+        };
         let archived_badge = if c.archived != 0 {
             r#"<span class="badge badge-muted">Archived</span>"#
         } else {
@@ -117,7 +122,8 @@ async fn list(
     }
 
     if items.is_empty() {
-        items = r#"<div class="empty-state"><p>No categories yet. Create one below.</p></div>"#.into();
+        items =
+            r#"<div class="empty-state"><p>No categories yet. Create one below.</p></div>"#.into();
     }
 
     let body = format!(
@@ -157,7 +163,12 @@ async fn list(
         </div>"##
     );
 
-    Html(render_page("MindFlow — Categories", &mindflow_nav(base, "categories"), &body, base))
+    Html(render_page(
+        "MindFlow — Categories",
+        &mindflow_nav(base, "categories"),
+        &body,
+        base,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -174,16 +185,14 @@ async fn create(
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
     let icon = form.icon.as_deref().filter(|s| !s.is_empty());
-    sqlx::query(
-        "INSERT INTO mindflow_categories (user_id, name, color, icon) VALUES (?, ?, ?, ?)",
-    )
-    .bind(user_id.0)
-    .bind(&form.name)
-    .bind(&form.color)
-    .bind(icon)
-    .execute(&state.pool)
-    .await
-    .ok();
+    sqlx::query("INSERT INTO mindflow_categories (user_id, name, color, icon) VALUES (?, ?, ?, ?)")
+        .bind(user_id.0)
+        .bind(&form.name)
+        .bind(&form.color)
+        .bind(icon)
+        .execute(&state.pool)
+        .await
+        .ok();
     Redirect::to(&format!("{base}/mindflow/categories"))
 }
 

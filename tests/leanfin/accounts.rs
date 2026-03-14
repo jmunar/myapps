@@ -49,13 +49,15 @@ async fn archive_bank_account_hides_from_list() {
     .unwrap();
 
     for (txn_id, amount) in &unallocated {
-        sqlx::query("INSERT INTO leanfin_allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)")
-            .bind(txn_id)
-            .bind(label_id)
-            .bind(amount.abs())
-            .execute(&app.pool)
-            .await
-            .unwrap();
+        sqlx::query(
+            "INSERT INTO leanfin_allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
+        )
+        .bind(txn_id)
+        .bind(label_id)
+        .bind(amount.abs())
+        .execute(&app.pool)
+        .await
+        .unwrap();
     }
 
     let response = app
@@ -91,9 +93,15 @@ async fn archived_accounts_shown_with_toggle() {
         .add_query_param("show_archived", "1")
         .await;
     let body = response.text();
-    assert!(body.contains("Santander"), "archived account not shown with toggle");
+    assert!(
+        body.contains("Santander"),
+        "archived account not shown with toggle"
+    );
     assert!(body.contains("Archived"), "missing Archived badge");
-    assert!(body.contains("account-archived"), "missing archived CSS class");
+    assert!(
+        body.contains("account-archived"),
+        "missing archived CSS class"
+    );
 }
 
 #[tokio::test]
@@ -108,7 +116,10 @@ async fn show_archived_checkbox_visible_when_archived_exist() {
 
     let response = app.server.get("/leanfin/accounts").await;
     let body = response.text();
-    assert!(body.contains("Show archived"), "missing show archived checkbox");
+    assert!(
+        body.contains("Show archived"),
+        "missing show archived checkbox"
+    );
 }
 
 #[tokio::test]
@@ -158,7 +169,10 @@ async fn archive_blocked_with_unallocated_transactions() {
 
     // Should redirect with error and account should still be visible
     let location = response.header("location").to_str().unwrap().to_string();
-    assert!(location.contains("archive_error"), "missing archive_error in redirect");
+    assert!(
+        location.contains("archive_error"),
+        "missing archive_error in redirect"
+    );
 }
 
 #[tokio::test]
@@ -281,7 +295,10 @@ async fn archived_account_excluded_from_balance_dropdown() {
         "archived account should not appear in balance dropdown"
     );
     // Other accounts should still be there
-    assert!(body.contains("ING Direct"), "active account missing from dropdown");
+    assert!(
+        body.contains("ING Direct"),
+        "active account missing from dropdown"
+    );
 }
 
 #[tokio::test]
@@ -298,7 +315,10 @@ async fn archived_account_not_synced() {
     let response = app.server.post("/leanfin/sync").await;
     let body = response.text();
     // With all bank accounts archived, sync should report no accounts to sync
-    assert!(body.contains("No accounts to sync"), "archived accounts should not be synced");
+    assert!(
+        body.contains("No accounts to sync"),
+        "archived accounts should not be synced"
+    );
 }
 
 // ── Existing tests ──────────────────────────────────────────────

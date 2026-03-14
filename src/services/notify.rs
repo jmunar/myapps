@@ -1,7 +1,7 @@
 use sqlx::SqlitePool;
 use web_push::{
-    ContentEncoding, IsahcWebPushClient, SubscriptionInfo, VapidSignatureBuilder,
-    WebPushClient, WebPushMessageBuilder,
+    ContentEncoding, IsahcWebPushClient, SubscriptionInfo, VapidSignatureBuilder, WebPushClient,
+    WebPushMessageBuilder,
 };
 
 use crate::config::Config;
@@ -13,18 +13,17 @@ pub async fn send(pool: &SqlitePool, config: &Config, title: &str, body: &str) {
         return;
     };
 
-    let subs: Vec<Subscription> = match sqlx::query_as(
-        "SELECT endpoint, p256dh, auth FROM push_subscriptions",
-    )
-    .fetch_all(pool)
-    .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("Failed to query push subscriptions: {e}");
-            return;
-        }
-    };
+    let subs: Vec<Subscription> =
+        match sqlx::query_as("SELECT endpoint, p256dh, auth FROM push_subscriptions")
+            .fetch_all(pool)
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to query push subscriptions: {e}");
+                return;
+            }
+        };
 
     if subs.is_empty() {
         tracing::debug!("No push subscriptions, skipping notification");

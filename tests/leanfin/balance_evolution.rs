@@ -320,7 +320,10 @@ async fn data_endpoint_chart_is_navigable_with_drill_down() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("isNavigable: true"), "chart should be navigable");
+    assert!(
+        body.contains("isNavigable: true"),
+        "chart should be navigable"
+    );
     assert!(
         body.contains("data-select"),
         "chart should have data-select event listener"

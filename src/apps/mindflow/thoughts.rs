@@ -6,10 +6,10 @@ use axum::{
 };
 use serde::Deserialize;
 
+use super::mindflow_nav;
 use crate::auth::UserId;
 use crate::layout::render_page;
 use crate::routes::AppState;
-use super::mindflow_nav;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -36,10 +36,7 @@ async fn capture(
     Extension(user_id): Extension<UserId>,
     Form(form): Form<CaptureForm>,
 ) -> Html<String> {
-    let category_id: Option<i64> = form
-        .category_id
-        .as_deref()
-        .and_then(|s| s.parse().ok());
+    let category_id: Option<i64> = form.category_id.as_deref().and_then(|s| s.parse().ok());
     let parent_thought_id: Option<i64> = form
         .parent_thought_id
         .as_deref()
@@ -62,6 +59,7 @@ async fn capture(
 // ── Thought detail ───────────────────────────────────────────
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 struct ThoughtRow {
     id: i64,
     content: String,
@@ -74,6 +72,7 @@ struct ThoughtRow {
 }
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 struct CommentRow {
     id: i64,
     content: String,
@@ -90,6 +89,7 @@ struct ActionRow {
 }
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 struct DescendantThought {
     id: i64,
     parent_thought_id: Option<i64>,
@@ -176,9 +176,9 @@ async fn detail(
 
     // Category badge
     let cat_badge = match (&t.category_name, &t.category_color) {
-        (Some(name), Some(color)) => format!(
-            r#"<span class="label-badge" style="--label-color:{color}">{name}</span>"#
-        ),
+        (Some(name), Some(color)) => {
+            format!(r#"<span class="label-badge" style="--label-color:{color}">{name}</span>"#)
+        }
         _ => r#"<span class="label-badge" style="--label-color:#9E9E9E">Inbox</span>"#.into(),
     };
 
@@ -191,10 +191,18 @@ async fn detail(
     // Category dropdown
     let mut cat_options = format!(
         r#"<option value="" {}>Inbox</option>"#,
-        if t.category_id.is_none() { "selected" } else { "" },
+        if t.category_id.is_none() {
+            "selected"
+        } else {
+            ""
+        },
     );
     for c in &categories {
-        let selected = if t.category_id == Some(c.id) { " selected" } else { "" };
+        let selected = if t.category_id == Some(c.id) {
+            " selected"
+        } else {
+            ""
+        };
         cat_options.push_str(&format!(
             r#"<option value="{id}"{selected}>{name}</option>"#,
             id = c.id,
@@ -218,7 +226,11 @@ async fn detail(
     // Actions HTML
     let mut actions_html = String::new();
     for a in &actions {
-        let done_class = if a.status == "done" { " action-done" } else { "" };
+        let done_class = if a.status == "done" {
+            " action-done"
+        } else {
+            ""
+        };
         let check = if a.status == "done" { "checked" } else { "" };
         let due = a.due_date.as_deref().unwrap_or("");
         let priority_class = match a.priority.as_str() {
@@ -334,7 +346,12 @@ async fn detail(
         created_at = t.created_at,
     );
 
-    Ok(Html(render_page("MindFlow — Thought", &mindflow_nav(base, ""), &body, base)))
+    Ok(Html(render_page(
+        "MindFlow — Thought",
+        &mindflow_nav(base, ""),
+        &body,
+        base,
+    )))
 }
 
 // ── Tree rendering helper ────────────────────────────────────
@@ -474,10 +491,7 @@ async fn recategorize(
     Form(form): Form<RecategorizeForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let category_id: Option<i64> = form
-        .category_id
-        .as_deref()
-        .and_then(|s| s.parse().ok());
+    let category_id: Option<i64> = form.category_id.as_deref().and_then(|s| s.parse().ok());
 
     sqlx::query(
         "UPDATE mindflow_thoughts SET category_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
@@ -542,14 +556,13 @@ async fn create_sub_thought(
     let base = &state.config.base_path;
 
     // Inherit category from parent thought
-    let parent_category: Option<(Option<i64>,)> = sqlx::query_as(
-        "SELECT category_id FROM mindflow_thoughts WHERE id = ? AND user_id = ?",
-    )
-    .bind(parent_id)
-    .bind(user_id.0)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let parent_category: Option<(Option<i64>,)> =
+        sqlx::query_as("SELECT category_id FROM mindflow_thoughts WHERE id = ? AND user_id = ?")
+            .bind(parent_id)
+            .bind(user_id.0)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     if let Some((category_id,)) = parent_category {
         sqlx::query(

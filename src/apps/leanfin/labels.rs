@@ -6,10 +6,10 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::routes::AppState;
-use crate::auth::UserId;
 use super::dashboard::leanfin_nav;
+use crate::auth::UserId;
 use crate::layout::render_page;
+use crate::routes::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -19,7 +19,10 @@ pub fn routes() -> Router<AppState> {
         .route("/labels/{id}/edit", post(edit_label))
         .route("/labels/{id}/rules", get(list_rules))
         .route("/labels/{id}/rules/create", post(create_rule))
-        .route("/labels/{label_id}/rules/{rule_id}/delete", post(delete_rule))
+        .route(
+            "/labels/{label_id}/rules/{rule_id}/delete",
+            post(delete_rule),
+        )
 }
 
 // ── List labels ──────────────────────────────────────────────
@@ -136,7 +139,12 @@ async fn list_labels(
         </div>"#
     );
 
-    Html(render_page("LeanFin — Labels", &leanfin_nav(base, "labels"), &body, base))
+    Html(render_page(
+        "LeanFin — Labels",
+        &leanfin_nav(base, "labels"),
+        &body,
+        base,
+    ))
 }
 
 // ── Create label ─────────────────────────────────────────────
@@ -153,12 +161,13 @@ async fn create_label(
     Form(form): Form<CreateLabelForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    if let Err(e) = sqlx::query("INSERT INTO leanfin_labels (user_id, name, color) VALUES (?, ?, ?)")
-        .bind(user_id.0)
-        .bind(&form.name)
-        .bind(&form.color)
-        .execute(&state.pool)
-        .await
+    if let Err(e) =
+        sqlx::query("INSERT INTO leanfin_labels (user_id, name, color) VALUES (?, ?, ?)")
+            .bind(user_id.0)
+            .bind(&form.name)
+            .bind(&form.color)
+            .execute(&state.pool)
+            .await
     {
         tracing::error!("Failed to create label: {e}");
     }
@@ -221,10 +230,7 @@ struct RuleRow {
 fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow]) -> String {
     let mut rows = String::new();
     for r in rules {
-        let delete_url = format!(
-            "{base}/leanfin/labels/{label_id}/rules/{}/delete",
-            r.id
-        );
+        let delete_url = format!("{base}/leanfin/labels/{label_id}/rules/{}/delete", r.id);
         rows.push_str(&format!(
             concat!(
                 r##"<div class="rule-row">"##,
@@ -250,7 +256,8 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow]) -> String {
     }
 
     if rows.is_empty() {
-        rows = r##"<p class="text-secondary text-sm" style="padding:0.25rem 0">No rules yet.</p>"##.into();
+        rows = r##"<p class="text-secondary text-sm" style="padding:0.25rem 0">No rules yet.</p>"##
+            .into();
     }
 
     let create_url = format!("{base}/leanfin/labels/{label_id}/rules/create");

@@ -1,10 +1,10 @@
 use axum::{Extension, Router, response::Html, routing::get};
 use serde::Serialize;
 
+use super::mindflow_nav;
 use crate::auth::UserId;
 use crate::layout::render_page;
 use crate::routes::AppState;
-use super::mindflow_nav;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -15,6 +15,7 @@ pub fn routes() -> Router<AppState> {
 // ── Mind map page ────────────────────────────────────────────
 
 #[derive(sqlx::FromRow)]
+#[allow(dead_code)]
 struct CategoryOption {
     id: i64,
     name: String,
@@ -37,10 +38,7 @@ async fn page(
 
     let mut cat_options = String::from(r#"<option value="">Inbox (uncategorized)</option>"#);
     for c in &categories {
-        cat_options.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
-            c.id, c.name,
-        ));
+        cat_options.push_str(&format!(r#"<option value="{}">{}</option>"#, c.id, c.name,));
     }
 
     let inbox_count: i64 = sqlx::query_scalar(
@@ -314,7 +312,12 @@ async fn page(
         </script>"##,
     );
 
-    Html(render_page("MindFlow — Mind Map", &mindflow_nav(base, "map"), &body, base))
+    Html(render_page(
+        "MindFlow — Mind Map",
+        &mindflow_nav(base, "map"),
+        &body,
+        base,
+    ))
 }
 
 // ── Map data JSON endpoint ──────────────────────────────────
@@ -416,7 +419,8 @@ async fn map_data(
     // Thought nodes
     for t in &thoughts {
         let truncated: String = t.content.chars().take(40).collect();
-        let cat_color = t.category_id
+        let cat_color = t
+            .category_id
             .and_then(|cid| categories.iter().find(|c| c.id == cid))
             .map(|c| c.color.clone());
 

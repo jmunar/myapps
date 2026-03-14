@@ -1,9 +1,13 @@
-use axum::{Extension, Router, response::{Html, IntoResponse}, routing::post};
 use axum::http::HeaderValue;
+use axum::{
+    Extension, Router,
+    response::{Html, IntoResponse},
+    routing::post,
+};
 
+use super::services::sync;
 use crate::auth::UserId;
 use crate::routes::AppState;
-use super::services::sync;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/sync", post(trigger_sync))
@@ -59,10 +63,9 @@ async fn trigger_sync(
     // HX-Trigger tells HTMX to fire a "sync-done" event on the page,
     // which the txn-table and account-grid can listen for to refresh.
     let mut response = Html(html).into_response();
-    response.headers_mut().insert(
-        "HX-Trigger",
-        HeaderValue::from_static("sync-done"),
-    );
+    response
+        .headers_mut()
+        .insert("HX-Trigger", HeaderValue::from_static("sync-done"));
     response
 }
 

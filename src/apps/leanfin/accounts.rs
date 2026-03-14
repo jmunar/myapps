@@ -7,12 +7,12 @@ use axum::{
 use chrono::NaiveDateTime;
 use serde::Deserialize;
 
-use crate::routes::AppState;
-use crate::auth::UserId;
-use super::services::enable_banking;
 use super::dashboard::leanfin_nav;
+use super::services::enable_banking;
 use super::sync_handler::sync_button;
+use crate::auth::UserId;
 use crate::layout::render_page;
+use crate::routes::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -23,10 +23,22 @@ pub fn routes() -> Router<AppState> {
         .route("/accounts/{id}/delete", post(delete_account))
         .route("/accounts/{id}/archive", post(archive_account))
         .route("/accounts/{id}/unarchive", post(unarchive_account))
-        .route("/accounts/manual/new", get(manual_new_form).post(manual_new_submit))
-        .route("/accounts/manual/{id}/edit", get(manual_edit_form).post(manual_edit_submit))
-        .route("/accounts/manual/{id}/value", get(manual_value_form).post(manual_value_submit))
-        .route("/accounts/manual/{id}/import-csv", get(import_csv_form).post(import_csv_submit))
+        .route(
+            "/accounts/manual/new",
+            get(manual_new_form).post(manual_new_submit),
+        )
+        .route(
+            "/accounts/manual/{id}/edit",
+            get(manual_edit_form).post(manual_edit_submit),
+        )
+        .route(
+            "/accounts/manual/{id}/value",
+            get(manual_value_form).post(manual_value_submit),
+        )
+        .route(
+            "/accounts/manual/{id}/import-csv",
+            get(import_csv_form).post(import_csv_submit),
+        )
 }
 
 // ── List accounts ─────────────────────────────────────────────────
@@ -63,10 +75,12 @@ async fn list_accounts(
     let warn_threshold = today + chrono::Duration::days(14);
 
     let has_archived = accounts.iter().any(|a| a.archived);
-    let bank_accounts: Vec<&AccountRow> = accounts.iter()
+    let bank_accounts: Vec<&AccountRow> = accounts
+        .iter()
         .filter(|a| a.account_type == "bank" && (show_archived || !a.archived))
         .collect();
-    let manual_accounts: Vec<&AccountRow> = accounts.iter()
+    let manual_accounts: Vec<&AccountRow> = accounts
+        .iter()
         .filter(|a| a.account_type == "manual" && (show_archived || !a.archived))
         .collect();
 
@@ -254,7 +268,12 @@ async fn list_accounts(
         </div>"##
     );
 
-    Html(render_page("LeanFin — Accounts", &leanfin_nav(base, "accounts"), &body, base))
+    Html(render_page(
+        "LeanFin — Accounts",
+        &leanfin_nav(base, "accounts"),
+        &body,
+        base,
+    ))
 }
 
 fn format_balance(amount: Option<f64>, currency: Option<&str>) -> String {
@@ -283,9 +302,7 @@ struct AccountRow {
 
 // ── Manual account: new ──────────────────────────────────────────
 
-async fn manual_new_form(
-    state: axum::extract::State<AppState>,
-) -> Html<String> {
+async fn manual_new_form(state: axum::extract::State<AppState>) -> Html<String> {
     let base = &state.config.base_path;
     let body = format!(
         r#"<div class="page-header">
@@ -322,7 +339,12 @@ async fn manual_new_form(
         </div>
         <script>document.getElementById('date').valueAsDate = new Date();</script>"#
     );
-    Html(render_page("LeanFin — Add Manual Account", &leanfin_nav(base, "accounts"), &body, base))
+    Html(render_page(
+        "LeanFin — Add Manual Account",
+        &leanfin_nav(base, "accounts"),
+        &body,
+        base,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -373,7 +395,11 @@ async fn manual_new_submit(
             .execute(&state.pool)
             .await;
 
-            tracing::info!("Created manual account '{}' for user {}", form.name, user_id.0);
+            tracing::info!(
+                "Created manual account '{}' for user {}",
+                form.name,
+                user_id.0
+            );
         }
         Err(e) => {
             tracing::error!("Failed to create manual account: {e}");
@@ -408,14 +434,21 @@ async fn manual_edit_form(
     let name = account.account_name.as_deref().unwrap_or("");
     let category = account.asset_category.as_deref().unwrap_or("other");
 
-    let category_options = ["investment", "real_estate", "vehicle", "loan", "crypto", "other"]
-        .iter()
-        .map(|c| {
-            let selected = if *c == category { " selected" } else { "" };
-            format!(r#"<option value="{c}"{selected}>{c}</option>"#)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let category_options = [
+        "investment",
+        "real_estate",
+        "vehicle",
+        "loan",
+        "crypto",
+        "other",
+    ]
+    .iter()
+    .map(|c| {
+        let selected = if *c == category { " selected" } else { "" };
+        format!(r#"<option value="{c}"{selected}>{c}</option>"#)
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
 
     let body = format!(
         r#"<div class="page-header">
@@ -440,7 +473,13 @@ async fn manual_edit_form(
         </div>"#,
         id = account.id
     );
-    Html(render_page("LeanFin — Edit Account", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+    Html(render_page(
+        "LeanFin — Edit Account",
+        &leanfin_nav(base, "accounts"),
+        &body,
+        base,
+    ))
+    .into_response()
 }
 
 #[derive(sqlx::FromRow)]
@@ -501,7 +540,10 @@ async fn manual_value_form(
     };
 
     let name = account.account_name.as_deref().unwrap_or("Account");
-    let current = account.balance_amount.map(|v| format!("{v:.2}")).unwrap_or_default();
+    let current = account
+        .balance_amount
+        .map(|v| format!("{v:.2}"))
+        .unwrap_or_default();
     let currency = account.balance_currency.as_deref().unwrap_or("EUR");
 
     let body = format!(
@@ -526,7 +568,13 @@ async fn manual_value_form(
         <script>document.getElementById('date').valueAsDate = new Date();</script>"#,
         id = account.id
     );
-    Html(render_page("LeanFin — Update Value", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+    Html(render_page(
+        "LeanFin — Update Value",
+        &leanfin_nav(base, "accounts"),
+        &body,
+        base,
+    ))
+    .into_response()
 }
 
 #[derive(sqlx::FromRow)]
@@ -566,13 +614,11 @@ async fn manual_value_submit(
     }
 
     // Update account balance
-    let _ = sqlx::query(
-        "UPDATE leanfin_accounts SET balance_amount = ? WHERE id = ?",
-    )
-    .bind(form.value)
-    .bind(account_id)
-    .execute(&state.pool)
-    .await;
+    let _ = sqlx::query("UPDATE leanfin_accounts SET balance_amount = ? WHERE id = ?")
+        .bind(form.value)
+        .bind(account_id)
+        .execute(&state.pool)
+        .await;
 
     // Upsert balance snapshot (delete same-day MANUAL, then insert)
     let timestamp = format!("{}T23:59:59Z", &form.date);
@@ -594,7 +640,10 @@ async fn manual_value_submit(
     .execute(&state.pool)
     .await;
 
-    tracing::info!("Updated manual account {account_id} value to {}", form.value);
+    tracing::info!(
+        "Updated manual account {account_id} value to {}",
+        form.value
+    );
 
     Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
 }
@@ -649,7 +698,13 @@ async fn import_csv_form(
         </div>"#,
         id = account.id
     );
-    Html(render_page("LeanFin — Import CSV", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+    Html(render_page(
+        "LeanFin — Import CSV",
+        &leanfin_nav(base, "accounts"),
+        &body,
+        base,
+    ))
+    .into_response()
 }
 
 async fn import_csv_submit(
@@ -683,7 +738,13 @@ async fn import_csv_submit(
             match field.bytes().await {
                 Ok(bytes) => csv_bytes = Some(bytes.to_vec()),
                 Err(e) => {
-                    return render_import_error(base, name, account_id, &format!("Failed to read file: {e}")).into_response();
+                    return render_import_error(
+                        base,
+                        name,
+                        account_id,
+                        &format!("Failed to read file: {e}"),
+                    )
+                    .into_response();
                 }
             }
         }
@@ -693,7 +754,9 @@ async fn import_csv_submit(
         return render_import_error(base, name, account_id, "No file uploaded").into_response();
     };
 
-    match super::services::csv_import::import_csv_balances(&state.pool, account_id, &csv_bytes).await {
+    match super::services::csv_import::import_csv_balances(&state.pool, account_id, &csv_bytes)
+        .await
+    {
         Ok(result) if !result.skipped.is_empty() => {
             // Validation errors — show all problems
             let mut error_list = String::new();
@@ -725,7 +788,13 @@ async fn import_csv_submit(
                 count = result.skipped.len(),
                 id = account_id
             );
-            Html(render_page("LeanFin — Import Failed", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+            Html(render_page(
+                "LeanFin — Import Failed",
+                &leanfin_nav(base, "accounts"),
+                &body,
+                base,
+            ))
+            .into_response()
         }
         Ok(result) => {
             // Success
@@ -753,12 +822,19 @@ async fn import_csv_submit(
                 count = result.imported
             );
 
-            tracing::info!("Imported {count} CSV rows for manual account {account_id}", count = result.imported);
-            Html(render_page("LeanFin — Import Complete", &leanfin_nav(base, "accounts"), &body, base)).into_response()
+            tracing::info!(
+                "Imported {count} CSV rows for manual account {account_id}",
+                count = result.imported
+            );
+            Html(render_page(
+                "LeanFin — Import Complete",
+                &leanfin_nav(base, "accounts"),
+                &body,
+                base,
+            ))
+            .into_response()
         }
-        Err(e) => {
-            render_import_error(base, name, account_id, &e.to_string()).into_response()
-        }
+        Err(e) => render_import_error(base, name, account_id, &e.to_string()).into_response(),
     }
 }
 
@@ -780,7 +856,12 @@ fn render_import_error(base: &str, name: &str, account_id: i64, error: &str) -> 
         id = account_id,
         error = html_escape(error)
     );
-    Html(render_page("LeanFin — Import Failed", &leanfin_nav(base, "accounts"), &body, base))
+    Html(render_page(
+        "LeanFin — Import Failed",
+        &leanfin_nav(base, "accounts"),
+        &body,
+        base,
+    ))
 }
 
 fn html_escape(s: &str) -> String {
@@ -792,9 +873,7 @@ fn html_escape(s: &str) -> String {
 
 // ── Link: choose bank ─────────────────────────────────────────────
 
-async fn link_form(
-    state: axum::extract::State<AppState>,
-) -> impl IntoResponse {
+async fn link_form(state: axum::extract::State<AppState>) -> impl IntoResponse {
     let base = &state.config.base_path;
     let body = format!(
         r#"<div class="page-header">
@@ -817,7 +896,12 @@ async fn link_form(
             </div>
         </div>"#
     );
-    Html(render_page("LeanFin — Link Bank", &leanfin_nav(base, "accounts"), &body, base))
+    Html(render_page(
+        "LeanFin — Link Bank",
+        &leanfin_nav(base, "accounts"),
+        &body,
+        base,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -850,8 +934,15 @@ async fn link_submit(
     }
 
     // Default to 90 days consent validity
-    match enable_banking::start_auth(&state.pool, &state.config, &form.bank_name, &country, &csrf_state, 90)
-        .await
+    match enable_banking::start_auth(
+        &state.pool,
+        &state.config,
+        &form.bank_name,
+        &country,
+        &csrf_state,
+        90,
+    )
+    .await
     {
         Ok(auth_resp) => Redirect::to(&auth_resp.url).into_response(),
         Err(e) => {
@@ -1053,28 +1144,25 @@ async fn callback(
         .await;
 
     // Exchange code for session
-    let session = match enable_banking::create_session(&state.pool, &state.config, &params.code).await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("Failed to create Enable Banking session: {e:#}");
-            return Html(format!("Failed to complete bank authorization: {e}")).into_response();
-        }
-    };
+    let session =
+        match enable_banking::create_session(&state.pool, &state.config, &params.code).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Failed to create Enable Banking session: {e:#}");
+                return Html(format!("Failed to complete bank authorization: {e}")).into_response();
+            }
+        };
 
     // Parse session expiry
-    let expires_at = chrono::NaiveDateTime::parse_from_str(
-        &session.access.valid_until,
-        "%Y-%m-%dT%H:%M:%SZ",
-    )
-    .or_else(|_| {
-        chrono::NaiveDateTime::parse_from_str(
-            &session.access.valid_until,
-            "%Y-%m-%dT%H:%M:%S%.fZ",
-        )
-    })
-    .unwrap_or_else(|_| {
-        (chrono::Utc::now() + chrono::Duration::days(90)).naive_utc()
-    });
+    let expires_at =
+        chrono::NaiveDateTime::parse_from_str(&session.access.valid_until, "%Y-%m-%dT%H:%M:%SZ")
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(
+                    &session.access.valid_until,
+                    "%Y-%m-%dT%H:%M:%S%.fZ",
+                )
+            })
+            .unwrap_or_else(|_| (chrono::Utc::now() + chrono::Duration::days(90)).naive_utc());
 
     if let Some(reauth_id) = pending.reauth_account_id {
         // Re-authorization: update existing accounts that share the same bank session
@@ -1098,10 +1186,11 @@ async fn callback(
 
         // If the specific account wasn't matched by UID (bank may assign new UIDs),
         // fall back to updating by the reauth account ID directly
-        if updated == 0 {
-            if let Some(first) = session.accounts.first() {
-                let iban = first.account_id.as_ref().and_then(|id| id.iban.as_deref());
-                let _ = sqlx::query(
+        if updated == 0
+            && let Some(first) = session.accounts.first()
+        {
+            let iban = first.account_id.as_ref().and_then(|id| id.iban.as_deref());
+            let _ = sqlx::query(
                     "UPDATE leanfin_accounts SET session_id = ?, account_uid = ?, iban = COALESCE(?, iban), session_expires_at = ? WHERE id = ? AND user_id = ?",
                 )
                 .bind(&session.session_id)
@@ -1112,7 +1201,6 @@ async fn callback(
                 .bind(pending.user_id)
                 .execute(&state.pool)
                 .await;
-            }
         }
 
         tracing::info!(

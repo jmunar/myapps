@@ -1,9 +1,9 @@
 use axum::{Extension, Router, response::Html, routing::get};
 
+use super::sync_handler::sync_button;
 use crate::auth::UserId;
 use crate::layout::{NavItem, render_page};
 use crate::routes::AppState;
-use super::sync_handler::sync_button;
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(index))
@@ -11,13 +11,41 @@ pub fn routes() -> Router<AppState> {
 
 pub fn leanfin_nav(base: &str, active: &str) -> Vec<NavItem> {
     vec![
-        NavItem { href: format!("{base}/leanfin"), label: "LeanFin", active: false },
-        NavItem { href: format!("{base}/leanfin"), label: "Transactions", active: active == "transactions" },
-        NavItem { href: format!("{base}/leanfin/accounts"), label: "Accounts", active: active == "accounts" },
-        NavItem { href: format!("{base}/leanfin/balance-evolution"), label: "Balance", active: active == "balance" },
-        NavItem { href: format!("{base}/leanfin/expenses"), label: "Expenses", active: active == "expenses" },
-        NavItem { href: format!("{base}/leanfin/labels"), label: "Labels", active: active == "labels" },
-        NavItem { href: format!("{base}/logout"), label: "Log out", active: false },
+        NavItem {
+            href: format!("{base}/leanfin"),
+            label: "LeanFin",
+            active: false,
+        },
+        NavItem {
+            href: format!("{base}/leanfin"),
+            label: "Transactions",
+            active: active == "transactions",
+        },
+        NavItem {
+            href: format!("{base}/leanfin/accounts"),
+            label: "Accounts",
+            active: active == "accounts",
+        },
+        NavItem {
+            href: format!("{base}/leanfin/balance-evolution"),
+            label: "Balance",
+            active: active == "balance",
+        },
+        NavItem {
+            href: format!("{base}/leanfin/expenses"),
+            label: "Expenses",
+            active: active == "expenses",
+        },
+        NavItem {
+            href: format!("{base}/leanfin/labels"),
+            label: "Labels",
+            active: active == "labels",
+        },
+        NavItem {
+            href: format!("{base}/logout"),
+            label: "Log out",
+            active: false,
+        },
     ]
 }
 
@@ -53,33 +81,28 @@ async fn index(
     let mut account_options = String::from(r#"<option value="">All accounts</option>"#);
     for a in &accounts {
         let display = if a.account_type == "manual" {
-            a.account_name.clone().unwrap_or_else(|| a.bank_name.clone())
+            a.account_name
+                .clone()
+                .unwrap_or_else(|| a.bank_name.clone())
         } else {
             match &a.iban {
                 Some(iban) => format!("{} ({})", a.bank_name, iban),
                 None => a.bank_name.clone(),
             }
         };
-        account_options.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
-            a.id, display,
-        ));
+        account_options.push_str(&format!(r#"<option value="{}">{}</option>"#, a.id, display,));
     }
 
-    let labels: Vec<LabelOption> = sqlx::query_as(
-        "SELECT id, name FROM leanfin_labels WHERE user_id = ? ORDER BY name",
-    )
-    .bind(user_id.0)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+    let labels: Vec<LabelOption> =
+        sqlx::query_as("SELECT id, name FROM leanfin_labels WHERE user_id = ? ORDER BY name")
+            .bind(user_id.0)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
 
     let mut label_options = String::from(r#"<option value="">All labels</option>"#);
     for l in &labels {
-        label_options.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
-            l.id, l.name,
-        ));
+        label_options.push_str(&format!(r#"<option value="{}">{}</option>"#, l.id, l.name,));
     }
 
     let sync_btn = sync_button(base);
@@ -131,5 +154,10 @@ async fn index(
             </div>
         </div>"##
     );
-    Html(render_page("LeanFin — Transactions", &leanfin_nav(base, "transactions"), &body, base))
+    Html(render_page(
+        "LeanFin — Transactions",
+        &leanfin_nav(base, "transactions"),
+        &body,
+        base,
+    ))
 }

@@ -7,7 +7,10 @@ async fn accounts_page_shows_both_sections() {
 
     let response = app.server.get("/leanfin/accounts").await;
     let body = response.text();
-    assert!(body.contains("Bank Accounts"), "missing Bank Accounts heading");
+    assert!(
+        body.contains("Bank Accounts"),
+        "missing Bank Accounts heading"
+    );
     assert!(
         body.contains("Manual Accounts"),
         "missing Manual Accounts heading"
@@ -47,10 +50,7 @@ async fn new_manual_account_form_renders() {
 
     let response = app.server.get("/leanfin/accounts/manual/new").await;
     let body = response.text();
-    assert!(
-        body.contains("Add Manual Account"),
-        "missing form title"
-    );
+    assert!(body.contains("Add Manual Account"), "missing form title");
     assert!(body.contains(r#"name="name""#), "missing name field");
     assert!(
         body.contains(r#"name="category""#),
@@ -118,10 +118,7 @@ async fn edit_manual_account_form_renders() {
         body.contains("Stock Portfolio"),
         "missing prefilled account name"
     );
-    assert!(
-        body.contains(r#"name="name""#),
-        "missing name field"
-    );
+    assert!(body.contains(r#"name="name""#), "missing name field");
     assert!(
         body.contains(r#"name="category""#),
         "missing category field"

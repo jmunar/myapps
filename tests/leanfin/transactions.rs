@@ -39,15 +39,20 @@ async fn transaction_list_pagination_with_many_transactions() {
     app.seed_and_login().await;
 
     // Get an existing seeded account
-    let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM leanfin_accounts LIMIT 1")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
+    let (account_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
 
     // Delete existing transactions and insert exactly 60 (page size is 50)
-    sqlx::query("DELETE FROM leanfin_allocations").execute(&app.pool).await.unwrap();
-    sqlx::query("DELETE FROM leanfin_transactions").execute(&app.pool).await.unwrap();
+    sqlx::query("DELETE FROM leanfin_allocations")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM leanfin_transactions")
+        .execute(&app.pool)
+        .await
+        .unwrap();
 
     for i in 0..60 {
         sqlx::query(
@@ -322,11 +327,10 @@ async fn transaction_balance_shows_value_when_present() {
     app.seed_and_login().await;
 
     // Pick a transaction and set its balance_after
-    let (txn_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM leanfin_transactions LIMIT 1")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
+    let (txn_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_transactions LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
 
     sqlx::query("UPDATE leanfin_transactions SET balance_after = ? WHERE id = ?")
         .bind(1500.50_f64)
