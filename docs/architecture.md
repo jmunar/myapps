@@ -135,7 +135,9 @@ After login, the top-level router serves:
   - `/voice/new` — Upload form + browser mic recording (MediaRecorder API)
   - `POST /voice/upload` — Multipart file upload, queues transcription job
   - `/voice/jobs/list` — HTMX partial for polling job status updates
-  - `/voice/jobs/{id}` — Job detail with transcription text
+  - `/voice/jobs/{id}` — Job detail with transcription text + retry with different model
+  - `POST /voice/jobs/{id}/delete` — Delete job and audio file (HTMX partial)
+  - `POST /voice/jobs/{id}/retry` — Re-transcribe with a different model (redirects to jobs list)
 - `/mindflow/` — MindFlow sub-app (nested router)
   - `/mindflow/` — Mind map page (D3.js visualization + quick capture)
   - `/mindflow/map-data` — Mind map JSON data (categories + thoughts as nodes/links)

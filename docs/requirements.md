@@ -224,8 +224,10 @@ users upload audio and are notified when the result is ready.
   (wav, mp3, ogg, webm, m4a, flac). Files stored in `data/voice_uploads/`.
 - **Browser recording** — in-browser microphone capture via the MediaRecorder
   API. Records as webm and uploads directly.
-- **Model selection** — users choose between Whisper tiny (faster, less
-  accurate) and base (better accuracy, slower) models at upload time.
+- **Dynamic model selection** — available models are discovered at runtime by
+  scanning `WHISPER_MODELS_DIR` for `ggml-*.bin` files. Admin controls which
+  models appear by downloading/removing model files. Supports quantized variants
+  (e.g. base-q5_1, tiny-q5_1).
 - **Background transcription worker** — a tokio task polls for pending jobs
   every 5 seconds, processes one at a time. Converts audio to 16kHz mono WAV
   via ffmpeg, then runs whisper-cli as a subprocess.
@@ -234,6 +236,10 @@ users upload audio and are notified when the result is ready.
   auto-polls via HTMX when active jobs exist.
 - **ntfy notifications** — push notification sent on job completion or failure.
 - **Job detail page** — view transcription text, processing time, and metadata.
+  Includes a re-transcribe form to submit the same audio with a different model
+  for comparison.
+- **Job deletion** — delete any job (any status) from the jobs list, removing
+  the audio file from disk.
 
 #### Not yet implemented
 - **Language selection** — currently auto-detected; allow explicit language choice.
