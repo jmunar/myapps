@@ -16,7 +16,7 @@ CREATE TABLE balance_snapshots (
 INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type, created_at)
 SELECT
     db.account_id,
-    db.date || 'T00:00:00Z',
+    db.date || 'T23:59:59Z',
     db.date,
     db.balance,
     CASE WHEN a.account_type = 'manual' THEN 'MANUAL' ELSE 'ITAV' END,

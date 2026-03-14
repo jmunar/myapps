@@ -361,7 +361,7 @@ async fn manual_new_submit(
         Ok(r) => {
             let account_id = r.last_insert_rowid();
             // Record initial balance snapshot
-            let timestamp = format!("{}T00:00:00Z", &form.date);
+            let timestamp = format!("{}T23:59:59Z", &form.date);
             let _ = sqlx::query(
                 r#"INSERT OR REPLACE INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
                    VALUES (?, ?, ?, ?, 'MANUAL')"#,
@@ -575,7 +575,7 @@ async fn manual_value_submit(
     .await;
 
     // Upsert balance snapshot (delete same-day MANUAL, then insert)
-    let timestamp = format!("{}T00:00:00Z", &form.date);
+    let timestamp = format!("{}T23:59:59Z", &form.date);
     let _ = sqlx::query(
         "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = 'MANUAL' AND date = ?",
     )

@@ -116,7 +116,7 @@ pub async fn import_csv_balances(
     let mut tx = pool.begin().await?;
 
     for (date, value) in &rows {
-        let timestamp = format!("{date}T00:00:00Z");
+        let timestamp = format!("{date}T23:59:59Z");
         // Delete existing snapshot for same day, then insert
         sqlx::query(
             "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = 'MANUAL' AND date = ?",

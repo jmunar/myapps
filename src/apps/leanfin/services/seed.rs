@@ -394,7 +394,7 @@ async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64)
 async fn seed_manual_balances(pool: &SqlitePool, account_id: i64, values: &[(&str, f64)]) -> Result<()> {
     let mut last_value = 0.0;
     for (date, value) in values {
-        let timestamp = format!("{date}T00:00:00Z");
+        let timestamp = format!("{date}T23:59:59Z");
         sqlx::query(
             r#"INSERT OR IGNORE INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
                VALUES (?, ?, ?, ?, 'MANUAL')"#,
