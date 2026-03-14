@@ -65,7 +65,8 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Seed { app, reset } => match app.as_str() {
             "leanfin" => apps::leanfin::services::seed::run(&pool, reset).await?,
-            other => anyhow::bail!("Unknown app: {other}. Available: leanfin"),
+            "mindflow" => apps::mindflow::services::seed::run(&pool, reset).await?,
+            other => anyhow::bail!("Unknown app: {other}. Available: leanfin, mindflow"),
         },
     }
 

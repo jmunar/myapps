@@ -41,9 +41,9 @@ async fn list_labels(
 
     let labels: Vec<LabelRow> = sqlx::query_as(
         r#"SELECT l.id, l.name, l.color,
-                  (SELECT COUNT(*) FROM label_rules WHERE label_id = l.id) AS rule_count,
-                  (SELECT COUNT(*) FROM allocations WHERE label_id = l.id) AS txn_count
-           FROM labels l
+                  (SELECT COUNT(*) FROM leanfin_label_rules WHERE label_id = l.id) AS rule_count,
+                  (SELECT COUNT(*) FROM leanfin_allocations WHERE label_id = l.id) AS txn_count
+           FROM leanfin_labels l
            WHERE l.user_id = ?
            ORDER BY l.name"#,
     )
@@ -153,7 +153,7 @@ async fn create_label(
     Form(form): Form<CreateLabelForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    if let Err(e) = sqlx::query("INSERT INTO labels (user_id, name, color) VALUES (?, ?, ?)")
+    if let Err(e) = sqlx::query("INSERT INTO leanfin_labels (user_id, name, color) VALUES (?, ?, ?)")
         .bind(user_id.0)
         .bind(&form.name)
         .bind(&form.color)
@@ -180,7 +180,7 @@ async fn edit_label(
     Form(form): Form<EditLabelForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    sqlx::query("UPDATE labels SET name = ?, color = ? WHERE id = ? AND user_id = ?")
+    sqlx::query("UPDATE leanfin_labels SET name = ?, color = ? WHERE id = ? AND user_id = ?")
         .bind(&form.name)
         .bind(&form.color)
         .bind(id)
@@ -199,7 +199,7 @@ async fn delete_label(
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    sqlx::query("DELETE FROM labels WHERE id = ? AND user_id = ?")
+    sqlx::query("DELETE FROM leanfin_labels WHERE id = ? AND user_id = ?")
         .bind(id)
         .bind(user_id.0)
         .execute(&state.pool)
@@ -289,7 +289,7 @@ async fn list_rules(
     let base = &state.config.base_path;
 
     let owns = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM labels WHERE id = ? AND user_id = ?",
+        "SELECT COUNT(*) FROM leanfin_labels WHERE id = ? AND user_id = ?",
     )
     .bind(label_id)
     .bind(user_id.0)
@@ -302,7 +302,7 @@ async fn list_rules(
     }
 
     let rules: Vec<RuleRow> = sqlx::query_as(
-        "SELECT id, field, pattern, priority FROM label_rules WHERE label_id = ? ORDER BY priority DESC, id",
+        "SELECT id, field, pattern, priority FROM leanfin_label_rules WHERE label_id = ? ORDER BY priority DESC, id",
     )
     .bind(label_id)
     .fetch_all(&state.pool)
@@ -330,7 +330,7 @@ async fn create_rule(
     let base = &state.config.base_path;
 
     let owns = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM labels WHERE id = ? AND user_id = ?",
+        "SELECT COUNT(*) FROM leanfin_labels WHERE id = ? AND user_id = ?",
     )
     .bind(label_id)
     .bind(user_id.0)
@@ -349,7 +349,7 @@ async fn create_rule(
     let priority = form.priority.unwrap_or(0);
 
     if let Err(e) = sqlx::query(
-        "INSERT INTO label_rules (label_id, field, pattern, priority) VALUES (?, ?, ?, ?)",
+        "INSERT INTO leanfin_label_rules (label_id, field, pattern, priority) VALUES (?, ?, ?, ?)",
     )
     .bind(label_id)
     .bind(&form.field)
@@ -362,7 +362,7 @@ async fn create_rule(
     }
 
     let rules: Vec<RuleRow> = sqlx::query_as(
-        "SELECT id, field, pattern, priority FROM label_rules WHERE label_id = ? ORDER BY priority DESC, id",
+        "SELECT id, field, pattern, priority FROM leanfin_label_rules WHERE label_id = ? ORDER BY priority DESC, id",
     )
     .bind(label_id)
     .fetch_all(&state.pool)
@@ -382,8 +382,8 @@ async fn delete_rule(
     let base = &state.config.base_path;
 
     sqlx::query(
-        r#"DELETE FROM label_rules
-           WHERE id = ? AND label_id IN (SELECT id FROM labels WHERE id = ? AND user_id = ?)"#,
+        r#"DELETE FROM leanfin_label_rules
+           WHERE id = ? AND label_id IN (SELECT id FROM leanfin_labels WHERE id = ? AND user_id = ?)"#,
     )
     .bind(rule_id)
     .bind(label_id)
@@ -393,7 +393,7 @@ async fn delete_rule(
     .ok();
 
     let rules: Vec<RuleRow> = sqlx::query_as(
-        "SELECT id, field, pattern, priority FROM label_rules WHERE label_id = ? ORDER BY priority DESC, id",
+        "SELECT id, field, pattern, priority FROM leanfin_label_rules WHERE label_id = ? ORDER BY priority DESC, id",
     )
     .bind(label_id)
     .fetch_all(&state.pool)

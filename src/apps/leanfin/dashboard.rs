@@ -43,7 +43,7 @@ async fn index(
     let base = &state.config.base_path;
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
-        "SELECT id, bank_name, iban, account_type, account_name FROM accounts WHERE user_id = ? ORDER BY bank_name",
+        "SELECT id, bank_name, iban, account_type, account_name FROM leanfin_accounts WHERE user_id = ? ORDER BY bank_name",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -67,7 +67,7 @@ async fn index(
     }
 
     let labels: Vec<LabelOption> = sqlx::query_as(
-        "SELECT id, name FROM labels WHERE user_id = ? ORDER BY name",
+        "SELECT id, name FROM leanfin_labels WHERE user_id = ? ORDER BY name",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)

@@ -27,6 +27,13 @@ async fn index(
                     <p>Personal expense tracker</p>
                 </div>
             </a>
+            <a href="{base}/mindflow" class="launcher-card">
+                <div class="launcher-icon">&#x1F9E0;</div>
+                <div class="launcher-info">
+                    <h2>MindFlow</h2>
+                    <p>Thought capture &amp; mind map</p>
+                </div>
+            </a>
             <a href="{base}/voice" class="launcher-card">
                 <div class="launcher-icon">&#127908;</div>
                 <div class="launcher-info">

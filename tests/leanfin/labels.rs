@@ -36,7 +36,7 @@ async fn delete_label_removes_from_list() {
     app.seed_and_login().await;
 
     let (label_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Entertainment'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Entertainment'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -57,7 +57,7 @@ async fn edit_label_updates_name() {
     app.seed_and_login().await;
 
     let (label_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Groceries'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -79,7 +79,7 @@ async fn label_rules_panel_loads() {
     app.seed_and_login().await;
 
     let (label_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Groceries'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -100,7 +100,7 @@ async fn create_rule_for_label() {
     app.seed_and_login().await;
 
     let (label_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Groceries'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
             .fetch_one(&app.pool)
             .await
             .unwrap();

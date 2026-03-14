@@ -473,7 +473,14 @@ label:first-child {
 }
 
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input[type="search"],
+input[type="email"],
+input[type="url"],
+select,
+textarea {
     font-family: var(--font-body);
     font-size: 0.95rem;
     padding: 0.6rem 0.75rem;
@@ -485,13 +492,30 @@ input[type="password"] {
     outline: none;
 }
 
-input:focus {
+input[type="color"] {
+    padding: 0.25rem;
+    height: 2.4rem;
+    width: 3rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(26, 107, 90, 0.12);
 }
 
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
     color: #B0ADA6;
+}
+
+select {
+    cursor: pointer;
 }
 
 button, .btn {
@@ -1471,6 +1495,208 @@ nav a.brand {
 nav a.brand:hover {
     color: var(--text-nav-active);
     border-bottom: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MindFlow
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Mind map container ────────────────────────────────────── */
+.mindmap-container {
+    min-height: 500px;
+    background: var(--bg);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.mindmap-container svg {
+    display: block;
+    width: 100%;
+}
+
+.map-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--bg-nav);
+    color: #fff;
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--radius);
+    white-space: nowrap;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    z-index: 10;
+    transition: opacity 0.08s;
+}
+
+.mindmap-container {
+    position: relative;
+}
+
+/* ── Quick capture form ────────────────────────────────────── */
+.capture-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.capture-input {
+    flex: 1;
+    font-size: 1rem;
+}
+
+.capture-select {
+    max-width: 12rem;
+}
+
+
+/* ── Thought cards (inbox) ─────────────────────────────────── */
+.thought-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.thought-card:last-child {
+    border-bottom: none;
+}
+
+.thought-checkbox {
+    flex-shrink: 0;
+}
+
+.thought-content {
+    flex: 1;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.thought-content:hover {
+    color: var(--accent);
+}
+
+/* ── Actions list ──────────────────────────────────────────── */
+.action-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.action-item:last-child {
+    border-bottom: none;
+}
+
+.action-done {
+    opacity: 0.5;
+}
+
+.action-done .action-title {
+    text-decoration: line-through;
+}
+
+.action-title {
+    font-weight: 500;
+}
+
+/* ── Priority badges ───────────────────────────────────────── */
+.priority-high {
+    background: #E53E3E;
+    color: #fff;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.priority-medium {
+    background: #DD6B20;
+    color: #fff;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.priority-low {
+    background: #718096;
+    color: #fff;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* ── Comments ──────────────────────────────────────────────── */
+.comment {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.comment:last-of-type {
+    border-bottom: none;
+}
+
+.comment-content {
+    line-height: 1.5;
+}
+
+.comment-meta {
+    margin-top: 0.25rem;
+}
+
+/* ── Thought tree (hierarchical sub-thoughts) ──────────────── */
+.thought-tree {
+    list-style: none;
+    padding-left: 1.25rem;
+    margin: 0.25rem 0 0 0;
+    border-left: 2px solid var(--border);
+}
+
+.thought-tree-node {
+    padding: 0.4rem 0;
+}
+
+.thought-tree-link {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.thought-tree-link:hover {
+    color: var(--accent);
+}
+
+/* ── Category archived style ───────────────────────────────── */
+.category-archived {
+    opacity: 0.5;
+}
+
+/* ── Info badges ───────────────────────────────────────────── */
+.badge-warning {
+    background: #DD6B20;
+    color: #fff;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.badge-info {
+    background: #3182CE;
+    color: #fff;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
 }
 
 /* ── VoiceToText ─────────────────────────────────────────────── */

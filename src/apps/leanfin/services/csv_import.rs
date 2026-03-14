@@ -119,14 +119,14 @@ pub async fn import_csv_balances(
         let timestamp = format!("{date}T23:59:59Z");
         // Delete existing snapshot for same day, then insert
         sqlx::query(
-            "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = 'MANUAL' AND date = ?",
+            "DELETE FROM leanfin_balance_snapshots WHERE account_id = ? AND balance_type = 'MANUAL' AND date = ?",
         )
         .bind(account_id)
         .bind(date)
         .execute(&mut *tx)
         .await?;
         sqlx::query(
-            r#"INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+            r#"INSERT INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
                VALUES (?, ?, ?, ?, 'MANUAL')"#,
         )
         .bind(account_id)
@@ -142,7 +142,7 @@ pub async fn import_csv_balances(
     if let Some((date, value)) = latest {
         // Only update account balance if this is the latest date overall
         let has_newer: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM balance_snapshots WHERE account_id = ? AND date > ?)",
+            "SELECT EXISTS(SELECT 1 FROM leanfin_balance_snapshots WHERE account_id = ? AND date > ?)",
         )
         .bind(account_id)
         .bind(date)
@@ -151,7 +151,7 @@ pub async fn import_csv_balances(
         .unwrap_or(false);
 
         if !has_newer {
-            sqlx::query("UPDATE accounts SET balance_amount = ? WHERE id = ?")
+            sqlx::query("UPDATE leanfin_accounts SET balance_amount = ? WHERE id = ?")
                 .bind(value)
                 .bind(account_id)
                 .execute(&mut *tx)

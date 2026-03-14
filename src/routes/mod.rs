@@ -27,6 +27,7 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
     let protected = Router::new()
         .merge(launcher::routes())
         .nest("/leanfin", crate::apps::leanfin::router())
+        .nest("/mindflow", crate::apps::mindflow::router())
         .nest("/voice", crate::apps::voice_to_text::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
