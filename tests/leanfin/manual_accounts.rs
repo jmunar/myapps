@@ -102,7 +102,7 @@ async fn edit_manual_account_form_renders() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -134,7 +134,7 @@ async fn edit_manual_account_updates_name() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -169,7 +169,7 @@ async fn value_update_form_renders() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -195,7 +195,7 @@ async fn value_update_records_balance_snapshot() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -214,7 +214,7 @@ async fn value_update_records_balance_snapshot() {
 
     // Verify balance_amount updated in DB
     let (balance,): (f64,) =
-        sqlx::query_as("SELECT balance_amount FROM accounts WHERE id = ?")
+        sqlx::query_as("SELECT balance_amount FROM leanfin_accounts WHERE id = ?")
             .bind(id)
             .fetch_one(&app.pool)
             .await
@@ -226,7 +226,7 @@ async fn value_update_records_balance_snapshot() {
 
     // Verify balance_snapshots entry created
     let (db_balance,): (f64,) = sqlx::query_as(
-        "SELECT balance FROM balance_snapshots WHERE account_id = ? AND date = '2026-03-13' AND balance_type = 'MANUAL'",
+        "SELECT balance FROM leanfin_balance_snapshots WHERE account_id = ? AND date = '2026-03-13' AND balance_type = 'MANUAL'",
     )
     .bind(id)
     .fetch_one(&app.pool)
@@ -244,7 +244,7 @@ async fn delete_manual_account() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -300,7 +300,7 @@ async fn sync_skips_manual_accounts() {
     );
     // Verify manual account still exists and is untouched
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT COUNT(*) FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await

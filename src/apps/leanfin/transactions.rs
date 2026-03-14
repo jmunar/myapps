@@ -139,10 +139,10 @@ async fn list(
     if show_unallocated {
         where_clause.push_str(
             r#" AND t.id NOT IN (
-                SELECT al.transaction_id FROM allocations al
+                SELECT al.transaction_id FROM leanfin_allocations al
                 GROUP BY al.transaction_id
                 HAVING ABS(SUM(al.amount) - ABS(
-                    (SELECT t2.amount FROM transactions t2 WHERE t2.id = al.transaction_id)
+                    (SELECT t2.amount FROM leanfin_transactions t2 WHERE t2.id = al.transaction_id)
                 )) < 0.01
             )"#,
         );
@@ -159,7 +159,7 @@ async fn list(
     if !label_ids.is_empty() {
         let placeholders = label_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         where_clause.push_str(&format!(
-            " AND t.id IN (SELECT transaction_id FROM allocations WHERE label_id IN ({placeholders}))"
+            " AND t.id IN (SELECT transaction_id FROM leanfin_allocations WHERE label_id IN ({placeholders}))"
         ));
     }
 
@@ -200,7 +200,7 @@ async fn list(
 
     // Count total matching transactions
     let count_sql = format!(
-        "SELECT COUNT(*) as cnt FROM transactions t JOIN accounts a ON t.account_id = a.id{where_clause}"
+        "SELECT COUNT(*) as cnt FROM leanfin_transactions t JOIN leanfin_accounts a ON t.account_id = a.id{where_clause}"
     );
     let total: i64 = bind_filters!(sqlx::query_scalar::<_, i64>(&count_sql))
         .fetch_one(&state.pool)
@@ -221,8 +221,8 @@ async fn list(
         r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
                t.created_at
-        FROM transactions t
-        JOIN accounts a ON t.account_id = a.id{where_clause}
+        FROM leanfin_transactions t
+        JOIN leanfin_accounts a ON t.account_id = a.id{where_clause}
         ORDER BY t.date DESC LIMIT ? OFFSET ?"#
     );
     let transactions: Vec<Transaction> = bind_filters!(sqlx::query_as::<_, Transaction>(&data_sql))
@@ -238,8 +238,8 @@ async fn list(
     let query_str = format!(
         r#"SELECT a.id, a.transaction_id, a.label_id, a.amount,
                   l.name AS label_name, l.color AS label_color
-           FROM allocations a
-           JOIN labels l ON a.label_id = l.id
+           FROM leanfin_allocations a
+           JOIN leanfin_labels l ON a.label_id = l.id
            WHERE a.transaction_id IN ({placeholders})
            ORDER BY a.amount DESC"#
     );
@@ -318,8 +318,8 @@ async fn alloc_editor(
 
     // Get transaction amount
     let txn: Option<(f64,)> = sqlx::query_as(
-        r#"SELECT t.amount FROM transactions t
-           JOIN accounts a ON t.account_id = a.id
+        r#"SELECT t.amount FROM leanfin_transactions t
+           JOIN leanfin_accounts a ON t.account_id = a.id
            WHERE t.id = ? AND a.user_id = ?"#,
     )
     .bind(txn_id)
@@ -338,8 +338,8 @@ async fn alloc_editor(
     let allocs: Vec<AllocRow> = sqlx::query_as(
         r#"SELECT a.id, a.transaction_id, a.label_id, a.amount,
                   l.name AS label_name, l.color AS label_color
-           FROM allocations a
-           JOIN labels l ON a.label_id = l.id
+           FROM leanfin_allocations a
+           JOIN leanfin_labels l ON a.label_id = l.id
            WHERE a.transaction_id = ?
            ORDER BY a.amount DESC"#,
     )
@@ -350,7 +350,7 @@ async fn alloc_editor(
 
     // All labels for picker
     let labels: Vec<LabelInfo> = sqlx::query_as(
-        "SELECT id, name, color FROM labels WHERE user_id = ? ORDER BY name",
+        "SELECT id, name, color FROM leanfin_labels WHERE user_id = ? ORDER BY name",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -447,7 +447,7 @@ async fn alloc_add(
 ) -> Html<String> {
     // Verify label belongs to user
     let owns: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM labels WHERE id = ? AND user_id = ?",
+        "SELECT id FROM leanfin_labels WHERE id = ? AND user_id = ?",
     )
     .bind(form.label_id)
     .bind(user_id.0)
@@ -457,7 +457,7 @@ async fn alloc_add(
 
     if owns.is_some() {
         sqlx::query(
-            "INSERT INTO allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
+            "INSERT INTO leanfin_allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
         )
         .bind(txn_id)
         .bind(form.label_id)
@@ -480,8 +480,8 @@ async fn alloc_delete(
 ) -> Html<String> {
     // Delete only if the allocation's label belongs to the user
     sqlx::query(
-        r#"DELETE FROM allocations WHERE id = ? AND transaction_id = ?
-           AND label_id IN (SELECT id FROM labels WHERE user_id = ?)"#,
+        r#"DELETE FROM leanfin_allocations WHERE id = ? AND transaction_id = ?
+           AND label_id IN (SELECT id FROM leanfin_labels WHERE user_id = ?)"#,
     )
     .bind(alloc_id)
     .bind(txn_id)
@@ -506,8 +506,8 @@ async fn txn_row(
         r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
                t.created_at
-        FROM transactions t
-        JOIN accounts a ON t.account_id = a.id
+        FROM leanfin_transactions t
+        JOIN leanfin_accounts a ON t.account_id = a.id
         WHERE t.id = ? AND a.user_id = ?"#,
     )
     .bind(txn_id)
@@ -523,8 +523,8 @@ async fn txn_row(
     let allocs: Vec<AllocRow> = sqlx::query_as(
         r#"SELECT a.id, a.transaction_id, a.label_id, a.amount,
                   l.name AS label_name, l.color AS label_color
-           FROM allocations a
-           JOIN labels l ON a.label_id = l.id
+           FROM leanfin_allocations a
+           JOIN leanfin_labels l ON a.label_id = l.id
            WHERE a.transaction_id = ?
            ORDER BY a.amount DESC"#,
     )

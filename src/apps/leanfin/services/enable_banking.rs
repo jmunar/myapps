@@ -222,7 +222,7 @@ async fn save_payload(
     duration_ms: u64,
 ) {
     if let Err(e) = sqlx::query(
-        r#"INSERT INTO api_payloads (account_id, method, endpoint, request_body, response_body, status_code, duration_ms)
+        r#"INSERT INTO leanfin_api_payloads (account_id, method, endpoint, request_body, response_body, status_code, duration_ms)
            VALUES (?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(account_id)

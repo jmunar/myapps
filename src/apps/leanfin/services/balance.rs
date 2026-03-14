@@ -40,7 +40,7 @@ pub async fn record_balance_snapshot(
 
     // Remove existing snapshot for same account + type + day, then insert.
     sqlx::query(
-        "DELETE FROM balance_snapshots WHERE account_id = ? AND balance_type = ? AND date = ?",
+        "DELETE FROM leanfin_balance_snapshots WHERE account_id = ? AND balance_type = ? AND date = ?",
     )
     .bind(account_id)
     .bind(balance_type)
@@ -49,7 +49,7 @@ pub async fn record_balance_snapshot(
     .await?;
 
     sqlx::query(
-        r#"INSERT INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+        r#"INSERT INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
            VALUES (?, ?, ?, ?, ?)"#,
     )
     .bind(account_id)
@@ -81,7 +81,7 @@ pub async fn check_reconciliation(
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
     let prev: Option<PrevBalance> = sqlx::query_as(
-        r#"SELECT date, balance FROM balance_snapshots
+        r#"SELECT date, balance FROM leanfin_balance_snapshots
            WHERE account_id = ? AND balance_type = 'ITAV' AND date < ?
            ORDER BY date DESC LIMIT 1"#,
     )
@@ -96,7 +96,7 @@ pub async fn check_reconciliation(
 
     // Sum transactions between previous date (exclusive) and today (inclusive)
     let txn_sum: Option<f64> = sqlx::query_scalar(
-        r#"SELECT SUM(amount) FROM transactions
+        r#"SELECT SUM(amount) FROM leanfin_transactions
            WHERE account_id = ? AND date > ? AND date <= ?"#,
     )
     .bind(account.id)
@@ -199,7 +199,7 @@ pub async fn get_balance_series(
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
     let account_type: String = sqlx::query_scalar(
-        "SELECT account_type FROM accounts WHERE id = ?",
+        "SELECT account_type FROM leanfin_accounts WHERE id = ?",
     )
     .bind(account_id)
     .fetch_one(pool)
@@ -207,7 +207,7 @@ pub async fn get_balance_series(
 
     if account_type == "manual" {
         let rows: Vec<BalancePoint> = sqlx::query_as(
-            r#"SELECT date, balance FROM balance_snapshots
+            r#"SELECT date, balance FROM leanfin_balance_snapshots
                WHERE account_id = ? AND date >= ?
                ORDER BY date ASC"#,
         )
@@ -220,7 +220,7 @@ pub async fn get_balance_series(
 
     // Bank account: find the most recent reported balance at or before today
     let anchor: Option<BalancePoint> = sqlx::query_as(
-        r#"SELECT date, balance FROM balance_snapshots
+        r#"SELECT date, balance FROM leanfin_balance_snapshots
            WHERE account_id = ? AND date <= ?
            ORDER BY date DESC LIMIT 1"#,
     )
@@ -235,7 +235,7 @@ pub async fn get_balance_series(
 
     // Fetch daily transaction sums for the range
     let daily_sums: Vec<DailySum> = sqlx::query_as(
-        r#"SELECT date, SUM(amount) as total FROM transactions
+        r#"SELECT date, SUM(amount) as total FROM leanfin_transactions
            WHERE account_id = ? AND date >= ?
            GROUP BY date"#,
     )
@@ -300,7 +300,7 @@ pub async fn get_aggregated_balance_series(
     days: i64,
 ) -> Result<Vec<BalancePoint>> {
     let account_ids: Vec<(i64,)> = sqlx::query_as(
-        "SELECT id FROM accounts WHERE user_id = ?",
+        "SELECT id FROM leanfin_accounts WHERE user_id = ?",
     )
     .bind(user_id)
     .fetch_all(pool)

@@ -51,7 +51,7 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         pool, user_id, "BBVA", "ES", Some("ES55 1234 0000 6789 0123 4567"),
         "sess_fake_3", "uid_old_001", "2025-12-01T00:00:00Z",
     ).await?;
-    sqlx::query("UPDATE accounts SET archived = 1 WHERE id = ?")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE id = ?")
         .bind(acct4)
         .execute(pool)
         .await?;
@@ -181,13 +181,13 @@ async fn insert_bank_account(
 ) -> Result<i64> {
     // Use INSERT OR IGNORE + fetch to be idempotent
     sqlx::query(
-        "INSERT OR IGNORE INTO accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank')"
+        "INSERT OR IGNORE INTO leanfin_accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank')"
     )
     .bind(user_id).bind(bank_name).bind(country).bind(iban)
     .bind(session_id).bind(account_uid).bind(expires)
     .execute(pool).await?;
 
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM accounts WHERE account_uid = ?")
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts WHERE account_uid = ?")
         .bind(account_uid)
         .fetch_one(pool).await?;
     Ok(id)
@@ -202,13 +202,13 @@ async fn insert_manual_account(
 ) -> Result<i64> {
     let uid = format!("manual_{name}");
     sqlx::query(
-        "INSERT OR IGNORE INTO accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_currency) VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?)"
+        "INSERT OR IGNORE INTO leanfin_accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_currency) VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?)"
     )
     .bind(user_id).bind(name).bind(&uid).bind(name).bind(category).bind(currency)
     .execute(pool).await?;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_uid = ?"
+        "SELECT id FROM leanfin_accounts WHERE account_uid = ?"
     )
     .bind(&uid)
     .fetch_one(pool).await?;
@@ -226,7 +226,7 @@ async fn insert_transaction(
     counterparty: Option<&str>,
 ) -> Result<u64> {
     let result = sqlx::query(
-        "INSERT OR IGNORE INTO transactions (account_id, external_id, date, amount, currency, description, counterparty) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, counterparty) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(account_id).bind(external_id).bind(date)
     .bind(amount).bind(currency).bind(description).bind(counterparty)
@@ -249,7 +249,7 @@ async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
     ];
 
     for (name, color) in labels {
-        sqlx::query("INSERT OR IGNORE INTO labels (user_id, name, color) VALUES (?, ?, ?)")
+        sqlx::query("INSERT OR IGNORE INTO leanfin_labels (user_id, name, color) VALUES (?, ?, ?)")
             .bind(user_id).bind(name).bind(color)
             .execute(pool).await?;
     }
@@ -276,8 +276,8 @@ async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
 
     for (label_name, field, pattern) in rules {
         sqlx::query(
-            "INSERT OR IGNORE INTO label_rules (label_id, field, pattern) \
-             SELECT id, ?, ? FROM labels WHERE user_id = ? AND name = ?"
+            "INSERT OR IGNORE INTO leanfin_label_rules (label_id, field, pattern) \
+             SELECT id, ?, ? FROM leanfin_labels WHERE user_id = ? AND name = ?"
         )
         .bind(field).bind(pattern).bind(user_id).bind(label_name)
         .execute(pool).await?;
@@ -290,7 +290,7 @@ async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
 async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     // Helper: get label id by name
     async fn label_id(pool: &SqlitePool, user_id: i64, name: &str) -> Option<i64> {
-        sqlx::query_as::<_, (i64,)>("SELECT id FROM labels WHERE user_id = ? AND name = ?")
+        sqlx::query_as::<_, (i64,)>("SELECT id FROM leanfin_labels WHERE user_id = ? AND name = ?")
             .bind(user_id).bind(name)
             .fetch_optional(pool).await.ok().flatten().map(|r| r.0)
     }
@@ -298,8 +298,8 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     // Fetch all transactions for this user
     let txns: Vec<(i64, String, f64, Option<String>)> = sqlx::query_as(
         r#"SELECT t.id, t.description, t.amount, t.counterparty
-           FROM transactions t
-           JOIN accounts a ON t.account_id = a.id
+           FROM leanfin_transactions t
+           JOIN leanfin_accounts a ON t.account_id = a.id
            WHERE a.user_id = ?"#,
     )
     .bind(user_id)
@@ -311,7 +311,7 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     for (txn_id, desc, amount, counterparty) in &txns {
         // Skip if already has allocations
         let existing: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM allocations WHERE transaction_id = ?",
+            "SELECT COUNT(*) FROM leanfin_allocations WHERE transaction_id = ?",
         )
         .bind(txn_id)
         .fetch_one(pool)
@@ -361,7 +361,7 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
         for (label_name, alloc_amount) in allocations {
             if let Some(lid) = label_id(pool, user_id, label_name).await {
                 sqlx::query(
-                    "INSERT INTO allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
+                    "INSERT INTO leanfin_allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
                 )
                 .bind(txn_id)
                 .bind(lid)
@@ -378,7 +378,7 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
 
 /// Set account balance and record today's balance snapshot.
 async fn seed_balances(pool: &SqlitePool, account_id: i64, current_balance: f64) -> Result<()> {
-    sqlx::query("UPDATE accounts SET balance_amount = ?, balance_currency = 'EUR' WHERE id = ?")
+    sqlx::query("UPDATE leanfin_accounts SET balance_amount = ?, balance_currency = 'EUR' WHERE id = ?")
         .bind(current_balance)
         .bind(account_id)
         .execute(pool)
@@ -396,7 +396,7 @@ async fn seed_manual_balances(pool: &SqlitePool, account_id: i64, values: &[(&st
     for (date, value) in values {
         let timestamp = format!("{date}T23:59:59Z");
         sqlx::query(
-            r#"INSERT OR IGNORE INTO balance_snapshots (account_id, timestamp, date, balance, balance_type)
+            r#"INSERT OR IGNORE INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
                VALUES (?, ?, ?, ?, 'MANUAL')"#,
         )
         .bind(account_id)
@@ -409,7 +409,7 @@ async fn seed_manual_balances(pool: &SqlitePool, account_id: i64, values: &[(&st
     }
 
     // Update the current balance on the account
-    sqlx::query("UPDATE accounts SET balance_amount = ? WHERE id = ?")
+    sqlx::query("UPDATE leanfin_accounts SET balance_amount = ? WHERE id = ?")
         .bind(last_value)
         .bind(account_id)
         .execute(pool)

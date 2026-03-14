@@ -65,7 +65,7 @@ async fn data_endpoint_returns_frappe_chart_for_specific_account() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -104,13 +104,13 @@ async fn data_endpoint_returns_empty_state_when_no_balance_data() {
     app.seed_and_login().await;
 
     // Delete all balance snapshots
-    sqlx::query("DELETE FROM balance_snapshots")
+    sqlx::query("DELETE FROM leanfin_balance_snapshots")
         .execute(&app.pool)
         .await
         .unwrap();
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -148,7 +148,7 @@ async fn data_endpoint_contains_balance_data_in_json() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -172,7 +172,7 @@ async fn data_endpoint_renders_frappe_chart_container() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -195,7 +195,7 @@ async fn data_endpoint_uses_accent_color() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();

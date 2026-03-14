@@ -19,27 +19,27 @@ async fn archive_bank_account_hides_from_list() {
 
     // Allocate all transactions for Santander so archiving is allowed
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
 
     // Get the label id for allocations
     let (label_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE user_id = 1 LIMIT 1")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE user_id = 1 LIMIT 1")
             .fetch_one(&app.pool)
             .await
             .unwrap();
 
     // Allocate all unallocated transactions for this account
     let unallocated: Vec<(i64, f64)> = sqlx::query_as(
-        r#"SELECT t.id, t.amount FROM transactions t
+        r#"SELECT t.id, t.amount FROM leanfin_transactions t
            WHERE t.account_id = ?
              AND t.id NOT IN (
-               SELECT al.transaction_id FROM allocations al
+               SELECT al.transaction_id FROM leanfin_allocations al
                GROUP BY al.transaction_id
                HAVING ABS(SUM(al.amount) - ABS(
-                   (SELECT t2.amount FROM transactions t2 WHERE t2.id = al.transaction_id)
+                   (SELECT t2.amount FROM leanfin_transactions t2 WHERE t2.id = al.transaction_id)
                )) < 0.01
              )"#,
     )
@@ -49,7 +49,7 @@ async fn archive_bank_account_hides_from_list() {
     .unwrap();
 
     for (txn_id, amount) in &unallocated {
-        sqlx::query("INSERT INTO allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)")
+        sqlx::query("INSERT INTO leanfin_allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)")
             .bind(txn_id)
             .bind(label_id)
             .bind(amount.abs())
@@ -80,7 +80,7 @@ async fn archived_accounts_shown_with_toggle() {
     app.seed_and_login().await;
 
     // Archive directly via DB for simplicity
-    sqlx::query("UPDATE accounts SET archived = 1 WHERE bank_name = 'Santander'")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE bank_name = 'Santander'")
         .execute(&app.pool)
         .await
         .unwrap();
@@ -101,7 +101,7 @@ async fn show_archived_checkbox_visible_when_archived_exist() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
-    sqlx::query("UPDATE accounts SET archived = 1 WHERE bank_name = 'Santander'")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE bank_name = 'Santander'")
         .execute(&app.pool)
         .await
         .unwrap();
@@ -117,7 +117,7 @@ async fn show_archived_checkbox_hidden_when_none_archived() {
     app.seed_and_login().await;
 
     // Unarchive all accounts so none are archived
-    sqlx::query("UPDATE accounts SET archived = 0")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 0")
         .execute(&app.pool)
         .await
         .unwrap();
@@ -137,13 +137,13 @@ async fn archive_blocked_with_unallocated_transactions() {
 
     // The seed data has some unallocated transactions, so archiving should fail
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
 
     // Ensure there are unallocated transactions
-    sqlx::query("DELETE FROM allocations WHERE transaction_id IN (SELECT id FROM transactions WHERE account_id = ? LIMIT 1)")
+    sqlx::query("DELETE FROM leanfin_allocations WHERE transaction_id IN (SELECT id FROM leanfin_transactions WHERE account_id = ? LIMIT 1)")
         .bind(account_id)
         .execute(&app.pool)
         .await
@@ -167,7 +167,7 @@ async fn archive_error_shows_banner() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -188,12 +188,12 @@ async fn unarchive_restores_account() {
     app.seed_and_login().await;
 
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'Santander'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
 
-    sqlx::query("UPDATE accounts SET archived = 1 WHERE id = ?")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE id = ?")
         .bind(account_id)
         .execute(&app.pool)
         .await
@@ -217,13 +217,13 @@ async fn archived_manual_account_edit_redirects() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
     .unwrap();
 
-    sqlx::query("UPDATE accounts SET archived = 1 WHERE id = ?")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE id = ?")
         .bind(id)
         .execute(&app.pool)
         .await
@@ -244,13 +244,13 @@ async fn archived_manual_account_value_redirects() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
     .unwrap();
 
-    sqlx::query("UPDATE accounts SET archived = 1 WHERE id = ?")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE id = ?")
         .bind(id)
         .execute(&app.pool)
         .await
@@ -269,7 +269,7 @@ async fn archived_account_excluded_from_balance_dropdown() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
-    sqlx::query("UPDATE accounts SET archived = 1 WHERE bank_name = 'Santander'")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE bank_name = 'Santander'")
         .execute(&app.pool)
         .await
         .unwrap();
@@ -290,7 +290,7 @@ async fn archived_account_not_synced() {
     app.seed_and_login().await;
 
     // Archive all bank accounts
-    sqlx::query("UPDATE accounts SET archived = 1 WHERE account_type = 'bank'")
+    sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE account_type = 'bank'")
         .execute(&app.pool)
         .await
         .unwrap();
@@ -319,7 +319,7 @@ async fn accounts_page_shows_balance_when_present() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
-    sqlx::query("UPDATE accounts SET balance_amount = ?, balance_currency = ? WHERE bank_name = 'Santander'")
+    sqlx::query("UPDATE leanfin_accounts SET balance_amount = ?, balance_currency = ? WHERE bank_name = 'Santander'")
         .bind(1234.56_f64)
         .bind("EUR")
         .execute(&app.pool)
@@ -337,7 +337,7 @@ async fn accounts_page_shows_negative_balance() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
-    sqlx::query("UPDATE accounts SET balance_amount = ?, balance_currency = ? WHERE bank_name = 'Santander'")
+    sqlx::query("UPDATE leanfin_accounts SET balance_amount = ?, balance_currency = ? WHERE bank_name = 'Santander'")
         .bind(-500.00_f64)
         .bind("EUR")
         .execute(&app.pool)
@@ -356,7 +356,7 @@ async fn accounts_page_hides_balance_when_null() {
     app.seed_and_login().await;
 
     // Clear balances so we can test the null case
-    sqlx::query("UPDATE accounts SET balance_amount = NULL, balance_currency = NULL")
+    sqlx::query("UPDATE leanfin_accounts SET balance_amount = NULL, balance_currency = NULL")
         .execute(&app.pool)
         .await
         .unwrap();

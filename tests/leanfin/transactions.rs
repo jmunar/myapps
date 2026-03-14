@@ -40,18 +40,18 @@ async fn transaction_list_pagination_with_many_transactions() {
 
     // Get an existing seeded account
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts LIMIT 1")
+        sqlx::query_as("SELECT id FROM leanfin_accounts LIMIT 1")
             .fetch_one(&app.pool)
             .await
             .unwrap();
 
     // Delete existing transactions and insert exactly 60 (page size is 50)
-    sqlx::query("DELETE FROM allocations").execute(&app.pool).await.unwrap();
-    sqlx::query("DELETE FROM transactions").execute(&app.pool).await.unwrap();
+    sqlx::query("DELETE FROM leanfin_allocations").execute(&app.pool).await.unwrap();
+    sqlx::query("DELETE FROM leanfin_transactions").execute(&app.pool).await.unwrap();
 
     for i in 0..60 {
         sqlx::query(
-            "INSERT INTO transactions (account_id, external_id, date, amount, currency, description, counterparty) VALUES (?, ?, ?, ?, 'EUR', ?, ?)"
+            "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, counterparty) VALUES (?, ?, ?, ?, 'EUR', ?, ?)"
         )
         .bind(account_id)
         .bind(format!("ext-{i}"))
@@ -133,7 +133,7 @@ async fn transaction_label_ids_filter_returns_matching() {
     app.seed_and_login().await;
 
     let (label_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Groceries'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -210,7 +210,7 @@ async fn transaction_date_range_filter_returns_subset() {
 
     // Get a date that exists in seed data
     let (some_date,): (String,) =
-        sqlx::query_as("SELECT date FROM transactions ORDER BY date DESC LIMIT 1")
+        sqlx::query_as("SELECT date FROM leanfin_transactions ORDER BY date DESC LIMIT 1")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -289,7 +289,7 @@ async fn transaction_account_filter() {
 
     // Get a specific account id from the DB
     let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM accounts WHERE bank_name = 'ING Direct'")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'ING Direct'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -323,12 +323,12 @@ async fn transaction_balance_shows_value_when_present() {
 
     // Pick a transaction and set its balance_after
     let (txn_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM transactions LIMIT 1")
+        sqlx::query_as("SELECT id FROM leanfin_transactions LIMIT 1")
             .fetch_one(&app.pool)
             .await
             .unwrap();
 
-    sqlx::query("UPDATE transactions SET balance_after = ? WHERE id = ?")
+    sqlx::query("UPDATE leanfin_transactions SET balance_after = ? WHERE id = ?")
         .bind(1500.50_f64)
         .bind(txn_id)
         .execute(&app.pool)

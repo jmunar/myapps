@@ -133,7 +133,7 @@ After login, the top-level router serves:
 | expires_at | TEXT    | ISO 8601                     |
 | created_at | TEXT    | ISO 8601                     |
 
-### accounts
+### leanfin_accounts
 
 | Column             | Type    | Notes                                     |
 |--------------------|---------|-------------------------------------------|
@@ -153,7 +153,7 @@ After login, the top-level router serves:
 | archived           | INTEGER | 0 or 1, default 0. Archived accounts are read-only |
 | created_at         | TEXT    | ISO 8601                                  |
 
-### pending_links
+### leanfin_pending_links
 
 | Column     | Type    | Notes                                |
 |------------|---------|--------------------------------------|
@@ -164,7 +164,7 @@ After login, the top-level router serves:
 | reauth_account_id  | INTEGER | Nullable, FK → accounts (set for re-auth flow) |
 | created_at         | TEXT    | ISO 8601                                       |
 
-### transactions
+### leanfin_transactions
 
 | Column          | Type    | Notes                              |
 |-----------------|---------|------------------------------------|
@@ -180,7 +180,7 @@ After login, the top-level router serves:
 | created_at      | TEXT    | When we first stored it            |
 | UNIQUE(external_id, account_id) |  | Deduplication constraint  |
 
-### labels
+### leanfin_labels
 
 | Column | Type    | Notes             |
 |--------|---------|-------------------|
@@ -190,7 +190,7 @@ After login, the top-level router serves:
 | color  | TEXT    | Hex color, e.g. #4CAF50 |
 | UNIQUE(user_id, name) | | |
 
-### label_rules
+### leanfin_label_rules
 
 | Column    | Type    | Notes                                  |
 |-----------|---------|----------------------------------------|
@@ -200,7 +200,7 @@ After login, the top-level router serves:
 | pattern   | TEXT    | Keyword for text fields; "min,max" for amount_range |
 | priority  | INTEGER | Higher wins on conflict, default 0     |
 
-### balance_snapshots
+### leanfin_balance_snapshots
 
 | Column       | Type    | Notes                                          |
 |--------------|---------|------------------------------------------------|
@@ -213,7 +213,7 @@ After login, the top-level router serves:
 | created_at   | TEXT    | ISO 8601                                       |
 | UNIQUE(account_id, balance_type, timestamp) | | |
 
-### api_payloads
+### leanfin_api_payloads
 
 | Column        | Type     | Notes                                          |
 |---------------|----------|------------------------------------------------|
@@ -230,7 +230,7 @@ After login, the top-level router serves:
 
 Indexes: `account_id`, `created_at`.
 
-### transaction_labels
+### leanfin_transaction_labels
 
 | Column         | Type    | Notes                      |
 |----------------|---------|----------------------------|

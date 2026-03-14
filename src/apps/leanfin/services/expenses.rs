@@ -31,10 +31,10 @@ pub async fn get_expense_series(
     let sql = format!(
         r#"SELECT t.date, l.id as label_id, l.name as label_name, l.color as label_color,
                   SUM(al.amount) as total
-           FROM allocations al
-           JOIN transactions t ON al.transaction_id = t.id
-           JOIN labels l ON al.label_id = l.id
-           JOIN accounts a ON t.account_id = a.id
+           FROM leanfin_allocations al
+           JOIN leanfin_transactions t ON al.transaction_id = t.id
+           JOIN leanfin_labels l ON al.label_id = l.id
+           JOIN leanfin_accounts a ON t.account_id = a.id
            WHERE a.user_id = ?
              AND l.id IN ({placeholders})
              AND t.date >= ?

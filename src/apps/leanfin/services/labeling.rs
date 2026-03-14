@@ -9,8 +9,8 @@ pub async fn apply_rules(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     let rules: Vec<LabelRule> = sqlx::query_as(
         r#"
         SELECT lr.id, lr.label_id, lr.field, lr.pattern, lr.priority
-        FROM label_rules lr
-        JOIN labels l ON lr.label_id = l.id
+        FROM leanfin_label_rules lr
+        JOIN leanfin_labels l ON lr.label_id = l.id
         WHERE l.user_id = ?
         ORDER BY lr.priority DESC
         "#,
@@ -29,10 +29,10 @@ pub async fn apply_rules(pool: &SqlitePool, user_id: i64) -> Result<u64> {
         SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
                t.created_at
-        FROM transactions t
-        JOIN accounts a ON t.account_id = a.id
+        FROM leanfin_transactions t
+        JOIN leanfin_accounts a ON t.account_id = a.id
         WHERE a.user_id = ?
-          AND t.id NOT IN (SELECT transaction_id FROM allocations)
+          AND t.id NOT IN (SELECT transaction_id FROM leanfin_allocations)
         "#,
     )
     .bind(user_id)
@@ -57,7 +57,7 @@ pub async fn apply_rules(pool: &SqlitePool, user_id: i64) -> Result<u64> {
                 .contains(&rule.pattern.to_lowercase())
             {
                 let result = sqlx::query(
-                    "INSERT INTO allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
+                    "INSERT INTO leanfin_allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
                 )
                 .bind(tx.id)
                 .bind(rule.label_id)

@@ -6,7 +6,7 @@ async fn import_csv_form_renders_for_manual_account_owner() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -48,7 +48,7 @@ async fn successful_import_updates_balances() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -75,7 +75,7 @@ async fn successful_import_updates_balances() {
 
     // Verify balance_snapshots rows
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM balance_snapshots WHERE account_id = ? AND date IN ('2027-06-01','2027-07-01','2027-08-01')",
+        "SELECT COUNT(*) FROM leanfin_balance_snapshots WHERE account_id = ? AND date IN ('2027-06-01','2027-07-01','2027-08-01')",
     )
     .bind(id)
     .fetch_one(&app.pool)
@@ -85,7 +85,7 @@ async fn successful_import_updates_balances() {
 
     // Verify account balance updated to latest
     let (balance,): (f64,) =
-        sqlx::query_as("SELECT balance_amount FROM accounts WHERE id = ?")
+        sqlx::query_as("SELECT balance_amount FROM leanfin_accounts WHERE id = ?")
             .bind(id)
             .fetch_one(&app.pool)
             .await
@@ -102,7 +102,7 @@ async fn invalid_rows_reject_entire_import() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -129,7 +129,7 @@ async fn invalid_rows_reject_entire_import() {
 
     // No rows should have been written
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM balance_snapshots WHERE account_id = ? AND date = '2025-06-01'",
+        "SELECT COUNT(*) FROM leanfin_balance_snapshots WHERE account_id = ? AND date = '2025-06-01'",
     )
     .bind(id)
     .fetch_one(&app.pool)
@@ -144,7 +144,7 @@ async fn missing_columns_rejected() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -178,7 +178,7 @@ async fn empty_file_rejected() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -206,7 +206,7 @@ async fn duplicate_import_is_idempotent() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -238,7 +238,7 @@ async fn duplicate_import_is_idempotent() {
 
     // Should still only have 2 rows (not 4)
     let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM balance_snapshots WHERE account_id = ? AND date IN ('2025-06-01','2025-07-01')",
+        "SELECT COUNT(*) FROM leanfin_balance_snapshots WHERE account_id = ? AND date IN ('2025-06-01','2025-07-01')",
     )
     .bind(id)
     .fetch_one(&app.pool)
@@ -254,7 +254,7 @@ async fn non_owner_gets_redirected() {
 
     // Get the manual account ID (owned by demo user)
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await
@@ -279,7 +279,7 @@ async fn balance_alias_column_accepted() {
     app.seed_and_login().await;
 
     let (id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
+        "SELECT id FROM leanfin_accounts WHERE account_type = 'manual' AND account_name = 'Stock Portfolio'",
     )
     .fetch_one(&app.pool)
     .await

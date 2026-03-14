@@ -126,7 +126,7 @@ async fn chart_endpoint_returns_chart_data_for_valid_label() {
 
     // Get the Groceries label id
     let (label_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Groceries'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -151,7 +151,7 @@ async fn chart_endpoint_defaults_to_90_days() {
     app.seed_and_login().await;
 
     let (label_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Groceries'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
@@ -172,12 +172,12 @@ async fn chart_endpoint_supports_multiple_labels() {
     app.seed_and_login().await;
 
     let (groceries_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Groceries'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
     let (subs_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM labels WHERE name = 'Subscriptions'")
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Subscriptions'")
             .fetch_one(&app.pool)
             .await
             .unwrap();
