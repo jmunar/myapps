@@ -64,7 +64,7 @@ pub async fn record_balance_snapshot(
 }
 
 /// Compare previous ITAV balance + new transactions (linked to this snapshot)
-/// vs the new ITAV balance. If the discrepancy exceeds 0.01, send an ntfy alert.
+/// vs the new ITAV balance. If the discrepancy exceeds 0.01, send a push notification.
 /// Only runs when both old and new balances are ITAV.
 pub async fn check_reconciliation(
     pool: &SqlitePool,
@@ -129,7 +129,7 @@ pub async fn check_reconciliation(
             diff,
         );
         tracing::warn!("{msg}");
-        crate::services::notify::send(config, &msg).await;
+        crate::services::notify::send(pool, config, "LeanFin", &msg).await;
         return Ok(Some(msg));
     }
 

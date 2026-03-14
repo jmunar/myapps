@@ -163,8 +163,9 @@ DATABASE_URL=sqlite:///opt/myapps/data/myapps.db
 BASE_URL=https://yourdomain.com/myapps   # Public URL (path becomes BASE_PATH)
 ENABLE_BANKING_APP_ID=              # UUID from Enable Banking control panel
 ENABLE_BANKING_KEY_PATH=/opt/myapps/private.pem   # RSA private key
-NTFY_URL=http://127.0.0.1:8090              # ntfy server (local)
-NTFY_TOPIC=                                 # ntfy topic name
+VAPID_PRIVATE_KEY=                          # base64url-encoded EC private key
+VAPID_PUBLIC_KEY=                           # base64url-encoded uncompressed public key
+VAPID_SUBJECT=mailto:you@example.com        # VAPID subject claim
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli   # whisper.cpp binary
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 BIND_ADDR=127.0.0.1:3000
@@ -196,84 +197,42 @@ Installed at `/etc/cron.d/myapps` by `setup`. Runs daily at 06:00:
 0 6 * * * myapps . /opt/myapps/.env && /opt/myapps/myapps sync >> /opt/myapps/logs/sync.log 2>&1
 ```
 
-## ntfy (Self-Hosted Notifications)
+## Web Push Notifications
 
-ntfy runs as a single binary and sends push notifications to your phone.
+The app uses the standard Web Push API with VAPID authentication for browser
+push notifications. No separate notification service is needed — the app
+sends push messages directly to browser push endpoints.
 
-### Install
-
-```bash
-# On the Odroid — add the ntfy apt repository
-sudo mkdir -p /etc/apt/keyrings
-sudo curl -L -o /etc/apt/keyrings/ntfy.gpg https://archive.ntfy.sh/apt/keyring.gpg
-sudo apt install apt-transport-https
-echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/ntfy.gpg] https://archive.ntfy.sh/apt stable main" \
-    | sudo tee /etc/apt/sources.list.d/ntfy.list
-sudo apt update
-sudo apt install ntfy
-```
-
-### Configure
-
-Edit `/etc/ntfy/server.yml`:
-
-```yaml
-base-url: https://ntfy.munarriz.mooo.com
-listen-http: 127.0.0.1:8090
-behind-proxy: true
-```
-
-### Enable and start
+### Generate VAPID keys
 
 ```bash
-sudo systemctl enable ntfy
-sudo systemctl start ntfy
+# On the server (or locally)
+/opt/myapps/myapps generate-vapid-keys
 ```
 
-### Add nginx proxy
-
-Create `/etc/nginx/sites-available/ntfy`:
-
-```nginx
-server {
-    listen 80;
-    server_name ntfy.munarriz.mooo.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8090;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-```
-
-Enable it, reload, and add HTTPS:
+This prints a key pair. Add the output to `/opt/myapps/.env`:
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/ntfy /etc/nginx/sites-enabled/
-sudo nginx -s reload
-sudo certbot --nginx -d ntfy.munarriz.mooo.com
+VAPID_PRIVATE_KEY=<generated private key>
+VAPID_PUBLIC_KEY=<generated public key>
+VAPID_SUBJECT=mailto:you@example.com
 ```
 
-### Connect MyApps
+Restart the service after updating `.env`.
 
-Set these in `/opt/myapps/.env`:
+### Enable notifications
 
-```bash
-NTFY_URL=http://127.0.0.1:8090
-NTFY_TOPIC=myapps
-```
+Open the app in a browser, navigate to the launcher page, and click
+"Enable notifications". The browser will prompt for permission. Once granted,
+the subscription is stored in the database and push notifications will be
+delivered to that browser.
 
-MyApps connects to ntfy locally — no need to go through nginx.
+### Supported platforms
 
-### Subscribe on your phone
-
-Install the ntfy app ([Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy),
-[iOS](https://apps.apple.com/app/ntfy/id1625396347)), add your server
-`https://ntfy.munarriz.mooo.com`, and subscribe to the `myapps` topic.
+- **Desktop**: Chrome, Firefox, Edge, Safari 16+
+- **Android**: Chrome (including installed PWA)
+- **iOS**: Safari 16.4+ (requires the app to be installed as a PWA via
+  "Add to Home Screen")
 
 ## whisper.cpp (VoiceToText)
 

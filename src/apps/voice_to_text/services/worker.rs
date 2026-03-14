@@ -74,7 +74,9 @@ async fn process_next(pool: &SqlitePool, config: &Config) -> anyhow::Result<()> 
 
             tracing::info!(job_id = job.id, elapsed_secs = elapsed, "Transcription complete");
             notify::send(
+                pool,
                 config,
+                "VoiceToText",
                 &format!(
                     "Transcription complete: {} ({:.0}s)",
                     job.original_filename, elapsed
@@ -98,7 +100,9 @@ async fn process_next(pool: &SqlitePool, config: &Config) -> anyhow::Result<()> 
 
             tracing::warn!(job_id = job.id, error = %e, "Transcription failed");
             notify::send(
+                pool,
                 config,
+                "VoiceToText",
                 &format!("Transcription failed: {} — {}", job.original_filename, msg),
             )
             .await;

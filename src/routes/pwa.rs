@@ -1,5 +1,5 @@
-use axum::http::{Response, header};
-use axum::{Router, response::IntoResponse, routing::get};
+use axum::http::{Response, StatusCode, header};
+use axum::{Json, Router, response::IntoResponse, routing::get, routing::post};
 
 use super::AppState;
 
@@ -7,6 +7,13 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/manifest.json", get(manifest))
         .route("/sw.js", get(service_worker))
+}
+
+pub fn push_routes() -> Router<AppState> {
+    Router::new()
+        .route("/push/vapid-key", get(vapid_key))
+        .route("/push/subscribe", post(subscribe))
+        .route("/push/unsubscribe", post(unsubscribe))
 }
 
 async fn manifest(
@@ -56,4 +63,62 @@ async fn service_worker(
         .header("service-worker-allowed", scope)
         .body(body)
         .unwrap()
+}
+
+async fn vapid_key(
+    state: axum::extract::State<AppState>,
+) -> impl IntoResponse {
+    match &state.config.vapid_public_key {
+        Some(key) => (StatusCode::OK, key.clone()),
+        None => (StatusCode::NOT_FOUND, "VAPID not configured".to_string()),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct PushSubscription {
+    endpoint: String,
+    p256dh: String,
+    auth: String,
+}
+
+async fn subscribe(
+    state: axum::extract::State<AppState>,
+    axum::Extension(user_id): axum::Extension<crate::auth::UserId>,
+    Json(sub): Json<PushSubscription>,
+) -> impl IntoResponse {
+    let result = sqlx::query(
+        r#"INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth"#,
+    )
+    .bind(user_id.0)
+    .bind(&sub.endpoint)
+    .bind(&sub.p256dh)
+    .bind(&sub.auth)
+    .execute(&state.pool)
+    .await;
+
+    match result {
+        Ok(_) => StatusCode::OK,
+        Err(e) => {
+            tracing::warn!("Failed to save push subscription: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct Unsubscribe {
+    endpoint: String,
+}
+
+async fn unsubscribe(
+    state: axum::extract::State<AppState>,
+    Json(body): Json<Unsubscribe>,
+) -> impl IntoResponse {
+    let _ = sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = ?")
+        .bind(&body.endpoint)
+        .execute(&state.pool)
+        .await;
+    StatusCode::OK
 }

@@ -11,7 +11,7 @@
 | Charts           | Frappe Charts 1.6.2 (client-side)|
 | Auth             | Argon2 + server-side sessions   |
 | Bank aggregator  | Enable Banking PSD2 API         |
-| Notifications    | ntfy (HTTP push)                |
+| Notifications    | Web Push API (VAPID)            |
 | Speech-to-text   | whisper.cpp (via CLI subprocess) |
 | Audio conversion | ffmpeg                          |
 | Reverse proxy    | nginx + certbot                 |
@@ -25,6 +25,7 @@ A single binary with subcommands:
 myapps serve                # Start the HTTP server
 myapps sync                 # Fetch transactions from all linked accounts (cron)
 myapps create-user          # Create a user from the command line
+myapps generate-vapid-keys  # Generate VAPID key pair for push notifications
 myapps seed --app leanfin           # Populate LeanFin demo data
 myapps seed --app leanfin --reset   # Wipe and re-seed demo data
 ```
@@ -63,7 +64,7 @@ myapps/
 │   │   ├── pwa.rs           # PWA manifest + service worker endpoints
 │   │   └── launcher.rs      # App launcher page (root /)
 │   ├── services/            # Shared services
-│   │   └── notify.rs        # ntfy push notifications
+│   │   └── notify.rs        # Web Push notifications (VAPID)
 │   └── apps/                # Sub-applications
 │       ├── leanfin/         # LeanFin expense tracker
 │           ├── mod.rs       # LeanFin router
@@ -113,7 +114,10 @@ After login, the top-level router serves:
 
 - `/` — App launcher (grid of available apps)
 - `/manifest.json` — PWA manifest (dynamic, base_path-aware)
-- `/sw.js` — Service worker (dynamic, base_path injected)
+- `/sw.js` — Service worker (dynamic, base_path injected, push handlers)
+- `/push/vapid-key` — VAPID public key (GET, protected)
+- `/push/subscribe` — Register push subscription (POST, protected)
+- `/push/unsubscribe` — Remove push subscription (POST, protected)
 - `/login`, `/logout` — Authentication (public)
 - `/leanfin/` — LeanFin sub-app (nested router)
   - `/leanfin/` — Transactions dashboard
@@ -340,6 +344,17 @@ Indexes: `account_id`, `created_at`.
 | created_at   | TEXT    | ISO 8601                             |
 | completed_at | TEXT    | Nullable, set when status → done     |
 
+### push_subscriptions
+
+| Column     | Type    | Notes                          |
+|------------|---------|--------------------------------|
+| id         | INTEGER | PK, autoincrement              |
+| user_id    | INTEGER | FK → users, ON DELETE CASCADE  |
+| endpoint   | TEXT    | NOT NULL, UNIQUE               |
+| p256dh     | TEXT    | NOT NULL                       |
+| auth       | TEXT    | NOT NULL                       |
+| created_at | TEXT    | ISO 8601                       |
+
 ### voice_jobs
 
 | Column            | Type    | Notes                                        |
@@ -371,7 +386,7 @@ User uploads audio (or records via browser mic)
       ├─ ffmpeg converts to 16kHz mono WAV
       ├─ whisper-cli transcribes using configured model
       ├─ UPDATE voice_jobs with transcription text (or error)
-      └─ Send ntfy notification (success or failure)
+      └─ Send Web Push notification (success or failure)
 ```
 
 ## Authentication Flow
@@ -422,10 +437,10 @@ myapps sync
   ├─ For each active bank account (account_type = 'bank', archived = 0; manual and archived accounts are skipped):
   │   ├─ Check session_expires_at
   │   ├─ If expired:
-  │   │   ├─ Send ntfy notification
+  │   │   ├─ Send push notification
   │   │   └─ Skip
   │   ├─ If expiring within 7 days:
-  │   │   └─ Send ntfy warning
+  │   │   └─ Send push warning
   │   ├─ GET /accounts/{uid}/balances → pick best type → UPDATE accounts
   │   ├─ Record balance snapshot → get snapshot_id
   │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
