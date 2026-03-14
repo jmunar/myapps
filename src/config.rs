@@ -49,6 +49,25 @@ impl Config {
         format!("{}/ggml-{model}.bin", self.whisper_models_dir)
     }
 
+    /// Scan the models directory for available whisper GGML models.
+    /// Returns sorted model names (e.g. ["base-q5_1", "tiny-q5_1"]).
+    pub fn available_whisper_models(&self) -> Vec<String> {
+        let Ok(entries) = std::fs::read_dir(&self.whisper_models_dir) else {
+            return Vec::new();
+        };
+        let mut models: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.strip_prefix("ggml-")
+                    .and_then(|s| s.strip_suffix(".bin"))
+                    .map(|s| s.to_string())
+            })
+            .collect();
+        models.sort();
+        models
+    }
+
     /// Returns Enable Banking config, or error if not fully configured.
     pub fn require_enable_banking(
         &self,

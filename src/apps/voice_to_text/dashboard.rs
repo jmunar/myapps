@@ -27,6 +27,40 @@ struct JobRow {
     completed_at: Option<String>,
 }
 
+/// Render a single job table row. Shared between the full page and the HTMX partial.
+fn render_job_row(j: &JobRow, base: &str) -> String {
+    let status_class = match j.status.as_str() {
+        "done" => "status-done",
+        "failed" => "status-failed",
+        "processing" => "status-processing",
+        _ => "status-pending",
+    };
+    let id = j.id;
+    let detail_link = format!(r##"<a href="{base}/voice/jobs/{id}">View</a>"##);
+    let delete_btn = format!(
+        r##"<form hx-post="{base}/voice/jobs/{id}/delete"
+                hx-target="#voice-jobs-body" hx-swap="innerHTML"
+                hx-confirm="Delete this job?">
+            <button type="submit" class="btn-icon" title="Delete">&times;</button>
+        </form>"##,
+    );
+    format!(
+        r##"<tr>
+            <td>{filename}</td>
+            <td><span class="voice-status {status_class}">{status}</span></td>
+            <td>{model}</td>
+            <td>{created}</td>
+            <td>{completed}</td>
+            <td class="voice-actions">{detail_link}{delete_btn}</td>
+        </tr>"##,
+        filename = j.original_filename,
+        status = j.status,
+        model = j.model_used,
+        created = j.created_at,
+        completed = j.completed_at.as_deref().unwrap_or("—"),
+    )
+}
+
 async fn index(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
@@ -47,35 +81,7 @@ async fn index(
 
     let mut rows = String::new();
     for j in &jobs {
-        let status_class = match j.status.as_str() {
-            "done" => "status-done",
-            "failed" => "status-failed",
-            "processing" => "status-processing",
-            _ => "status-pending",
-        };
-        let view_link = if j.status == "done" {
-            format!(
-                r#"<a href="{base}/voice/jobs/{id}">View</a>"#,
-                id = j.id
-            )
-        } else {
-            String::new()
-        };
-        rows.push_str(&format!(
-            r#"<tr>
-                <td>{filename}</td>
-                <td><span class="voice-status {status_class}">{status}</span></td>
-                <td>{model}</td>
-                <td>{created}</td>
-                <td>{completed}</td>
-                <td>{view_link}</td>
-            </tr>"#,
-            filename = j.original_filename,
-            status = j.status,
-            model = j.model_used,
-            created = j.created_at,
-            completed = j.completed_at.as_deref().unwrap_or("—"),
-        ));
+        rows.push_str(&render_job_row(j, base));
     }
 
     let empty_msg = if jobs.is_empty() {

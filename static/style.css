@@ -1743,3 +1743,31 @@ nav a.brand:hover {
     color: var(--text-secondary);
     font-size: 0.9rem;
 }
+
+.voice-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    padding: 0.1rem 0.3rem;
+    border-radius: var(--radius);
+    line-height: 1;
+}
+
+.btn-icon:hover {
+    color: var(--negative);
+    background: #fde8e8;
+}
+
+.voice-retry-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
