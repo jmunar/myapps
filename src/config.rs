@@ -8,7 +8,7 @@ pub struct Config {
     pub ntfy_url: Option<String>,
     pub ntfy_topic: Option<String>,
     pub bind_addr: String,
-    /// URL prefix derived from BASE_URL path (e.g. "/leanfin").
+    /// URL prefix derived from BASE_URL path (e.g. "/myapps").
     /// Empty string means served at root.
     pub base_path: String,
 }
@@ -24,7 +24,7 @@ impl Config {
 
         Ok(Self {
             database_url: env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "sqlite://data/leanfin.db".to_string()),
+                .unwrap_or_else(|_| "sqlite://data/myapps.db".to_string()),
             base_url,
             enable_banking_app_id: env::var("ENABLE_BANKING_APP_ID").ok(),
             enable_banking_key_path: env::var("ENABLE_BANKING_KEY_PATH").ok(),
