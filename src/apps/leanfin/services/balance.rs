@@ -96,12 +96,10 @@ pub async fn check_reconciliation(
 
     // Sum only the transactions that are new in this snapshot
     let txn_sum: Option<f64> = if let Some(sid) = snapshot_id {
-        sqlx::query_scalar(
-            "SELECT SUM(amount) FROM leanfin_transactions WHERE snapshot_id = ?",
-        )
-        .bind(sid)
-        .fetch_one(pool)
-        .await?
+        sqlx::query_scalar("SELECT SUM(amount) FROM leanfin_transactions WHERE snapshot_id = ?")
+            .bind(sid)
+            .fetch_one(pool)
+            .await?
     } else {
         // Fallback: date-based (legacy, when snapshot_id is unavailable)
         sqlx::query_scalar(
@@ -143,9 +141,7 @@ pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint
         return Vec::new();
     }
 
-    let cutoff = (Utc::now() - Duration::days(days))
-        .naive_utc()
-        .date();
+    let cutoff = (Utc::now() - Duration::days(days)).naive_utc().date();
     let today = Utc::now().naive_utc().date();
 
     let mut point_map: HashMap<NaiveDate, &BalancePoint> = HashMap::new();
@@ -155,7 +151,8 @@ pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint
         }
     }
 
-    let first_date = series.iter()
+    let first_date = series
+        .iter()
         .filter_map(|p| NaiveDate::parse_from_str(&p.date, "%Y-%m-%d").ok())
         .min()
         .unwrap_or(cutoff);
@@ -167,10 +164,10 @@ pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint
 
     // Check if there's a balance before `start` to carry forward
     for p in series {
-        if let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") {
-            if d < start {
-                last_balance = Some(p.balance);
-            }
+        if let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d")
+            && d < start
+        {
+            last_balance = Some(p.balance);
         }
     }
 
@@ -208,12 +205,11 @@ pub async fn get_balance_series(
         .to_string();
     let today = Utc::now().format("%Y-%m-%d").to_string();
 
-    let account_type: String = sqlx::query_scalar(
-        "SELECT account_type FROM leanfin_accounts WHERE id = ?",
-    )
-    .bind(account_id)
-    .fetch_one(pool)
-    .await?;
+    let account_type: String =
+        sqlx::query_scalar("SELECT account_type FROM leanfin_accounts WHERE id = ?")
+            .bind(account_id)
+            .fetch_one(pool)
+            .await?;
 
     if account_type == "manual" {
         let rows: Vec<BalancePoint> = sqlx::query_as(
@@ -351,7 +347,11 @@ pub async fn get_balance_series(
         // Walk from s_date to end_date (exclusive of end_date if there's a next snapshot)
         let mut balance = s.balance;
         let mut date = s_date;
-        let walk_end = if next_snapshot_id.is_some() { end_date } else { end_date + Duration::days(1) };
+        let walk_end = if next_snapshot_id.is_some() {
+            end_date
+        } else {
+            end_date + Duration::days(1)
+        };
 
         while date < walk_end {
             let date_str = date.format("%Y-%m-%d").to_string();
@@ -390,12 +390,11 @@ pub async fn get_aggregated_balance_series(
     user_id: i64,
     days: i64,
 ) -> Result<Vec<BalancePoint>> {
-    let account_ids: Vec<(i64,)> = sqlx::query_as(
-        "SELECT id FROM leanfin_accounts WHERE user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
+    let account_ids: Vec<(i64,)> =
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
 
     let mut date_totals: HashMap<String, f64> = HashMap::new();
 

@@ -78,7 +78,10 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         ("Fix the leaky faucet in the bathroom", home_id),
         ("Order new shelf for the office", home_id),
         // Inbox (uncategorized)
-        ("Look into that new note-taking tool someone mentioned", None),
+        (
+            "Look into that new note-taking tool someone mentioned",
+            None,
+        ),
         ("Remember to buy birthday present for Alex", None),
         ("Interesting idea: automate weekly report generation", None),
     ];
@@ -174,15 +177,18 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     let mut action_count = 0u64;
 
     // Create actions from specific thoughts
-    let actionable: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT id, content FROM mindflow_thoughts WHERE user_id = ? LIMIT 5",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
+    let actionable: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, content FROM mindflow_thoughts WHERE user_id = ? LIMIT 5")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
 
     let action_defs: &[(&str, &str, Option<&str>)] = &[
-        ("Set up meeting room for Q1 review", "high", Some("2026-03-18")),
+        (
+            "Set up meeting room for Q1 review",
+            "high",
+            Some("2026-03-18"),
+        ),
         ("Book dentist appointment", "medium", Some("2026-03-20")),
         ("Compare 3 electricity providers", "low", None),
         ("Buy birthday present for Alex", "high", Some("2026-03-16")),
@@ -212,14 +218,12 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
 }
 
 async fn cat_id(pool: &SqlitePool, user_id: i64, name: &str) -> Option<i64> {
-    sqlx::query_as::<_, (i64,)>(
-        "SELECT id FROM mindflow_categories WHERE user_id = ? AND name = ?",
-    )
-    .bind(user_id)
-    .bind(name)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten()
-    .map(|r| r.0)
+    sqlx::query_as::<_, (i64,)>("SELECT id FROM mindflow_categories WHERE user_id = ? AND name = ?")
+        .bind(user_id)
+        .bind(name)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| r.0)
 }

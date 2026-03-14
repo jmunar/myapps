@@ -54,8 +54,6 @@ pub async fn transcribe(config: &Config, wav_path: &Path, model: &str) -> anyhow
         anyhow::bail!("whisper-cli failed: {stderr}");
     }
 
-    let text = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .to_string();
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(text)
 }

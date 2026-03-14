@@ -2,10 +2,10 @@ use axum::extract::{Multipart, Path};
 use axum::{Extension, Router, response::Html, routing::get, routing::post};
 use std::path::PathBuf;
 
+use super::dashboard::voice_nav;
 use crate::auth::UserId;
 use crate::layout::render_page;
 use crate::routes::AppState;
-use super::dashboard::voice_nav;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -40,9 +40,7 @@ fn render_model_options(models: &[String], selected: Option<&str>) -> String {
     html
 }
 
-async fn new_form(
-    state: axum::extract::State<AppState>,
-) -> Html<String> {
+async fn new_form(state: axum::extract::State<AppState>) -> Html<String> {
     let base = &state.config.base_path;
     let models = state.config.available_whisper_models();
     let model_options = render_model_options(&models, None);
@@ -127,11 +125,16 @@ async fn upload(
     let base = &state.config.base_path;
     let dir = upload_dir();
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
-        return Html(format!(r#"<p class="error">Failed to create upload dir: {e}</p>"#));
+        return Html(format!(
+            r#"<p class="error">Failed to create upload dir: {e}</p>"#
+        ));
     }
 
     let available = state.config.available_whisper_models();
-    let default_model = available.first().cloned().unwrap_or_else(|| "base".to_string());
+    let default_model = available
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "base".to_string());
 
     let mut audio_data: Option<(String, Vec<u8>)> = None;
     let mut model = default_model;
@@ -139,16 +142,13 @@ async fn upload(
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
         if name == "model" {
-            if let Ok(val) = field.text().await {
-                if available.contains(&val) {
-                    model = val;
-                }
+            if let Ok(val) = field.text().await
+                && available.contains(&val)
+            {
+                model = val;
             }
         } else if name == "audio" {
-            let filename = field
-                .file_name()
-                .unwrap_or("upload.wav")
-                .to_string();
+            let filename = field.file_name().unwrap_or("upload.wav").to_string();
             if let Ok(bytes) = field.bytes().await {
                 audio_data = Some((filename, bytes.to_vec()));
             }
@@ -165,10 +165,7 @@ async fn upload(
 
     // Save file with a unique name
     let file_id = uuid::Uuid::new_v4();
-    let ext = original_filename
-        .rsplit('.')
-        .next()
-        .unwrap_or("wav");
+    let ext = original_filename.rsplit('.').next().unwrap_or("wav");
     let stored_name = format!("{file_id}.{ext}");
     let stored_path = dir.join(&stored_name);
 
@@ -249,11 +246,7 @@ fn render_job_row(j: &JobRow, base: &str) -> String {
 }
 
 /// Shared helper: fetch jobs and render tbody rows.
-async fn render_jobs_tbody(
-    pool: &sqlx::SqlitePool,
-    base: &str,
-    user_id: UserId,
-) -> String {
+async fn render_jobs_tbody(pool: &sqlx::SqlitePool, base: &str, user_id: UserId) -> String {
     let jobs: Vec<JobRow> = sqlx::query_as(
         "SELECT id, status, original_filename, model_used, created_at, completed_at
          FROM voice_jobs
@@ -341,7 +334,10 @@ async fn job_detail(
         String::new()
     } else {
         let opts = render_model_options(
-            &other_models.iter().map(|m| m.to_string()).collect::<Vec<_>>(),
+            &other_models
+                .iter()
+                .map(|m| m.to_string())
+                .collect::<Vec<_>>(),
             None,
         );
         format!(
@@ -412,14 +408,13 @@ async fn delete_job(
     Path(job_id): Path<i64>,
 ) -> Html<String> {
     // Delete the audio file if it exists
-    let path: Option<(String,)> = sqlx::query_as(
-        "SELECT audio_path FROM voice_jobs WHERE id = ? AND user_id = ?",
-    )
-    .bind(job_id)
-    .bind(user_id.0)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let path: Option<(String,)> =
+        sqlx::query_as("SELECT audio_path FROM voice_jobs WHERE id = ? AND user_id = ?")
+            .bind(job_id)
+            .bind(user_id.0)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     if let Some((audio_path,)) = &path {
         let _ = tokio::fs::remove_file(audio_path).await;

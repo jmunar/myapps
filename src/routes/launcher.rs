@@ -7,13 +7,13 @@ pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(index))
 }
 
-async fn index(
-    state: axum::extract::State<AppState>,
-) -> Html<String> {
+async fn index(state: axum::extract::State<AppState>) -> Html<String> {
     let base = &state.config.base_path;
-    let nav = vec![
-        NavItem { href: format!("{base}/logout"), label: "Log out", active: false },
-    ];
+    let nav = vec![NavItem {
+        href: format!("{base}/logout"),
+        label: "Log out",
+        active: false,
+    }];
     let body = format!(
         r#"<div class="page-header">
             <h1>My Apps</h1>

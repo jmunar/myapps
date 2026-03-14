@@ -5,10 +5,10 @@ use axum::{
 };
 use serde::Deserialize;
 
+use super::mindflow_nav;
 use crate::auth::UserId;
 use crate::layout::render_page;
 use crate::routes::AppState;
-use super::mindflow_nav;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -56,10 +56,7 @@ async fn list(
 
     let mut cat_options = String::new();
     for c in &categories {
-        cat_options.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
-            c.id, c.name,
-        ));
+        cat_options.push_str(&format!(r#"<option value="{}">{}</option>"#, c.id, c.name,));
     }
 
     let mut rows = String::new();
@@ -111,7 +108,12 @@ async fn list(
         count = thoughts.len(),
     );
 
-    Html(render_page("MindFlow — Inbox", &mindflow_nav(base, "inbox"), &body, base))
+    Html(render_page(
+        "MindFlow — Inbox",
+        &mindflow_nav(base, "inbox"),
+        &body,
+        base,
+    ))
 }
 
 #[derive(Deserialize)]

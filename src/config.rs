@@ -71,9 +71,7 @@ impl Config {
     }
 
     /// Returns Enable Banking config, or error if not fully configured.
-    pub fn require_enable_banking(
-        &self,
-    ) -> Result<(&str, &str, String), ConfigError> {
+    pub fn require_enable_banking(&self) -> Result<(&str, &str, String), ConfigError> {
         let base_url = self
             .base_url
             .as_deref()

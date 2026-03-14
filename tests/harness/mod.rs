@@ -1,6 +1,6 @@
 use axum_test::TestServer;
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

@@ -58,7 +58,10 @@ pub async fn import_csv_balances(
         let record = match result {
             Ok(r) => r,
             Err(e) => {
-                errors.push(SkippedRow { line, reason: format!("Parse error: {e}") });
+                errors.push(SkippedRow {
+                    line,
+                    reason: format!("Parse error: {e}"),
+                });
                 continue;
             }
         };
@@ -67,11 +70,17 @@ pub async fn import_csv_balances(
         let value_str = record.get(value_col).unwrap_or("").trim();
 
         if date_str.is_empty() {
-            errors.push(SkippedRow { line, reason: "Empty date".into() });
+            errors.push(SkippedRow {
+                line,
+                reason: "Empty date".into(),
+            });
             continue;
         }
         if value_str.is_empty() {
-            errors.push(SkippedRow { line, reason: "Empty value".into() });
+            errors.push(SkippedRow {
+                line,
+                reason: "Empty value".into(),
+            });
             continue;
         }
 

@@ -10,10 +10,26 @@ pub fn routes() -> Router<AppState> {
 
 pub fn voice_nav(base: &str, active: &str) -> Vec<NavItem> {
     vec![
-        NavItem { href: format!("{base}/voice"), label: "VoiceToText", active: false },
-        NavItem { href: format!("{base}/voice"), label: "Jobs", active: active == "jobs" },
-        NavItem { href: format!("{base}/voice/new"), label: "New", active: active == "new" },
-        NavItem { href: format!("{base}/logout"), label: "Log out", active: false },
+        NavItem {
+            href: format!("{base}/voice"),
+            label: "VoiceToText",
+            active: false,
+        },
+        NavItem {
+            href: format!("{base}/voice"),
+            label: "Jobs",
+            active: active == "jobs",
+        },
+        NavItem {
+            href: format!("{base}/voice/new"),
+            label: "New",
+            active: active == "new",
+        },
+        NavItem {
+            href: format!("{base}/logout"),
+            label: "Log out",
+            active: false,
+        },
     ]
 }
 

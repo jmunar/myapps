@@ -5,10 +5,10 @@ use axum::{
     routing::{get, post},
 };
 
+use super::mindflow_nav;
 use crate::auth::UserId;
 use crate::layout::render_page;
 use crate::routes::AppState;
-use super::mindflow_nav;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -56,7 +56,11 @@ async fn list(
 
     let mut rows = String::new();
     for a in &actions {
-        let done_class = if a.status == "done" { " action-done" } else { "" };
+        let done_class = if a.status == "done" {
+            " action-done"
+        } else {
+            ""
+        };
         let check = if a.status == "done" { "checked" } else { "" };
         let priority_class = match a.priority.as_str() {
             "high" => "priority-high",
@@ -124,7 +128,12 @@ async fn list(
         </div>"#
     );
 
-    Html(render_page("MindFlow — Actions", &mindflow_nav(base, "actions"), &body, base))
+    Html(render_page(
+        "MindFlow — Actions",
+        &mindflow_nav(base, "actions"),
+        &body,
+        base,
+    ))
 }
 
 async fn toggle(

@@ -1,4 +1,8 @@
-use axum::{Form, Router, response::{Html, IntoResponse, Redirect}, routing::get};
+use axum::{
+    Form, Router,
+    response::{Html, IntoResponse, Redirect},
+    routing::get,
+};
 use serde::Deserialize;
 use tower_cookies::{Cookie, Cookies};
 
@@ -10,9 +14,7 @@ pub fn routes() -> Router<AppState> {
         .route("/logout", get(logout))
 }
 
-async fn login_page(
-    state: axum::extract::State<AppState>,
-) -> Html<String> {
+async fn login_page(state: axum::extract::State<AppState>) -> Html<String> {
     let base = &state.config.base_path;
     Html(format!(
         r##"<!DOCTYPE html>
@@ -91,10 +93,7 @@ async fn login_submit(
     }
 }
 
-async fn logout(
-    cookies: Cookies,
-    state: axum::extract::State<AppState>,
-) -> impl IntoResponse {
+async fn logout(cookies: Cookies, state: axum::extract::State<AppState>) -> impl IntoResponse {
     if let Some(cookie) = cookies.get("session") {
         let _ = crate::auth::delete_session(&state.pool, cookie.value()).await;
         cookies.remove(Cookie::from("session"));

@@ -1,11 +1,11 @@
 use axum::{Extension, Router, response::Html, routing::get};
 use serde::Deserialize;
 
+use super::dashboard::leanfin_nav;
+use super::services::balance;
 use crate::auth::UserId;
 use crate::layout::render_page;
 use crate::routes::AppState;
-use super::dashboard::leanfin_nav;
-use super::services::balance;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -44,23 +44,27 @@ async fn page(
         <div class="card">
             <div class="empty-state"><p>No accounts yet. Link a bank account or add a manual account first.</p></div>
         </div>"#;
-        return Html(render_page("LeanFin — Balance", &leanfin_nav(base, "balance"), body, base));
+        return Html(render_page(
+            "LeanFin — Balance",
+            &leanfin_nav(base, "balance"),
+            body,
+            base,
+        ));
     }
 
     let mut account_options = String::from(r#"<option value="">All accounts</option>"#);
     for a in &accounts {
         let display = if a.account_type == "manual" {
-            a.account_name.clone().unwrap_or_else(|| a.bank_name.clone())
+            a.account_name
+                .clone()
+                .unwrap_or_else(|| a.bank_name.clone())
         } else {
             match &a.iban {
                 Some(iban) => format!("{} ({})", a.bank_name, iban),
                 None => a.bank_name.clone(),
             }
         };
-        account_options.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
-            a.id, display,
-        ));
+        account_options.push_str(&format!(r#"<option value="{}">{}</option>"#, a.id, display,));
     }
 
     let body = format!(
@@ -127,7 +131,12 @@ async fn page(
         </script>"##,
     );
 
-    Html(render_page("LeanFin — Balance", &leanfin_nav(base, "balance"), &body, base))
+    Html(render_page(
+        "LeanFin — Balance",
+        &leanfin_nav(base, "balance"),
+        &body,
+        base,
+    ))
 }
 
 #[derive(Deserialize)]

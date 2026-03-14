@@ -23,14 +23,13 @@ pub async fn create_user(pool: &SqlitePool, username: &str, password: &str) -> R
         .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))?
         .to_string();
 
-    let result = sqlx::query(
-        "INSERT INTO users (username, password_hash) VALUES (?, ?) RETURNING id",
-    )
-    .bind(username)
-    .bind(&password_hash)
-    .fetch_one(pool)
-    .await
-    .context("failed to create user")?;
+    let result =
+        sqlx::query("INSERT INTO users (username, password_hash) VALUES (?, ?) RETURNING id")
+            .bind(username)
+            .bind(&password_hash)
+            .fetch_one(pool)
+            .await
+            .context("failed to create user")?;
 
     Ok(sqlx::Row::get(&result, "id"))
 }
