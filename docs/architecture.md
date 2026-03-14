@@ -12,6 +12,8 @@
 | Auth             | Argon2 + server-side sessions   |
 | Bank aggregator  | Enable Banking PSD2 API         |
 | Notifications    | ntfy (HTTP push)                |
+| Speech-to-text   | whisper.cpp (via CLI subprocess) |
+| Audio conversion | ffmpeg                          |
 | Reverse proxy    | nginx + certbot                 |
 | Process manager  | systemd                         |
 
@@ -79,15 +81,22 @@ myapps/
 │               ├── expenses.rs        # Expense aggregation by label + date
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
-│       └── mindflow/        # MindFlow thought capture + mind map
-│           ├── mod.rs       # MindFlow router + nav
-│           ├── mind_map.rs  # Mind map page (D3.js) + map data JSON endpoint
-│           ├── categories.rs # Category CRUD
-│           ├── thoughts.rs  # Thought capture, detail, comments, actions
-│           ├── inbox.rs     # Inbox (uncategorized thoughts) + bulk recategorize
-│           ├── actions.rs   # Actions list, toggle, delete
+│       ├── mindflow/        # MindFlow thought capture + mind map
+│       │   ├── mod.rs       # MindFlow router + nav
+│       │   ├── mind_map.rs  # Mind map page (D3.js) + map data JSON endpoint
+│       │   ├── categories.rs # Category CRUD
+│       │   ├── thoughts.rs  # Thought capture, detail, comments, actions
+│       │   ├── inbox.rs     # Inbox (uncategorized thoughts) + bulk recategorize
+│       │   ├── actions.rs   # Actions list, toggle, delete
+│       │   └── services/
+│       │       └── seed.rs  # Demo data seeding
+│       └── voice_to_text/   # VoiceToText audio transcription
+│           ├── mod.rs       # VoiceToText router
+│           ├── dashboard.rs # Job list page + nav helper
+│           ├── jobs.rs      # Upload form, recording, job detail, HTMX partials
 │           └── services/
-│               └── seed.rs  # Demo data seeding
+│               ├── transcriber.rs  # ffmpeg conversion + whisper-cli subprocess
+│               └── worker.rs       # Background job worker (polls pending jobs)
 ├── static/                  # CSS, JS (htmx, frappe-charts, d3)
 ├── .claude/agents/          # Claude Code agent prompts
 │   └── frontend-tester.md   # Agent for generating integration tests
@@ -121,6 +130,12 @@ After login, the top-level router serves:
   - `/leanfin/expenses` — Expenses page (multi-label selector + chart + transaction list)
   - `/leanfin/expenses/chart?label_ids=1,2&days=90` — Expense chart data (HTMX)
   - `/leanfin/labels` — Label CRUD
+- `/voice/` — VoiceToText sub-app (nested router)
+  - `/voice/` — Job list dashboard (auto-polls for status updates via HTMX)
+  - `/voice/new` — Upload form + browser mic recording (MediaRecorder API)
+  - `POST /voice/upload` — Multipart file upload, queues transcription job
+  - `/voice/jobs/list` — HTMX partial for polling job status updates
+  - `/voice/jobs/{id}` — Job detail with transcription text
 - `/mindflow/` — MindFlow sub-app (nested router)
   - `/mindflow/` — Mind map page (D3.js visualization + quick capture)
   - `/mindflow/map-data` — Mind map JSON data (categories + thoughts as nodes/links)
@@ -319,6 +334,40 @@ Indexes: `account_id`, `created_at`.
 | status       | TEXT    | 'pending' or 'done'                  |
 | created_at   | TEXT    | ISO 8601                             |
 | completed_at | TEXT    | Nullable, set when status → done     |
+
+### voice_jobs
+
+| Column            | Type    | Notes                                        |
+|-------------------|---------|----------------------------------------------|
+| id                | INTEGER | PK, autoincrement                            |
+| user_id           | INTEGER | FK → users                                   |
+| status            | TEXT    | 'pending', 'processing', 'done', 'failed'   |
+| original_filename | TEXT    | NOT NULL, user-uploaded filename              |
+| audio_path        | TEXT    | NOT NULL, path to stored file on disk         |
+| transcription     | TEXT    | Nullable, populated when status = 'done'     |
+| error_message     | TEXT    | Nullable, populated when status = 'failed'   |
+| model_used        | TEXT    | 'tiny' or 'base', default 'base'            |
+| duration_secs     | REAL    | Nullable, processing wall time               |
+| created_at        | TEXT    | ISO 8601                                     |
+| completed_at      | TEXT    | Nullable, set when processing finishes        |
+
+Check constraint: `status != 'done' OR transcription IS NOT NULL`.
+
+## Voice Transcription Flow
+
+```
+User uploads audio (or records via browser mic)
+  │
+  ├─ Axum handler saves file to data/voice_uploads/<uuid>.<ext>
+  ├─ INSERT voice_jobs row with status = 'pending'
+  │
+  └─ Background worker (polls every 5s)
+      ├─ Claims oldest pending job (atomic UPDATE...RETURNING)
+      ├─ ffmpeg converts to 16kHz mono WAV
+      ├─ whisper-cli transcribes using configured model
+      ├─ UPDATE voice_jobs with transcription text (or error)
+      └─ Send ntfy notification (success or failure)
+```
 
 ## Authentication Flow
 

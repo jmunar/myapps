@@ -1,7 +1,8 @@
 # MyApps
 
-Multi-app personal platform. LeanFin (personal expense management) and MindFlow
-(thought capture & mind map) are the current sub-applications. After login, users
+Multi-app personal platform. LeanFin (personal expense management), MindFlow
+(thought capture & mind map), and VoiceToText (audio transcription) are the
+current sub-applications. After login, users
 see an app launcher and can navigate into individual apps. All apps share auth,
 DB, layout/styling, and config.
 
@@ -42,8 +43,9 @@ export MYAPPS_SERVER="user@odroid.local"
   dependencies.
 - LeanFin-specific routes, handlers, and services live under `src/apps/leanfin/`.
 - MindFlow-specific routes, handlers, and services live under `src/apps/mindflow/`.
+- VoiceToText-specific routes, handlers, and services live under `src/apps/voice_to_text/`.
 - Shared infrastructure (auth, config, db, models, layout) stays at the top level.
-- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`).
+- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`).
 
 ## Testing
 

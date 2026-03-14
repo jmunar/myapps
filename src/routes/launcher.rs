@@ -34,6 +34,13 @@ async fn index(
                     <p>Thought capture &amp; mind map</p>
                 </div>
             </a>
+            <a href="{base}/voice" class="launcher-card">
+                <div class="launcher-icon">&#127908;</div>
+                <div class="launcher-info">
+                    <h2>VoiceToText</h2>
+                    <p>Audio transcription with Whisper</p>
+                </div>
+            </a>
         </div>"#
     );
     Html(render_page("MyApps", &nav, &body, base))
