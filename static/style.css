@@ -1771,3 +1771,125 @@ nav a.brand:hover {
     gap: 0.5rem;
     align-items: center;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   ClassroomInput
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Column editor (form type create/edit) ────────────────────── */
+.ci-columns-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.ci-column-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.ci-column-row input[type="text"] {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+.ci-column-row select {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+    min-width: 6rem;
+}
+
+/* ── Input grid ───────────────────────────────────────────────── */
+.ci-grid-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.ci-input-table {
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.ci-input-table th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 1;
+}
+
+.ci-pupil-name {
+    font-weight: 600;
+    white-space: nowrap;
+    background: var(--bg);
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 8rem;
+}
+
+.ci-input-table thead th:first-child {
+    z-index: 2;
+}
+
+.ci-cell-input,
+.ci-cell-select {
+    width: 100%;
+    min-width: 4rem;
+    padding: 0.3rem 0.5rem;
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg-card);
+    color: var(--text);
+    transition: border-color 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+
+.ci-cell-input:focus,
+.ci-cell-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(26, 107, 90, 0.15);
+    outline: none;
+}
+
+.ci-input-table td {
+    padding: 0.25rem 0.35rem;
+}
+
+@media (max-width: 640px) {
+    .ci-input-table {
+        font-size: 0.8rem;
+        display: table;
+    }
+
+    .ci-input-table thead {
+        display: table-header-group;
+    }
+
+    .ci-input-table tbody {
+        display: table-row-group;
+    }
+
+    .ci-input-table tr {
+        display: table-row;
+    }
+
+    .ci-input-table td,
+    .ci-input-table th {
+        display: table-cell;
+    }
+
+    .ci-cell-input,
+    .ci-cell-select {
+        min-width: 3.5rem;
+        padding: 0.25rem 0.35rem;
+        font-size: 0.8rem;
+    }
+
+    .ci-pupil-name {
+        min-width: 6rem;
+        font-size: 0.8rem;
+    }
+}

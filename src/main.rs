@@ -25,7 +25,7 @@ enum Command {
     GenerateVapidKeys,
     /// Populate database with demo data for local development
     Seed {
-        /// Which app to seed (currently only "leanfin")
+        /// Which app to seed (leanfin, mindflow, classroom)
         #[arg(long, default_value = "leanfin")]
         app: String,
         /// Wipe existing demo data before re-seeding
@@ -88,7 +88,8 @@ async fn main() -> anyhow::Result<()> {
         Command::Seed { app, reset } => match app.as_str() {
             "leanfin" => apps::leanfin::services::seed::run(&pool, reset).await?,
             "mindflow" => apps::mindflow::services::seed::run(&pool, reset).await?,
-            other => anyhow::bail!("Unknown app: {other}. Available: leanfin, mindflow"),
+            "classroom" => apps::classroom_input::services::seed::run(&pool, reset).await?,
+            other => anyhow::bail!("Unknown app: {other}. Available: leanfin, mindflow, classroom"),
         },
     }
 

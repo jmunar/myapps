@@ -41,6 +41,13 @@ async fn index(state: axum::extract::State<AppState>) -> Html<String> {
                     <p>Audio transcription with Whisper</p>
                 </div>
             </a>
+            <a href="{base}/classroom" class="launcher-card">
+                <div class="launcher-icon">&#9998;</div>
+                <div class="launcher-info">
+                    <h2>ClassroomInput</h2>
+                    <p>Record marks &amp; notes for classrooms</p>
+                </div>
+            </a>
         </div>
         <div id="push-status" style="text-align:center;margin-top:1.5rem;font-size:0.9rem;color:#888;"></div>
         <script>
