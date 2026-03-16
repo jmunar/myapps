@@ -62,10 +62,11 @@ myapps/
 │   │   ├── mod.rs           # Router setup, AppState, build_router(), nests sub-apps
 │   │   ├── auth.rs          # Login/logout
 │   │   ├── pwa.rs           # PWA manifest + service worker endpoints
-│   │   └── launcher.rs      # App launcher page (root /)
+│   │   └── launcher.rs      # App launcher page + visibility config (HTMX)
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # Web Push notifications (VAPID)
 │   └── apps/                # Sub-applications
+│       ├── registry.rs      # App metadata registry (AppInfo, all_apps())
 │       ├── leanfin/         # LeanFin expense tracker
 │           ├── mod.rs       # LeanFin router
 │           ├── dashboard.rs # Main transactions page
@@ -120,7 +121,10 @@ myapps/
 
 After login, the top-level router serves:
 
-- `/` — App launcher (grid of available apps)
+- `/` — App launcher (grid of visible apps, configurable per user)
+- `/launcher/edit` — Edit mode: toggle app visibility (HTMX partial)
+- `/launcher/grid` — Normal mode grid fragment (HTMX partial)
+- `POST /launcher/visibility` — Set app visibility preference (HTMX partial)
 - `/manifest.json` — PWA manifest (dynamic, base_path-aware)
 - `/sw.js` — Service worker (dynamic, base_path injected, push handlers)
 - `/push/vapid-key` — VAPID public key (GET, protected)
@@ -351,6 +355,16 @@ Indexes: `account_id`, `created_at`.
 | status       | TEXT    | 'pending' or 'done'                  |
 | created_at   | TEXT    | ISO 8601                             |
 | completed_at | TEXT    | Nullable, set when status → done     |
+
+### user_app_visibility
+
+| Column  | Type    | Notes                                          |
+|---------|---------|-------------------------------------------------|
+| user_id | INTEGER | FK → users, part of PK                          |
+| app_key | TEXT    | 'leanfin', 'mindflow', 'voice_to_text', part of PK |
+| visible | INTEGER | 1 = shown, 0 = hidden, default 1               |
+
+Missing rows default to visible — existing users see no change.
 
 ### push_subscriptions
 
