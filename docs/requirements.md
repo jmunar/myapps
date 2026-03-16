@@ -18,6 +18,10 @@ visibility into spending patterns.
 
 - Single login for all applications (shared user accounts and sessions).
 - App launcher page after login showing available applications.
+- **App visibility configuration** — users can toggle which apps appear on
+  their launcher via an inline edit mode (gear icon). Hidden apps are stored
+  per-user; defaults to all visible. Edit mode shows all apps with hidden
+  ones dimmed/dashed.
 - Shared navigation with brand ("MyApps"), app-level nav, and logout.
 
 ### Bank account integration (LeanFin)
