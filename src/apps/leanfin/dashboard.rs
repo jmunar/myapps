@@ -42,6 +42,11 @@ pub fn leanfin_nav(base: &str, active: &str) -> Vec<NavItem> {
             active: active == "labels",
         },
         NavItem {
+            href: format!("{base}/leanfin/settings"),
+            label: "Settings",
+            active: active == "settings",
+        },
+        NavItem {
             href: format!("{base}/logout"),
             label: "Log out",
             active: false,

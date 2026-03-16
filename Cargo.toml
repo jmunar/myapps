@@ -49,6 +49,9 @@ tower-cookies = "0.11"
 # JWT signing (Enable Banking API auth)
 jsonwebtoken = "9"
 
+# Encryption (per-user credential storage)
+aes-gcm = "0.10"
+
 # Error handling
 anyhow = "1"
 thiserror = "2"

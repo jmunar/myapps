@@ -63,10 +63,11 @@ myapps/
 │   │   ├── mod.rs           # Router setup, AppState, build_router(), nests sub-apps
 │   │   ├── auth.rs          # Login/logout
 │   │   ├── pwa.rs           # PWA manifest + service worker endpoints
-│   │   └── launcher.rs      # App launcher page (root /)
+│   │   └── launcher.rs      # App launcher page + visibility config (HTMX)
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # Web Push notifications (VAPID)
 │   └── apps/                # Sub-applications
+│       ├── registry.rs      # App metadata registry (AppInfo, all_apps())
 │       ├── leanfin/         # LeanFin expense tracker
 │           ├── mod.rs       # LeanFin router
 │           ├── dashboard.rs # Main transactions page
@@ -76,6 +77,7 @@ myapps/
 │           ├── sync_handler.rs  # Sync button endpoint (POST /sync)
 │           ├── balance_evolution.rs  # Balance evolution page (Frappe Charts)
 │           ├── expenses.rs  # Expenses page: label selector + chart + txn list
+│           ├── settings.rs  # Per-user Enable Banking credentials (encrypted storage, settings UI)
 │           └── services/    # LeanFin-specific business logic
 │               ├── enable_banking.rs  # Enable Banking API client + JWT
 │               ├── sync.rs            # Transaction sync orchestration
@@ -128,7 +130,10 @@ myapps/
 
 After login, the top-level router serves:
 
-- `/` — App launcher (grid of available apps)
+- `/` — App launcher (grid of visible apps, configurable per user)
+- `/launcher/edit` — Edit mode: toggle app visibility (HTMX partial)
+- `/launcher/grid` — Normal mode grid fragment (HTMX partial)
+- `POST /launcher/visibility` — Set app visibility preference (HTMX partial)
 - `/manifest.json` — PWA manifest (dynamic, base_path-aware)
 - `/sw.js` — Service worker (dynamic, base_path injected, push handlers)
 - `/push/vapid-key` — VAPID public key (GET, protected)
@@ -153,6 +158,7 @@ After login, the top-level router serves:
   - `/leanfin/expenses` — Expenses page (multi-label selector + chart + transaction list)
   - `/leanfin/expenses/chart?label_ids=1,2&days=90` — Expense chart data (HTMX)
   - `/leanfin/labels` — Label CRUD
+  - `/leanfin/settings` — Enable Banking credentials management (GET form, POST multipart)
 - `/voice/` — VoiceToText sub-app (nested router)
   - `/voice/` — Job list dashboard (auto-polls for status updates via HTMX)
   - `/voice/new` — Upload form + browser mic recording (MediaRecorder API)
@@ -235,6 +241,15 @@ After login, the top-level router serves:
 | asset_category     | TEXT    | Nullable, e.g. investment, real_estate, vehicle, loan, crypto |
 | archived           | INTEGER | 0 or 1, default 0. Archived accounts are read-only |
 | created_at         | TEXT    | ISO 8601                                  |
+
+### leanfin_user_settings
+
+| Column                | Type    | Notes                                          |
+|-----------------------|---------|-------------------------------------------------|
+| user_id               | INTEGER | PK, FK → users, ON DELETE CASCADE               |
+| enable_banking_app_id | TEXT    | Nullable, Enable Banking application ID         |
+| enable_banking_key    | BLOB    | Nullable, AES-256-GCM encrypted RSA private key (nonce prepended) |
+| updated_at            | TEXT    | ISO 8601                                        |
 
 ### leanfin_pending_links
 
@@ -373,6 +388,16 @@ Indexes: `account_id`, `created_at`.
 | created_at   | TEXT    | ISO 8601                             |
 | completed_at | TEXT    | Nullable, set when status → done     |
 
+### user_app_visibility
+
+| Column  | Type    | Notes                                          |
+|---------|---------|-------------------------------------------------|
+| user_id | INTEGER | FK → users, part of PK                          |
+| app_key | TEXT    | 'leanfin', 'mindflow', 'voice_to_text', part of PK |
+| visible | INTEGER | 1 = shown, 0 = hidden, default 1               |
+
+Missing rows default to visible — existing users see no change.
+
 ### push_subscriptions
 
 | Column     | Type    | Notes                          |
@@ -461,55 +486,69 @@ User uploads audio (or records via browser mic)
 
 ## Enable Banking Integration
 
+### Per-User Credentials
+
+Enable Banking credentials are stored **per user** in `leanfin_user_settings`.
+Each user configures their own Application ID and RSA private key via
+`/leanfin/settings`. The private key PEM content is encrypted at rest using
+AES-256-GCM with a server-side `ENCRYPTION_KEY` (32-byte hex env var). The
+nonce (12 bytes) is prepended to the ciphertext for storage as a BLOB.
+
+The redirect URI is derived from the global `BASE_URL` config (infrastructure-level).
+
 ### API Authentication
 
 Enable Banking does **not** use OAuth client credentials. Instead, the app
-signs its own JWTs using a private RSA key:
+signs its own JWTs using the user's private RSA key:
 
 - **Header**: `{"typ":"JWT", "alg":"RS256", "kid":"<app_id>"}`
 - **Claims**: `{"iss":"enablebanking.com", "aud":"api.enablebanking.com", "iat":..., "exp":...}`
 - **Max TTL**: 24 hours (we use 1 hour)
 - A fresh JWT is generated per API call
 
-The private key (`.pem` file) is stored on the server at the path specified
-by `ENABLE_BANKING_KEY_PATH`.
-
 ### Bank Linking Flow
 
-1. User navigates to `/leanfin/accounts/link` and submits country + bank name.
-2. `POST /leanfin/accounts/link` creates a CSRF state token in `pending_links`, then
-   calls Enable Banking `POST /auth` to start authorization.
-3. User is redirected to Enable Banking → bank's SCA page.
-4. User authenticates with their bank (2FA, biometrics, etc.).
-5. Bank redirects back to `GET /leanfin/accounts/callback?code=...&state=...`.
-6. Backend validates the CSRF state, calls `POST /sessions` to exchange the
-   code for a session.
-7. The session response includes a list of accounts (each with a `uid`). All
+1. User configures Enable Banking credentials at `/leanfin/settings`.
+2. User navigates to `/leanfin/accounts/link` and submits country + bank name.
+   (If credentials are missing, they are redirected to settings.)
+3. `POST /leanfin/accounts/link` fetches the user's credentials, creates a
+   CSRF state token in `pending_links`, then calls Enable Banking `POST /auth`.
+4. User is redirected to Enable Banking → bank's SCA page.
+5. User authenticates with their bank (2FA, biometrics, etc.).
+6. Bank redirects back to `GET /leanfin/accounts/callback?code=...&state=...`.
+7. Backend validates the CSRF state, fetches the user's credentials, calls
+   `POST /sessions` to exchange the code for a session.
+8. The session response includes a list of accounts (each with a `uid`). All
    accounts are stored in the `accounts` table with the `session_id` and
    `session_expires_at`.
-8. User is redirected to `/leanfin/accounts`.
+9. User is redirected to `/leanfin/accounts`.
 
 ### Sync Job Flow (cron)
 
 ```
 myapps sync
   │
-  ├─ Sign a fresh JWT using the private key
+  ├─ Group all active bank accounts by user_id
   │
-  ├─ For each active bank account (account_type = 'bank', archived = 0; manual and archived accounts are skipped):
-  │   ├─ Check session_expires_at
-  │   ├─ If expired:
-  │   │   ├─ Send push notification
-  │   │   └─ Skip
-  │   ├─ If expiring within 7 days:
-  │   │   └─ Send push warning
-  │   ├─ GET /accounts/{uid}/balances → pick best type → UPDATE accounts
-  │   ├─ Record balance snapshot → get snapshot_id
-  │   ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
-  │   ├─ Apply credit_debit_indicator: DBIT → negative, CRDT → positive
-  │   ├─ INSERT OR IGNORE with snapshot_id (dedup by external_id + account_id)
-  │   ├─ Reconciliation (ITAV only): b1 - b0 == SUM(txns where snapshot_id = b1)
-  │   └─ Run auto-labeling rules on newly inserted transactions
+  ├─ For each user:
+  │   ├─ Fetch Enable Banking credentials from leanfin_user_settings
+  │   ├─ If credentials missing → skip user with warning
+  │   ├─ Sign a fresh JWT using the user's private key
+  │   │
+  │   └─ For each active bank account (account_type = 'bank', archived = 0):
+  │       ├─ Check session_expires_at
+  │       ├─ If expired:
+  │       │   ├─ Send push notification
+  │       │   └─ Skip
+  │       ├─ If expiring within 7 days:
+  │       │   └─ Send push warning
+  │       ├─ GET /accounts/{uid}/balances → pick best type → UPDATE accounts
+  │       ├─ Record balance snapshot → get snapshot_id
+  │       ├─ GET /accounts/{uid}/transactions (last 5 days, paginated)
+  │       ├─ Apply credit_debit_indicator: DBIT → negative, CRDT → positive
+  │       ├─ INSERT OR IGNORE with snapshot_id (dedup by external_id + account_id)
+  │       ├─ Reconciliation (ITAV only): b1 - b0 == SUM(txns where snapshot_id = b1)
+  │       └─ Run auto-labeling rules on newly inserted transactions
   │
   └─ Log summary: "Synced 42 new transactions across 3 accounts"
 ```

@@ -2,6 +2,7 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use sqlx::SqlitePool;
 
+use super::super::settings::{self, EnableBankingCredentials};
 use super::enable_banking;
 use crate::config::Config;
 use crate::models::Account;
@@ -29,55 +30,81 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
         return Ok(());
     }
 
+    // Group accounts by user_id to fetch credentials once per user
+    let mut by_user: std::collections::HashMap<i64, Vec<&Account>> =
+        std::collections::HashMap::new();
+    for account in &accounts {
+        by_user.entry(account.user_id).or_default().push(account);
+    }
+
     let mut total_new = 0u64;
     let now = Utc::now().naive_utc();
 
-    for account in &accounts {
-        let days_until_expiry = (account.session_expires_at - now).num_days();
-
-        if days_until_expiry <= 0 {
-            tracing::warn!(
-                "Account '{}' ({}): session expired, skipping",
-                account.bank_name,
-                account.id
-            );
-            crate::services::notify::send(
-                pool,
-                config,
-                "LeanFin",
-                &format!(
-                    "Bank session expired for '{}'. Please re-authorize.",
-                    account.bank_name
-                ),
-            )
-            .await;
-            continue;
-        }
-
-        if days_until_expiry <= 7 {
-            crate::services::notify::send(
-                pool,
-                config,
-                "LeanFin",
-                &format!(
-                    "Bank session for '{}' expires in {} days. Re-authorize soon.",
-                    account.bank_name, days_until_expiry
-                ),
-            )
-            .await;
-        }
-
-        match sync_account(pool, config, account).await {
-            Ok((count, _warning)) => {
-                tracing::info!(
-                    "Account '{}': {} new transactions",
-                    account.bank_name,
-                    count
-                );
-                total_new += count;
-            }
+    for (user_id, user_accounts) in &by_user {
+        let creds = match settings::get_credentials(pool, config, *user_id).await {
+            Ok(c) => c,
             Err(e) => {
-                tracing::error!("Account '{}': sync failed: {e:#}", account.bank_name);
+                tracing::warn!(
+                    "User {user_id}: skipping sync — Enable Banking credentials not available: {e:#}"
+                );
+                continue;
+            }
+        };
+
+        for account in user_accounts {
+            let days_until_expiry = (account.session_expires_at - now).num_days();
+
+            if days_until_expiry <= 0 {
+                tracing::warn!(
+                    "Account '{}' ({}): session expired, skipping",
+                    account.bank_name,
+                    account.id
+                );
+                crate::services::notify::send(
+                    pool,
+                    config,
+                    "LeanFin",
+                    &format!(
+                        "Bank session expired for '{}'. Please re-authorize.",
+                        account.bank_name
+                    ),
+                )
+                .await;
+                continue;
+            }
+
+            if days_until_expiry <= 7 {
+                crate::services::notify::send(
+                    pool,
+                    config,
+                    "LeanFin",
+                    &format!(
+                        "Bank session for '{}' expires in {} days. Re-authorize soon.",
+                        account.bank_name, days_until_expiry
+                    ),
+                )
+                .await;
+            }
+
+            match sync_account(pool, config, &creds, account).await {
+                Ok((count, _warning)) => {
+                    tracing::info!(
+                        "Account '{}': {} new transactions",
+                        account.bank_name,
+                        count
+                    );
+                    total_new += count;
+                }
+                Err(e) => {
+                    tracing::error!("Account '{}': sync failed: {e:#}", account.bank_name);
+                    crate::services::notify::send(
+                        pool,
+                        config,
+                        "LeanFin",
+                        &format!("Sync failed for '{}': {e:#}", account.bank_name),
+                    )
+                    .await;
+                }
             }
         }
     }
@@ -94,6 +121,7 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
 async fn sync_account(
     pool: &SqlitePool,
     config: &Config,
+    creds: &EnableBankingCredentials,
     account: &Account,
 ) -> Result<(u64, Option<String>)> {
     let account_uid = &account.account_uid;
@@ -101,7 +129,7 @@ async fn sync_account(
     // 1. Fetch and store balance snapshot first (non-fatal)
     let mut snapshot_id: Option<i64> = None;
     let mut best_balance: Option<(f64, String)> = None; // (amount, balance_type)
-    match enable_banking::get_balances(pool, config, account_uid, Some(account.id)).await {
+    match enable_banking::get_balances(pool, creds, account_uid, Some(account.id)).await {
         Ok(balances) => {
             if let Some(best) = enable_banking::pick_best_balance(&balances)
                 && let Ok(amount) = best.balance_amount.amount.parse::<f64>()
@@ -143,7 +171,7 @@ async fn sync_account(
             }
         }
         Err(e) => {
-            tracing::warn!(
+            anyhow::bail!(
                 "Failed to fetch balances for '{}': {e:#}",
                 account.bank_name
             );
@@ -164,7 +192,7 @@ async fn sync_account(
         .to_string();
 
     let transactions =
-        enable_banking::get_transactions(pool, config, account_uid, &date_from, Some(account.id))
+        enable_banking::get_transactions(pool, creds, account_uid, &date_from, Some(account.id))
             .await?;
 
     let mut inserted = 0u64;
@@ -250,14 +278,6 @@ async fn sync_account(
 pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> SyncResult {
     tracing::info!("Starting sync for user {user_id}");
 
-    let accounts: Vec<Account> = sqlx::query_as(
-        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived, created_at FROM leanfin_accounts WHERE user_id = ? AND account_type = 'bank' AND archived = 0",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
-
     let mut result = SyncResult {
         total_new: 0,
         accounts_synced: 0,
@@ -265,6 +285,24 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
         errors: Vec::new(),
         reconciliation_warnings: Vec::new(),
     };
+
+    let creds = match settings::get_credentials(pool, config, user_id).await {
+        Ok(c) => c,
+        Err(_) => {
+            tracing::info!(
+                "User {user_id}: no Enable Banking credentials configured, skipping sync"
+            );
+            return result;
+        }
+    };
+
+    let accounts: Vec<Account> = sqlx::query_as(
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived, created_at FROM leanfin_accounts WHERE user_id = ? AND account_type = 'bank' AND archived = 0",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
 
     let now = Utc::now().naive_utc();
 
@@ -279,7 +317,7 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
             continue;
         }
 
-        match sync_account(pool, config, account).await {
+        match sync_account(pool, config, &creds, account).await {
             Ok((count, warning)) => {
                 result.total_new += count;
                 result.accounts_synced += 1;

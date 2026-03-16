@@ -4,8 +4,7 @@ use std::env;
 pub struct Config {
     pub database_url: String,
     pub base_url: Option<String>,
-    pub enable_banking_app_id: Option<String>,
-    pub enable_banking_key_path: Option<String>,
+    pub encryption_key: Option<String>,
     pub vapid_private_key: Option<String>,
     pub vapid_public_key: Option<String>,
     pub vapid_subject: Option<String>,
@@ -32,8 +31,7 @@ impl Config {
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "sqlite://data/myapps.db".to_string()),
             base_url,
-            enable_banking_app_id: env::var("ENABLE_BANKING_APP_ID").ok(),
-            enable_banking_key_path: env::var("ENABLE_BANKING_KEY_PATH").ok(),
+            encryption_key: env::var("ENCRYPTION_KEY").ok().filter(|s| !s.is_empty()),
             vapid_private_key: env::var("VAPID_PRIVATE_KEY").ok().filter(|s| !s.is_empty()),
             vapid_public_key: env::var("VAPID_PUBLIC_KEY").ok().filter(|s| !s.is_empty()),
             vapid_subject: env::var("VAPID_SUBJECT").ok().filter(|s| !s.is_empty()),
@@ -68,24 +66,6 @@ impl Config {
             .collect();
         models.sort();
         models
-    }
-
-    /// Returns Enable Banking config, or error if not fully configured.
-    pub fn require_enable_banking(&self) -> Result<(&str, &str, String), ConfigError> {
-        let base_url = self
-            .base_url
-            .as_deref()
-            .ok_or(ConfigError::Missing("BASE_URL"))?;
-        let app_id = self
-            .enable_banking_app_id
-            .as_deref()
-            .ok_or(ConfigError::Missing("ENABLE_BANKING_APP_ID"))?;
-        let key_path = self
-            .enable_banking_key_path
-            .as_deref()
-            .ok_or(ConfigError::Missing("ENABLE_BANKING_KEY_PATH"))?;
-        let redirect_uri = format!("{base_url}/leanfin/accounts/callback");
-        Ok((app_id, key_path, redirect_uri))
     }
 }
 
