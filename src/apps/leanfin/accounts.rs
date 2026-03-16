@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use super::dashboard::leanfin_nav;
 use super::services::enable_banking;
+use super::settings;
 use super::sync_handler::sync_button;
 use crate::auth::UserId;
 use crate::layout::render_page;
@@ -235,6 +236,17 @@ async fn list_accounts(
         String::new()
     };
 
+    let has_banking_creds = settings::has_credentials(&state.pool, user_id.0).await;
+    let link_btn = if has_banking_creds {
+        format!(
+            r#"<a href="{base}/leanfin/accounts/link" class="btn btn-primary">+ Link account</a>"#
+        )
+    } else {
+        format!(
+            r#"<a href="{base}/leanfin/settings" class="btn btn-secondary">Configure Enable Banking</a>"#
+        )
+    };
+
     let sync_btn = sync_button(base);
     let body = format!(
         r##"<div class="page-header">
@@ -251,7 +263,7 @@ async fn list_accounts(
         <div class="card">
             <div class="card-header">
                 <h2>Bank Accounts</h2>
-                <a href="{base}/leanfin/accounts/link" class="btn btn-primary">+ Link account</a>
+                {link_btn}
             </div>
             <div class="card-body">
                 <div class="account-grid">{bank_items}</div>
@@ -915,6 +927,15 @@ async fn link_submit(
     Extension(user_id): Extension<UserId>,
     Form(form): Form<LinkForm>,
 ) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    let creds = match settings::get_credentials(&state.pool, &state.config, user_id.0).await {
+        Ok(c) => c,
+        Err(_) => {
+            return Redirect::to(&format!("{base}/leanfin/settings")).into_response();
+        }
+    };
+
     let country = form.country.to_uppercase();
     let csrf_state = format!("{}:{}", user_id.0, uuid::Uuid::new_v4());
 
@@ -936,7 +957,7 @@ async fn link_submit(
     // Default to 90 days consent validity
     match enable_banking::start_auth(
         &state.pool,
-        &state.config,
+        &creds,
         &form.bank_name,
         &country,
         &csrf_state,
@@ -960,6 +981,13 @@ async fn reauth(
     Path(account_id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
+
+    let creds = match settings::get_credentials(&state.pool, &state.config, user_id.0).await {
+        Ok(c) => c,
+        Err(_) => {
+            return Redirect::to(&format!("{base}/leanfin/settings")).into_response();
+        }
+    };
 
     // Verify account belongs to this user and get bank details
     let account: Option<ReauthAccountRow> = sqlx::query_as(
@@ -995,7 +1023,7 @@ async fn reauth(
 
     match enable_banking::start_auth(
         &state.pool,
-        &state.config,
+        &creds,
         &account.bank_name,
         &account.bank_country,
         &csrf_state,
@@ -1143,15 +1171,26 @@ async fn callback(
         .execute(&state.pool)
         .await;
 
+    // Fetch user credentials for the session exchange
+    let creds = match settings::get_credentials(&state.pool, &state.config, pending.user_id).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(
+                "Failed to get credentials for user {}: {e:#}",
+                pending.user_id
+            );
+            return Html("Enable Banking credentials not configured".to_string()).into_response();
+        }
+    };
+
     // Exchange code for session
-    let session =
-        match enable_banking::create_session(&state.pool, &state.config, &params.code).await {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("Failed to create Enable Banking session: {e:#}");
-                return Html(format!("Failed to complete bank authorization: {e}")).into_response();
-            }
-        };
+    let session = match enable_banking::create_session(&state.pool, &creds, &params.code).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to create Enable Banking session: {e:#}");
+            return Html(format!("Failed to complete bank authorization: {e}")).into_response();
+        }
+    };
 
     // Parse session expiry
     let expires_at =

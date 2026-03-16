@@ -46,14 +46,15 @@ async fn sync_with_no_accounts() {
 }
 
 #[tokio::test]
-async fn sync_with_seeded_accounts_shows_error() {
+async fn sync_with_seeded_accounts_no_credentials() {
     let app = harness::spawn_app().await;
     app.seed_and_login().await;
 
-    // Seeded accounts have fake session data, so sync will fail
+    // Seeded user has no Enable Banking credentials configured, so sync skips gracefully
     let response = app.server.post("/leanfin/sync").await;
     let body = response.text();
-    assert!(body.contains("sync-status-error"));
+    assert!(body.contains("sync-status-ok"));
+    assert!(body.contains("No accounts to sync"));
 }
 
 #[tokio::test]

@@ -34,8 +34,7 @@ pub async fn spawn_app() -> TestApp {
     let config = myapps::config::Config {
         database_url: db_url,
         base_url: None,
-        enable_banking_app_id: None,
-        enable_banking_key_path: None,
+        encryption_key: None,
         vapid_private_key: None,
         vapid_public_key: None,
         vapid_subject: None,

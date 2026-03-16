@@ -92,8 +92,9 @@ visibility into spending patterns.
 - The server is exposed to the internet behind nginx + certbot (HTTPS).
 - User authentication via username/password with Argon2 hashing and
   session cookies.
-- Enable Banking API uses self-signed JWTs (RS256) for authentication. The
-  private key (`.pem`) is stored on the server, not in the repository.
+- Enable Banking API uses self-signed JWTs (RS256) for authentication. Private
+  keys are stored per-user in the database, encrypted at rest with AES-256-GCM
+  using a server-side encryption key.
 - No secrets are committed to the repository.
 
 ### CI/CD
@@ -195,6 +196,14 @@ visibility into spending patterns.
   provides an audit trail for debugging sync issues, reconciliation mismatches,
   and provider behavior changes. Payloads are linked to the relevant account when
   available; pre-account calls (auth, sessions) store a NULL account_id.
+- **Per-user Enable Banking credentials** — each user configures their own
+  Enable Banking Application ID and RSA private key via a settings page
+  (`/leanfin/settings`). Private keys are uploaded as PEM files, validated
+  server-side, and stored encrypted (AES-256-GCM) in the database. The
+  encryption key is a server-side env var (`ENCRYPTION_KEY`). The "Link bank
+  account" button on the accounts page conditionally shows "Configure Enable
+  Banking" if the user has not yet set up credentials. The sync job groups
+  accounts by user and skips users without configured credentials.
 
 ### MindFlow (second sub-application)
 
