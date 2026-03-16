@@ -64,21 +64,19 @@ async fn list(
     .unwrap_or_default();
 
     // Pre-fetch classrooms and form types for labels
-    let classrooms: Vec<ClassroomRow> = sqlx::query_as(
-        "SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ?",
-    )
-    .bind(user_id.0)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+    let classrooms: Vec<ClassroomRow> =
+        sqlx::query_as("SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ?")
+            .bind(user_id.0)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
 
-    let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_form_types WHERE user_id = ?",
-    )
-    .bind(user_id.0)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+    let form_types: Vec<FormTypeRow> =
+        sqlx::query_as("SELECT id, name, columns_json FROM classroom_form_types WHERE user_id = ?")
+            .bind(user_id.0)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
 
     let mut rows_html = String::new();
     for inp in &inputs {
@@ -92,11 +90,7 @@ async fn list(
             .find(|f| f.id == inp.form_type_id)
             .map(|f| f.name.as_str())
             .unwrap_or("?");
-        let row_count = inp
-            .csv_data
-            .lines()
-            .count()
-            .saturating_sub(1); // minus header
+        let row_count = inp.csv_data.lines().count().saturating_sub(1); // minus header
         let date = &inp.created_at[..10.min(inp.created_at.len())];
 
         rows_html.push_str(&format!(
@@ -186,8 +180,7 @@ async fn new_input_page(
         } else {
             "You need to create at least one <a href=\"{base}/classroom/form-types\">form type</a> first."
         };
-        let msg = msg
-            .replace("{base}", base);
+        let msg = msg.replace("{base}", base);
         let body = format!(
             r#"<div class="page-header"><h1>New Input</h1></div>
             <div class="card" style="max-width:36rem"><div class="card-body"><p>{msg}</p></div></div>"#
@@ -204,19 +197,14 @@ async fn new_input_page(
     let classrooms_json: Vec<serde_json::Value> = classrooms
         .iter()
         .map(|c| {
-            let pupils: Vec<&str> = c
-                .pupils
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .collect();
+            let pupils: Vec<&str> = c.pupils.lines().filter(|l| !l.trim().is_empty()).collect();
             serde_json::json!({"id": c.id, "label": c.label, "pupils": pupils})
         })
         .collect();
     let form_types_json: Vec<serde_json::Value> = form_types
         .iter()
         .map(|f| {
-            let cols: Vec<ColumnDef> =
-                serde_json::from_str(&f.columns_json).unwrap_or_default();
+            let cols: Vec<ColumnDef> = serde_json::from_str(&f.columns_json).unwrap_or_default();
             serde_json::json!({"id": f.id, "name": f.name, "columns": cols})
         })
         .collect();
@@ -227,19 +215,13 @@ async fn new_input_page(
     // Classroom select options
     let mut cls_opts = String::new();
     for c in &classrooms {
-        cls_opts.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
-            c.id, c.label
-        ));
+        cls_opts.push_str(&format!(r#"<option value="{}">{}</option>"#, c.id, c.label));
     }
 
     // Form type select options
     let mut ft_opts = String::new();
     for f in &form_types {
-        ft_opts.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
-            f.id, f.name
-        ));
+        ft_opts.push_str(&format!(r#"<option value="{}">{}</option>"#, f.id, f.name));
     }
 
     let body = format!(
@@ -298,7 +280,7 @@ async fn new_input_page(
                 var pupils = cls.pupils;
                 var cols = ft.columns;
 
-                var html = '<table class="ci-input-table"><thead><tr><th>Pupil</th>';
+                var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">Pupil</th>';
                 for (var i = 0; i < cols.length; i++) {{
                     html += '<th>' + cols[i].name + '</th>';
                 }}
@@ -309,10 +291,10 @@ async fn new_input_page(
                     for (var c = 0; c < cols.length; c++) {{
                         var colType = cols[c].type || cols[c].col_type || 'text';
                         if (colType === 'bool') {{
-                            html += '<td><select data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-select">'
+                            html += '<td class="ci-col-bool"><select data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-select">'
                                 + '<option value=""></option><option value="Yes">Yes</option><option value="No">No</option></select></td>';
                         }} else if (colType === 'number') {{
-                            html += '<td><input type="number" step="any" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input"></td>';
+                            html += '<td class="ci-col-number"><input type="number" step="any" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input" inputmode="decimal"></td>';
                         }} else {{
                             html += '<td><input type="text" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input"></td>';
                         }}
@@ -377,8 +359,7 @@ async fn new_input_page(
             ftSel.addEventListener('change', buildGrid);
             buildGrid();
 
-            form.addEventListener('submit', function(e) {{
-                // Collect grid data as CSV
+            form.addEventListener('submit', function() {{
                 var clsId = parseInt(clsSel.value);
                 var ftId = parseInt(ftSel.value);
                 var cls = classrooms.find(function(c) {{ return c.id === clsId; }});
@@ -388,13 +369,11 @@ async fn new_input_page(
                 var pupils = cls.pupils;
                 var cols = ft.columns;
 
-                // Header row
                 var lines = [];
                 var header = ['Pupil'];
                 for (var i = 0; i < cols.length; i++) header.push(csvEscape(cols[i].name));
                 lines.push(header.join(','));
 
-                // Data rows
                 for (var r = 0; r < pupils.length; r++) {{
                     var row = [csvEscape(pupils[r])];
                     for (var c = 0; c < cols.length; c++) {{
@@ -408,6 +387,7 @@ async fn new_input_page(
 
             function csvEscape(val) {{
                 if (!val) return '';
+                val = String(val);
                 if (val.indexOf(',') >= 0 || val.indexOf('"') >= 0 || val.indexOf('\n') >= 0) {{
                     return '"' + val.replace(/"/g, '""') + '"';
                 }}
@@ -493,9 +473,7 @@ async fn view(
         let fields = parse_csv_line(line);
         for (i, field) in fields.iter().enumerate() {
             if i == 0 {
-                table_html.push_str(&format!(
-                    r#"<td class="ci-pupil-name">{field}</td>"#
-                ));
+                table_html.push_str(&format!(r#"<td class="ci-pupil-name">{field}</td>"#));
             } else {
                 table_html.push_str(&format!("<td>{field}</td>"));
             }
@@ -504,20 +482,18 @@ async fn view(
     }
     table_html.push_str("</tbody></table>");
 
-    let cls_label: Option<String> = sqlx::query_scalar(
-        "SELECT label FROM classroom_classrooms WHERE id = ?",
-    )
-    .bind(inp.classroom_id)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
-    let ft_name: Option<String> = sqlx::query_scalar(
-        "SELECT name FROM classroom_form_types WHERE id = ?",
-    )
-    .bind(inp.form_type_id)
-    .fetch_optional(&state.pool)
-    .await
-    .unwrap_or(None);
+    let cls_label: Option<String> =
+        sqlx::query_scalar("SELECT label FROM classroom_classrooms WHERE id = ?")
+            .bind(inp.classroom_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
+    let ft_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM classroom_form_types WHERE id = ?")
+            .bind(inp.form_type_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
 
     let date = &inp.created_at[..10.min(inp.created_at.len())];
 

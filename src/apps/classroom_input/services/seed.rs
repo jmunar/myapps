@@ -208,8 +208,7 @@ Karina Iglesias,Yes,Yes,Bus delay
 Luis Rubio,Yes,No,
 María Peña,Yes,No,
 Nicolás Flores,Yes,No,";
-        inp_count +=
-            insert_input(pool, user_id, cid, fid, "Attendance — Mon 10 Mar", csv).await;
+        inp_count += insert_input(pool, user_id, cid, fid, "Attendance — Mon 10 Mar", csv).await;
     }
 
     // 2-A: Reading assessment — March
@@ -228,8 +227,7 @@ Julia Fuentes,8,8,7,Good
 Kevin Santos,7,7,7,Satisfactory
 Lucía Cabrera,9,8,9,Excellent
 Mario Campos,6,6,5,Needs improvement";
-        inp_count +=
-            insert_input(pool, user_id, cid, fid, "Reading assessment — March", csv).await;
+        inp_count += insert_input(pool, user_id, cid, fid, "Reading assessment — March", csv).await;
     }
 
     tracing::info!("Seeded {inp_count} inputs");

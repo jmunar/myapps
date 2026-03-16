@@ -190,15 +190,13 @@ async fn create(
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
 
-    sqlx::query(
-        "INSERT INTO classroom_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
-    )
-    .bind(user_id.0)
-    .bind(form.name.trim())
-    .bind(&json)
-    .execute(&state.pool)
-    .await
-    .ok();
+    sqlx::query("INSERT INTO classroom_form_types (user_id, name, columns_json) VALUES (?, ?, ?)")
+        .bind(user_id.0)
+        .bind(form.name.trim())
+        .bind(&json)
+        .execute(&state.pool)
+        .await
+        .ok();
     Redirect::to(&format!("{base}/classroom/form-types"))
 }
 
@@ -230,7 +228,11 @@ async fn edit_page(
     let cols = parse_columns(&ft.columns_json);
     let mut col_rows = String::new();
     for c in &cols {
-        let sel_text = if c.col_type == "text" { " selected" } else { "" };
+        let sel_text = if c.col_type == "text" {
+            " selected"
+        } else {
+            ""
+        };
         let sel_num = if c.col_type == "number" {
             " selected"
         } else {

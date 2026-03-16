@@ -42,11 +42,7 @@ async fn list(
 
     let mut items = String::new();
     for c in &classrooms {
-        let pupil_count = c
-            .pupils
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .count();
+        let pupil_count = c.pupils.lines().filter(|l| !l.trim().is_empty()).count();
         let pupil_preview: String = c
             .pupils
             .lines()
@@ -158,14 +154,12 @@ async fn delete(
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
     // Delete associated inputs first
-    sqlx::query(
-        "DELETE FROM classroom_inputs WHERE classroom_id = ? AND user_id = ?",
-    )
-    .bind(id)
-    .bind(user_id.0)
-    .execute(&state.pool)
-    .await
-    .ok();
+    sqlx::query("DELETE FROM classroom_inputs WHERE classroom_id = ? AND user_id = ?")
+        .bind(id)
+        .bind(user_id.0)
+        .execute(&state.pool)
+        .await
+        .ok();
     sqlx::query("DELETE FROM classroom_classrooms WHERE id = ? AND user_id = ?")
         .bind(id)
         .bind(user_id.0)
