@@ -1343,6 +1343,56 @@ tr.txn-misallocated .txn-date {
     margin-top: 0.15rem;
 }
 
+/* Launcher edit mode */
+.launcher-card-edit {
+    position: relative;
+    cursor: default;
+}
+
+.launcher-card-edit.hidden {
+    opacity: 0.4;
+    border-style: dashed;
+}
+
+.launcher-toggle {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.25rem 0.4rem;
+    font-size: 1rem;
+    cursor: pointer;
+    line-height: 1;
+    transition: background 0.15s var(--ease);
+}
+
+.launcher-toggle:hover {
+    background: var(--bg-hover);
+}
+
+.launcher-edit-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.35rem 0.55rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: var(--text-secondary);
+    line-height: 1;
+    transition: all 0.15s var(--ease);
+}
+
+.launcher-edit-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.launcher-done-btn {
+    flex-shrink: 0;
+}
+
 /* ── Balance evolution ──────────────────────────────────────── */
 .balance-controls {
     display: flex;
