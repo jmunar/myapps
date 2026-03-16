@@ -35,14 +35,18 @@ git merge origin/main
 
 If there are merge conflicts, resolve them, then commit the merge. If the merge is clean, proceed.
 
-## 6. Push
+## 6. Run checks
+
+Run `make check` (format, lint, and tests). If any check fails, fix the issue, commit the fix, and re-run until all checks pass. Stop and report to the user if a failure cannot be resolved automatically.
+
+## 7. Push
 
 Push the current branch to origin:
 ```
 git push -u origin HEAD
 ```
 
-## 7. Create PR
+## 8. Create PR
 
 Create a pull request targeting `main` using `gh pr create`. The PR title **must** start with the ticket name derived from the branch name in square brackets. Extract the ticket prefix (everything up to and including the first number) from the branch name, uppercase it, and prepend it. For example, branch `feat-12-feature-xyz` → title starts with `[FEAT-12]`. Write a clear title after the prefix summarizing all changes on the branch. Use this format for the body:
 
