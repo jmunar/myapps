@@ -5,18 +5,15 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::time::Instant;
 
-use crate::config::Config;
+use super::super::settings::EnableBankingCredentials;
 
 const API_BASE: &str = "https://api.enablebanking.com";
 
 // ── JWT auth ──────────────────────────────────────────────────────
 
-fn make_jwt(config: &Config) -> Result<String> {
-    let (app_id, key_path, _) = config.require_enable_banking()?;
-
-    let pem = std::fs::read(key_path)
-        .with_context(|| format!("failed to read private key: {key_path}"))?;
-    let key = EncodingKey::from_rsa_pem(&pem).context("invalid RSA private key")?;
+fn make_jwt(creds: &EnableBankingCredentials) -> Result<String> {
+    let key =
+        EncodingKey::from_rsa_pem(creds.key_pem.as_bytes()).context("invalid RSA private key")?;
 
     let now = Utc::now().timestamp();
     let claims = JwtClaims {
@@ -27,7 +24,7 @@ fn make_jwt(config: &Config) -> Result<String> {
     };
 
     let mut header = Header::new(Algorithm::RS256);
-    header.kid = Some(app_id.to_string());
+    header.kid = Some(creds.app_id.clone());
 
     jsonwebtoken::encode(&header, &claims, &key).context("failed to sign JWT")
 }
@@ -40,8 +37,8 @@ struct JwtClaims {
     exp: i64,
 }
 
-fn client(config: &Config) -> Result<reqwest::Client> {
-    let token = make_jwt(config)?;
+fn client(creds: &EnableBankingCredentials) -> Result<reqwest::Client> {
+    let token = make_jwt(creds)?;
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         reqwest::header::AUTHORIZATION,
@@ -245,13 +242,12 @@ async fn save_payload(
 /// Start bank authorization. Returns the URL to redirect the user to.
 pub async fn start_auth(
     pool: &SqlitePool,
-    config: &Config,
+    creds: &EnableBankingCredentials,
     bank_name: &str,
     country: &str,
     state: &str,
     valid_days: i64,
 ) -> Result<AuthResponse> {
-    let (_, _, redirect_uri) = config.require_enable_banking()?;
     let valid_until = (Utc::now() + Duration::days(valid_days))
         .format("%Y-%m-%dT00:00:00Z")
         .to_string();
@@ -267,14 +263,14 @@ pub async fn start_auth(
             country: country.to_string(),
         },
         state: state.to_string(),
-        redirect_url: redirect_uri,
+        redirect_url: creds.redirect_uri.clone(),
         psu_type: "personal".to_string(),
     };
 
     let request_json = serde_json::to_string(&body).unwrap_or_default();
     let start = Instant::now();
 
-    let resp = client(config)?
+    let resp = client(creds)?
         .post(format!("{API_BASE}/auth"))
         .json(&body)
         .send()
@@ -307,7 +303,7 @@ pub async fn start_auth(
 /// Exchange authorization code for a session with account list.
 pub async fn create_session(
     pool: &SqlitePool,
-    config: &Config,
+    creds: &EnableBankingCredentials,
     code: &str,
 ) -> Result<SessionResponse> {
     let request_body = SessionRequest {
@@ -316,7 +312,7 @@ pub async fn create_session(
     let request_json = serde_json::to_string(&request_body).unwrap_or_default();
     let start = Instant::now();
 
-    let resp = client(config)?
+    let resp = client(creds)?
         .post(format!("{API_BASE}/sessions"))
         .json(&request_body)
         .send()
@@ -352,12 +348,12 @@ pub async fn create_session(
 /// Fetch transactions for an account. Handles pagination automatically.
 pub async fn get_transactions(
     pool: &SqlitePool,
-    config: &Config,
+    creds: &EnableBankingCredentials,
     account_uid: &str,
     date_from: &str,
     account_id: Option<i64>,
 ) -> Result<Vec<BankTransaction>> {
-    let http = client(config)?;
+    let http = client(creds)?;
     let mut all = Vec::new();
     let mut continuation_key: Option<String> = None;
 
@@ -425,13 +421,13 @@ pub async fn get_transactions(
 /// Fetch balances for an account.
 pub async fn get_balances(
     pool: &SqlitePool,
-    config: &Config,
+    creds: &EnableBankingCredentials,
     account_uid: &str,
     account_id: Option<i64>,
 ) -> Result<Vec<BankBalance>> {
     let start = Instant::now();
 
-    let resp = client(config)?
+    let resp = client(creds)?
         .get(format!("{API_BASE}/accounts/{account_uid}/balances"))
         .send()
         .await
