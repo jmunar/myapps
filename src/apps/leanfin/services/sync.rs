@@ -164,7 +164,7 @@ async fn sync_account(
             }
         }
         Err(e) => {
-            tracing::warn!(
+            anyhow::bail!(
                 "Failed to fetch balances for '{}': {e:#}",
                 account.bank_name
             );
