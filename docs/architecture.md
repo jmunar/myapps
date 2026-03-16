@@ -28,6 +28,7 @@ myapps create-user          # Create a user from the command line
 myapps generate-vapid-keys  # Generate VAPID key pair for push notifications
 myapps seed --app leanfin           # Populate LeanFin demo data
 myapps seed --app leanfin --reset   # Wipe and re-seed demo data
+myapps seed --app classroom         # Populate ClassroomInput demo data
 ```
 
 All subcommands share the same configuration and database.
@@ -92,13 +93,20 @@ myapps/
 │       │   ├── actions.rs   # Actions list, toggle, delete
 │       │   └── services/
 │       │       └── seed.rs  # Demo data seeding
-│       └── voice_to_text/   # VoiceToText audio transcription
-│           ├── mod.rs       # VoiceToText router
-│           ├── dashboard.rs # Job list page + nav helper
-│           ├── jobs.rs      # Upload form, recording, job detail, HTMX partials
+│       ├── voice_to_text/   # VoiceToText audio transcription
+│       │   ├── mod.rs       # VoiceToText router
+│       │   ├── dashboard.rs # Job list page + nav helper
+│       │   ├── jobs.rs      # Upload form, recording, job detail, HTMX partials
+│       │   └── services/
+│       │       ├── transcriber.rs  # ffmpeg conversion + whisper-cli subprocess
+│       │       └── worker.rs       # Background job worker (polls pending jobs)
+│       └── classroom_input/ # ClassroomInput marks & notes recording
+│           ├── mod.rs       # ClassroomInput router + nav
+│           ├── classrooms.rs # Classroom CRUD (label + pupil list)
+│           ├── form_types.rs # Form type CRUD (column definitions)
+│           ├── inputs.rs    # Input grid, CSV save, list, detail, delete
 │           └── services/
-│               ├── transcriber.rs  # ffmpeg conversion + whisper-cli subprocess
-│               └── worker.rs       # Background job worker (polls pending jobs)
+│               └── seed.rs  # Demo data seeding
 ├── static/                  # CSS, JS (htmx, frappe-charts, d3), PWA assets (icon, sw.js, manifest)
 ├── .claude/agents/          # Claude Code agent prompts
 │   └── frontend-tester.md   # Agent for generating integration tests
@@ -174,6 +182,19 @@ After login, the top-level router serves:
   - `/mindflow/actions` — All actions list
   - `POST /mindflow/actions/{id}/toggle` — Toggle action done/pending
   - `POST /mindflow/actions/{id}/delete` — Delete action
+- `/classroom/` — ClassroomInput sub-app (nested router)
+  - `/classroom/` — Input list (all saved inputs)
+  - `/classroom/new` — New input page (select classroom + form type, fill grid)
+  - `POST /classroom/inputs/create` — Save input as CSV
+  - `/classroom/inputs/{id}` — View input detail (read-only table)
+  - `POST /classroom/inputs/{id}/delete` — Delete input
+  - `/classroom/classrooms` — Classroom list + create form
+  - `POST /classroom/classrooms/create` — Create classroom
+  - `POST /classroom/classrooms/{id}/delete` — Delete classroom and its inputs
+  - `/classroom/form-types` — Form type list + create form
+  - `POST /classroom/form-types/create` — Create form type
+  - `/classroom/form-types/{id}/edit` — Edit form type (GET form, POST submit)
+  - `POST /classroom/form-types/{id}/delete` — Delete form type and its inputs
 
 ## Database Schema
 
@@ -380,6 +401,39 @@ Indexes: `account_id`, `created_at`.
 | completed_at      | TEXT    | Nullable, set when processing finishes        |
 
 Check constraint: `status != 'done' OR transcription IS NOT NULL`.
+
+### classroom_classrooms
+
+| Column     | Type    | Notes                          |
+|------------|---------|--------------------------------|
+| id         | INTEGER | PK, autoincrement              |
+| user_id    | INTEGER | FK → users                     |
+| label      | TEXT    | NOT NULL (e.g. "1-A")          |
+| pupils     | TEXT    | Newline-separated pupil names  |
+| created_at | TEXT    | ISO 8601                       |
+
+### classroom_form_types
+
+| Column       | Type    | Notes                                          |
+|--------------|---------|-------------------------------------------------|
+| id           | INTEGER | PK, autoincrement                              |
+| user_id      | INTEGER | FK → users                                     |
+| name         | TEXT    | NOT NULL                                       |
+| columns_json | TEXT    | JSON array: `[{"name":"…","type":"text\|number\|bool"}]` |
+| created_at   | TEXT    | ISO 8601                                       |
+| updated_at   | TEXT    | ISO 8601                                       |
+
+### classroom_inputs
+
+| Column       | Type    | Notes                                 |
+|--------------|---------|---------------------------------------|
+| id           | INTEGER | PK, autoincrement                     |
+| user_id      | INTEGER | FK → users                            |
+| classroom_id | INTEGER | FK → classroom_classrooms             |
+| form_type_id | INTEGER | FK → classroom_form_types             |
+| name         | TEXT    | NOT NULL                              |
+| csv_data     | TEXT    | Raw CSV (header + one row per pupil)  |
+| created_at   | TEXT    | ISO 8601                              |
 
 ## Voice Transcription Flow
 
