@@ -1821,3 +1821,169 @@ nav a.brand:hover {
     gap: 0.5rem;
     align-items: center;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   ClassroomInput
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Column editor (form type create/edit) ────────────────────── */
+.ci-columns-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.ci-column-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.ci-column-row input[type="text"] {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+.ci-column-row select {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+    min-width: 6rem;
+}
+
+/* ── Input grid (spreadsheet style) ───────────────────────────── */
+.ci-grid-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+}
+
+.ci-input-table {
+    border-collapse: collapse;
+    border-spacing: 0;
+    font-size: 0.85rem;
+    width: max-content;
+    min-width: 100%;
+}
+
+/* Header */
+.ci-input-table th {
+    background: var(--bg);
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    padding: 0.4rem 0.5rem;
+    border-bottom: 2px solid var(--border);
+    border-right: 1px solid var(--border-light);
+    text-align: left;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.ci-input-table th:last-child { border-right: none; }
+
+.ci-th-pupil {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+}
+
+/* Pupil name column — frozen left */
+.ci-pupil-name {
+    font-weight: 600;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 8rem;
+    background: var(--bg);
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    padding: 0 0.4rem;
+    border-right: 2px solid var(--border);
+}
+
+/* Data cells */
+.ci-input-table td {
+    padding: 0;
+    border-bottom: 1px solid var(--border-light);
+    border-right: 1px solid var(--border-light);
+    height: 2.2rem;
+    vertical-align: middle;
+}
+
+.ci-input-table td:last-child { border-right: none; }
+.ci-input-table tbody tr:last-child td { border-bottom: none; }
+
+/* Alternating rows */
+.ci-input-table tbody tr:nth-child(even) td { background: var(--bg); }
+.ci-input-table tbody tr:nth-child(even) .ci-pupil-name { background: color-mix(in srgb, var(--bg) 80%, var(--bg-card)); }
+
+/* Inputs: invisible, fill the cell */
+.ci-cell-input,
+.ci-cell-select {
+    display: block;
+    width: 100%;
+    height: 2.2rem;
+    margin: 0;
+    padding: 0.2rem 0.4rem;
+    font-family: var(--font-body);
+    font-size: inherit;
+    line-height: 1.4;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text);
+    outline: none;
+    box-sizing: border-box;
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+    appearance: none;
+}
+
+.ci-cell-input[type="number"]::-webkit-inner-spin-button,
+.ci-cell-input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.ci-cell-select {
+    cursor: pointer;
+}
+
+/* Narrow columns for number and bool */
+.ci-col-number,
+.ci-col-bool {
+    width: 3.5rem;
+    max-width: 4.5rem;
+}
+
+/* Focus: highlight the cell */
+.ci-input-table td:focus-within {
+    background: var(--accent-light) !important;
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* ── Mobile overrides ─────────────────────────────────────────── */
+@media (max-width: 640px) {
+    /* Override the global mobile table→card transform for the input grid */
+    .ci-input-table { display: table; font-size: 0.8rem; }
+    .ci-input-table thead { display: table-header-group; }
+    .ci-input-table tbody { display: table-row-group; }
+    .ci-input-table tr { display: table-row; background: none; border: none; padding: 0; box-shadow: none; }
+    .ci-input-table td,
+    .ci-input-table th { display: table-cell; padding: 0; border-bottom: 1px solid var(--border-light); }
+
+    .ci-input-table th { font-size: 0.6rem; padding: 0.3rem 0.3rem; }
+    .ci-input-table td { height: 1.8rem; }
+    .ci-pupil-name { font-size: 0.7rem; max-width: 5.5rem; padding: 0 0.25rem; }
+    .ci-cell-input, .ci-cell-select { font-size: 0.8rem; padding: 0.15rem 0.25rem; height: 1.8rem; }
+}

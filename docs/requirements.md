@@ -240,6 +240,35 @@ connections on an interactive mind map.
 - **Local LLM integration** — async auto-categorization, action extraction,
   connection finding via Llama-3.2-1B-Instruct.
 
+### ClassroomInput (fourth sub-application)
+
+ClassroomInput is a mobile-oriented app for recording marks and notes for
+classrooms. Teachers select a classroom and form type, then fill in a
+spreadsheet-like grid that saves data as CSV.
+
+#### Implemented
+
+- **Classroom management** — create and delete classrooms. A classroom has a
+  label (e.g. "1-A") and a list of pupils pasted from the clipboard (one per
+  line, empty lines stripped).
+- **Form type management** — create, edit, and delete form types. Each form type
+  defines a set of columns with name and type (text, number, or yes/no boolean).
+  Columns can be added/removed dynamically in the editor.
+- **Input grid** — select a classroom + form type, name the input, then fill a
+  table with pupils as the frozen left column and one column per form type field.
+  Arrow keys navigate between cells (with wrap-around at row boundaries), Enter
+  moves down. On submit, the grid is serialized as CSV and stored in the database.
+- **Input list and detail** — all inputs are listed with classroom, form type,
+  row count, and date. Each input can be viewed as a read-only HTML table or
+  deleted.
+- **Seed data** — `cargo run -- seed --app classroom` populates 3 classrooms,
+  4 form types, and 4 sample inputs with realistic data.
+
+#### Not yet implemented
+- **Input editing** — re-open a saved input for modification.
+- **CSV export** — download an input as a CSV file.
+- **Bulk operations** — delete multiple inputs at once.
+
 ### VoiceToText (third sub-application)
 
 VoiceToText is an audio transcription application that converts speech to text

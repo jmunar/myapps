@@ -154,8 +154,8 @@ async fn hiding_all_apps_shows_empty_state() {
     let app = harness::spawn_app().await;
     app.login_as("test", "pass").await;
 
-    // Hide all three apps
-    for key in &["leanfin", "mindflow", "voice_to_text"] {
+    // Hide all apps
+    for key in &["leanfin", "mindflow", "voice_to_text", "classroom_input"] {
         app.server
             .post("/launcher/visibility")
             .form(&serde_json::json!({"app_key": key, "visible": "0"}))

@@ -1,8 +1,9 @@
 # MyApps
 
 Multi-app personal platform. LeanFin (personal expense management), MindFlow
-(thought capture & mind map), and VoiceToText (audio transcription) are the
-current sub-applications. After login, users
+(thought capture & mind map), VoiceToText (audio transcription), and
+ClassroomInput (classroom marks & notes recording) are the current
+sub-applications. After login, users
 see an app launcher and can navigate into individual apps. All apps share auth,
 DB, layout/styling, and config.
 
@@ -23,6 +24,8 @@ cargo run -- seed --app leanfin     # Seed LeanFin demo data
 cargo run -- seed --app leanfin --reset  # Wipe and re-seed demo data
 cargo run -- seed --app mindflow   # Seed MindFlow demo data
 cargo run -- seed --app mindflow --reset  # Wipe and re-seed demo data
+cargo run -- seed --app classroom  # Seed ClassroomInput demo data
+cargo run -- seed --app classroom --reset  # Wipe and re-seed demo data
 
 # Makefile shortcuts
 make check                          # fmt-check + clippy + test (same as CI)
@@ -62,8 +65,9 @@ export MYAPPS_SERVER="user@odroid.local"
 - LeanFin-specific routes, handlers, and services live under `src/apps/leanfin/`.
 - MindFlow-specific routes, handlers, and services live under `src/apps/mindflow/`.
 - VoiceToText-specific routes, handlers, and services live under `src/apps/voice_to_text/`.
+- ClassroomInput-specific routes and handlers live under `src/apps/classroom_input/`.
 - Shared infrastructure (auth, config, db, models, layout) stays at the top level.
-- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`).
+- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`, `classroom_classrooms`).
 
 ## Testing
 

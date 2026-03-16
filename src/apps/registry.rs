@@ -31,5 +31,12 @@ pub fn all_apps() -> Vec<AppInfo> {
             icon: "\u{1F3A4}",
             path: "/voice",
         },
+        AppInfo {
+            key: "classroom_input",
+            name: "ClassroomInput",
+            description: "Record marks &amp; notes for classrooms",
+            icon: "\u{270E}",
+            path: "/classroom",
+        },
     ]
 }

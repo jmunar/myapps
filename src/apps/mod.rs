@@ -1,3 +1,4 @@
+pub mod classroom_input;
 pub mod leanfin;
 pub mod mindflow;
 pub mod registry;
