@@ -97,6 +97,13 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
                 }
                 Err(e) => {
                     tracing::error!("Account '{}': sync failed: {e:#}", account.bank_name);
+                    crate::services::notify::send(
+                        pool,
+                        config,
+                        "LeanFin",
+                        &format!("Sync failed for '{}': {e:#}", account.bank_name),
+                    )
+                    .await;
                 }
             }
         }
