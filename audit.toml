@@ -1,0 +1,8 @@
+[advisories]
+ignore = [
+    # Marvin Attack on `rsa` crate — transitive dep via web-push -> jwt-simple -> superboring.
+    # No patch available. Low practical risk: only used for VAPID JWT signing, not key exchange.
+    "RUSTSEC-2023-0071",
+    # `instant` is unmaintained, replaced by `web-time`. Transitive dep, no action possible.
+    "RUSTSEC-2024-0384",
+]
