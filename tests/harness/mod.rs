@@ -14,6 +14,11 @@ pub struct TestApp {
 /// Spin up a fresh app instance with an in-memory SQLite database.
 /// Each call gets an isolated database, so tests don't interfere.
 pub async fn spawn_app() -> TestApp {
+    spawn_app_with_deploy_apps(None).await
+}
+
+/// Spin up a fresh app instance limited to a subset of apps.
+pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> TestApp {
     let db_id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
     let db_url = format!("sqlite:file:test_{db_id}?mode=memory&cache=shared");
 
@@ -42,6 +47,7 @@ pub async fn spawn_app() -> TestApp {
         base_path: String::new(),
         whisper_cli_path: "whisper-cli".into(),
         whisper_models_dir: "models".into(),
+        deploy_apps,
     };
 
     let app = myapps::routes::build_router(pool.clone(), config);

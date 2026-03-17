@@ -150,6 +150,7 @@ VAPID_SUBJECT=mailto:you@example.com
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models
 BIND_ADDR=127.0.0.1:$DEPLOY_PORT
+DEPLOY_APPS=${DEPLOY_APPS:-}
 ENV
     sudo chown myapps:myapps $DEPLOY_REMOTE_DIR/.env
     sudo chmod 600 $DEPLOY_REMOTE_DIR/.env
