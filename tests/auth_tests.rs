@@ -291,8 +291,7 @@ async fn deploy_apps_subset_excluded_app_route_returns_404() {
 
 #[tokio::test]
 async fn deploy_apps_single_app_only_mounts_that_app() {
-    let app =
-        harness::spawn_app_with_deploy_apps(Some(vec!["classroom_input".into()])).await;
+    let app = harness::spawn_app_with_deploy_apps(Some(vec!["classroom_input".into()])).await;
     app.login_as("test", "pass").await;
 
     let body = app.server.get("/").await.text();

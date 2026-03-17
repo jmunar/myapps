@@ -43,9 +43,10 @@ impl Config {
                 .unwrap_or_else(|_| "whisper-cli".to_string()),
             whisper_models_dir: env::var("WHISPER_MODELS_DIR")
                 .unwrap_or_else(|_| "models".to_string()),
-            deploy_apps: env::var("DEPLOY_APPS").ok().filter(|s| !s.is_empty()).map(|s| {
-                s.split(',').map(|a| a.trim().to_string()).collect()
-            }),
+            deploy_apps: env::var("DEPLOY_APPS")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.split(',').map(|a| a.trim().to_string()).collect()),
         })
     }
 
