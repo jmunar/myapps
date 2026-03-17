@@ -38,8 +38,11 @@ make run                            # Start dev server
 
 # Deploy to server (rsyncs source, builds on Odroid, installs + restarts)
 export MYAPPS_SERVER="user@odroid.local"
-./deploy.sh setup               # First time only
-./deploy.sh deploy              # Build + install + restart
+./deploy.sh prod setup                    # First time only
+./deploy.sh prod deploy                   # Build + install + restart
+./deploy.sh stage setup                   # First time only (staging)
+./deploy.sh stage deploy                  # Build + install + restart (staging)
+SEED_REBUILD=true ./deploy.sh stage deploy  # Deploy + wipe & re-seed
 ```
 
 ## CI/CD
@@ -68,6 +71,9 @@ export MYAPPS_SERVER="user@odroid.local"
 - ClassroomInput-specific routes and handlers live under `src/apps/classroom_input/`.
 - Shared infrastructure (auth, config, db, models, layout) stays at the top level.
 - All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`, `classroom_classrooms`).
+- When adding or removing environment variables, update all three places:
+  `.env.example`, the `.env` template in `deploy.sh` (`setup()`), and the
+  Environment Variables section in `docs/deployment.md`.
 
 ## Testing
 

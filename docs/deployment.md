@@ -30,7 +30,7 @@ This avoids the complexity of cross-compilation toolchains (linkers, Docker,
 - SSH access configured
 - nginx installed and running
 - Your SSH user must have `sudo` privileges
-- Rust toolchain — installed automatically by `./deploy.sh setup`, or manually:
+- Rust toolchain — installed automatically by `./deploy.sh prod setup`, or manually:
   ```bash
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
@@ -59,12 +59,11 @@ interactively (via `ssh -t`).
 ## Quick Start
 
 ```bash
-# 1. Configure server address and domain
+# 1. Configure server address
 export MYAPPS_SERVER="user@odroid.local"
-export MYAPPS_DOMAIN="yourdomain.com"
 
 # 2. First-time server setup (installs Rust, creates user, dirs, systemd, cron, nginx)
-./deploy.sh setup
+./deploy.sh prod setup
 
 # 3. SSH into the server and edit /opt/myapps/.env with your values
 
@@ -72,13 +71,15 @@ export MYAPPS_DOMAIN="yourdomain.com"
 ssh $MYAPPS_SERVER 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d yourdomain.com'
 
 # 5. Sync source, build on server, install, and start the service
-./deploy.sh deploy
+./deploy.sh prod deploy
 
 # 6. Create your first user
 ssh $MYAPPS_SERVER 'sudo -u myapps /opt/myapps/myapps create-user --username yourname --password yourpass'
 ```
 
 ## deploy.sh Commands
+
+Usage: `./deploy.sh <env> <command>`
 
 | Command   | Description                                         |
 |-----------|-----------------------------------------------------|
@@ -89,11 +90,17 @@ ssh $MYAPPS_SERVER 'sudo -u myapps /opt/myapps/myapps create-user --username you
 | `logs`    | Tail the service logs (journalctl)                  |
 | `status`  | Show service status                                 |
 
-Configure via environment variables:
+Available environments are defined by config files in `deploy/`:
+
+| Environment | Config file      | URL                                      | Port |
+|-------------|------------------|------------------------------------------|------|
+| `prod`      | `deploy/prod.env` | `https://yourdomain.com/myapps`          | 3000 |
+| `stage`     | `deploy/stage.env` | `https://stage.munarriz.mooo.com/myapps` | 3001 |
+
+Configure the SSH target via environment variable:
 
 ```bash
-export MYAPPS_SERVER="user@odroid.local"   # SSH target
-export MYAPPS_DOMAIN="yourdomain.com"      # Domain for nginx server_name
+export MYAPPS_SERVER="user@odroid.local"   # SSH target (used by both envs)
 ```
 
 ## Deploy Flow
@@ -101,7 +108,7 @@ export MYAPPS_DOMAIN="yourdomain.com"      # Domain for nginx server_name
 ```
 Dev machine                         Odroid N2
 ───────────                         ─────────
-./deploy.sh deploy
+./deploy.sh prod deploy
   │
   ├─ rsync source ──────────────▸  ~/myapps-build/
   │                                  │
@@ -161,11 +168,10 @@ File: `/opt/myapps/.env`
 ```bash
 DATABASE_URL=sqlite:///opt/myapps/data/myapps.db
 BASE_URL=https://yourdomain.com/myapps   # Public URL (path becomes BASE_PATH)
-ENABLE_BANKING_APP_ID=              # UUID from Enable Banking control panel
-ENABLE_BANKING_KEY_PATH=/opt/myapps/private.pem   # RSA private key
-VAPID_PRIVATE_KEY=                          # base64url-encoded EC private key
-VAPID_PUBLIC_KEY=                           # base64url-encoded uncompressed public key
-VAPID_SUBJECT=mailto:you@example.com        # VAPID subject claim
+ENCRYPTION_KEY=                            # 32-byte hex (openssl rand -hex 32)
+VAPID_PRIVATE_KEY=                         # base64url-encoded EC private key
+VAPID_PUBLIC_KEY=                          # base64url-encoded uncompressed public key
+VAPID_SUBJECT=mailto:you@example.com       # VAPID subject claim
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli   # whisper.cpp binary
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 BIND_ADDR=127.0.0.1:3000
@@ -173,10 +179,8 @@ BIND_ADDR=127.0.0.1:3000
 
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
 `BASE_URL` is needed when served behind a reverse proxy subpath (the path
-component is used as the URL prefix). The Enable Banking variables are needed
-to link bank accounts. Copy
-your Enable Banking private key to `/opt/myapps/private.pem` (chmod 600,
-owned by myapps).
+component is used as the URL prefix). `ENCRYPTION_KEY` is needed for
+storing Enable Banking credentials (per-user encrypted settings).
 
 ## systemd Service
 
@@ -326,3 +330,60 @@ Certbot will modify the nginx config to add `listen 443 ssl` with the
 certificate paths and redirect HTTP to HTTPS automatically.
 
 The app is then accessible at `https://yourdomain.com/myapps`.
+
+## Staging Environment
+
+A staging instance runs alongside production on the same Odroid, at
+`https://stage.munarriz.mooo.com/myapps`. It uses a separate database, systemd
+service, and nginx site, listening on port 3001.
+
+### Deploy config files
+
+All environment-specific values live in `deploy/*.env`. The deploy script is
+environment-agnostic — it sources the config file matching the first argument.
+
+To add a new environment (e.g. `demo`), create `deploy/demo.env` with the
+appropriate values.
+
+### Setting up staging
+
+```bash
+# 1. First-time setup (creates dirs, systemd, nginx on the server)
+./deploy.sh stage setup
+
+# 2. Edit /opt/myapps-stage/.env on the server with appropriate values
+
+# 3. DNS: add stage.munarriz.mooo.com at freedns.afraid.org
+
+# 4. HTTPS
+ssh $MYAPPS_SERVER 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d stage.munarriz.mooo.com'
+
+# 5. Deploy
+./deploy.sh stage deploy
+
+# 6. Create a user
+ssh $MYAPPS_SERVER 'sudo -u myapps /opt/myapps-stage/myapps create-user --username yourname --password yourpass'
+```
+
+### Deploying with seed data
+
+When `SEED_REBUILD=true` is set, the deploy command wipes and re-seeds all apps
+listed in `DEPLOY_SEED_APPS` after restarting the service:
+
+```bash
+SEED_REBUILD=true ./deploy.sh stage deploy
+```
+
+### Directory structure (staging)
+
+```
+/opt/myapps-stage/         # Runtime (owned by myapps user)
+├── myapps                 # Binary
+├── .env                   # Environment variables (chmod 600)
+├── data/
+│   └── myapps.db          # SQLite database (separate from prod)
+├── logs/
+└── static/
+
+~/myapps-stage-build/      # Build directory (owned by SSH user)
+```

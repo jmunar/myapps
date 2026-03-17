@@ -560,5 +560,5 @@ See [deployment.md](deployment.md) for detailed instructions.
 Development machine and server are separate. The workflow is:
 
 1. Develop and test locally (using a local SQLite DB).
-2. `./deploy.sh deploy` rsyncs source to the Odroid, builds natively, and
+2. `./deploy.sh prod deploy` rsyncs source to the Odroid, builds natively, and
    installs + restarts the service.
