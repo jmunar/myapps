@@ -16,6 +16,8 @@ pub struct Config {
     pub whisper_cli_path: String,
     /// Directory containing whisper GGML model files.
     pub whisper_models_dir: String,
+    /// Optional subset of apps to deploy (app keys). `None` means all apps.
+    pub deploy_apps: Option<Vec<String>>,
 }
 
 impl Config {
@@ -41,7 +43,18 @@ impl Config {
                 .unwrap_or_else(|_| "whisper-cli".to_string()),
             whisper_models_dir: env::var("WHISPER_MODELS_DIR")
                 .unwrap_or_else(|_| "models".to_string()),
+            deploy_apps: env::var("DEPLOY_APPS").ok().filter(|s| !s.is_empty()).map(|s| {
+                s.split(',').map(|a| a.trim().to_string()).collect()
+            }),
         })
+    }
+
+    /// Returns true if the given app key is enabled for this deployment.
+    pub fn is_app_deployed(&self, key: &str) -> bool {
+        match &self.deploy_apps {
+            None => true,
+            Some(apps) => apps.iter().any(|a| a == key),
+        }
     }
 
     /// Returns the full path to a whisper GGML model file.
@@ -73,4 +86,49 @@ impl Config {
 pub enum ConfigError {
     #[error("missing environment variable: {0}")]
     Missing(&'static str),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> Config {
+        Config {
+            database_url: String::new(),
+            base_url: None,
+            encryption_key: None,
+            vapid_private_key: None,
+            vapid_public_key: None,
+            vapid_subject: None,
+            bind_addr: String::new(),
+            base_path: String::new(),
+            whisper_cli_path: String::new(),
+            whisper_models_dir: String::new(),
+            deploy_apps,
+        }
+    }
+
+    #[test]
+    fn is_app_deployed_none_means_all() {
+        let config = config_with_deploy_apps(None);
+        assert!(config.is_app_deployed("leanfin"));
+        assert!(config.is_app_deployed("mindflow"));
+        assert!(config.is_app_deployed("anything"));
+    }
+
+    #[test]
+    fn is_app_deployed_subset_filters() {
+        let config = config_with_deploy_apps(Some(vec!["leanfin".into(), "mindflow".into()]));
+        assert!(config.is_app_deployed("leanfin"));
+        assert!(config.is_app_deployed("mindflow"));
+        assert!(!config.is_app_deployed("voice_to_text"));
+        assert!(!config.is_app_deployed("classroom_input"));
+    }
+
+    #[test]
+    fn is_app_deployed_empty_vec_deploys_nothing() {
+        let config = config_with_deploy_apps(Some(vec![]));
+        assert!(!config.is_app_deployed("leanfin"));
+        assert!(!config.is_app_deployed("mindflow"));
+    }
 }

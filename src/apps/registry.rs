@@ -1,3 +1,5 @@
+use crate::config::Config;
+
 /// Metadata for an application in the launcher.
 pub struct AppInfo {
     pub key: &'static str,
@@ -5,6 +7,15 @@ pub struct AppInfo {
     pub description: &'static str,
     pub icon: &'static str,
     pub path: &'static str,
+}
+
+/// Returns apps enabled for the current deployment.
+/// If `DEPLOY_APPS` is set, only matching apps are returned.
+pub fn deployed_apps(config: &Config) -> Vec<AppInfo> {
+    all_apps()
+        .into_iter()
+        .filter(|app| config.is_app_deployed(app.key))
+        .collect()
 }
 
 /// Returns all available applications.
