@@ -94,8 +94,8 @@ Available environments are defined by config files in `deploy/`:
 
 | Environment | Config file      | URL                                      | Port |
 |-------------|------------------|------------------------------------------|------|
-| `prod`      | `deploy/prod.env` | `https://yourdomain.com/myapps`          | 3000 |
-| `stage`     | `deploy/stage.env` | `https://stage.munarriz.mooo.com/myapps` | 3001 |
+| `prod`      | `deploy/prod.env` | `https://yourdomain.com`          | 3000 |
+| `stage`     | `deploy/stage.env` | `https://stage.yourdomain.com`    | 3001 |
 
 Configure the SSH target via environment variable:
 
@@ -128,12 +128,11 @@ Run once on a fresh server. It:
 1. Installs the Rust toolchain (if not already present)
 2. Installs build dependencies (`pkg-config`, `libssl-dev`) and `sccache`
 3. Creates a `myapps` system user (no login shell)
-4. Creates `/opt/myapps/{data,logs,static}` with proper ownership
-5. Creates `/opt/myapps/.env` template (chmod 600)
-6. Installs the `myapps.service` systemd unit
-7. Installs a cron job for daily sync at 06:00
-8. Installs an nginx site config for the configured domain (HTTP, proxying
-   `/myapps/` to `127.0.0.1:3000`)
+4. Creates `$DEPLOY_REMOTE_DIR/{data,logs,static}` with proper ownership
+5. Creates `$DEPLOY_REMOTE_DIR/.env` template (chmod 600)
+6. Installs the systemd unit for the environment
+7. Installs a cron job for daily sync at 06:00 (if `DEPLOY_CRON_ENABLED=true`)
+8. Installs an nginx site config for the configured domain
 
 After setup, enable HTTPS with certbot (see Quick Start step 4).
 
@@ -167,7 +166,7 @@ File: `/opt/myapps/.env`
 
 ```bash
 DATABASE_URL=sqlite:///opt/myapps/data/myapps.db
-BASE_URL=https://yourdomain.com/myapps   # Public URL (path becomes BASE_PATH)
+BASE_URL=https://yourdomain.com            # Public URL
 ENCRYPTION_KEY=                            # 32-byte hex (openssl rand -hex 32)
 VAPID_PRIVATE_KEY=                         # base64url-encoded EC private key
 VAPID_PUBLIC_KEY=                          # base64url-encoded uncompressed public key
@@ -178,8 +177,7 @@ BIND_ADDR=127.0.0.1:3000
 ```
 
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
-`BASE_URL` is needed when served behind a reverse proxy subpath (the path
-component is used as the URL prefix). `ENCRYPTION_KEY` is needed for
+`BASE_URL` is the public URL of the application. `ENCRYPTION_KEY` is needed for
 storing Enable Banking credentials (per-user encrypted settings).
 
 ## systemd Service
@@ -317,7 +315,7 @@ With 4 GB RAM, tiny and base fit comfortably alongside the Axum server.
 
 The `setup` command installs an HTTP-only nginx config at
 `/etc/nginx/sites-available/myapps` with `server_name` set to your domain.
-The config proxies `/myapps/` to `127.0.0.1:3000/` (stripping the prefix).
+The config proxies all requests to `127.0.0.1:3000`.
 
 To enable HTTPS:
 
@@ -329,12 +327,12 @@ sudo certbot --nginx -d yourdomain.com
 Certbot will modify the nginx config to add `listen 443 ssl` with the
 certificate paths and redirect HTTP to HTTPS automatically.
 
-The app is then accessible at `https://yourdomain.com/myapps`.
+The app is then accessible at `https://yourdomain.com`.
 
 ## Staging Environment
 
 A staging instance runs alongside production on the same Odroid, at
-`https://stage.munarriz.mooo.com/myapps`. It uses a separate database, systemd
+`https://stage.yourdomain.com`. It uses a separate database, systemd
 service, and nginx site, listening on port 3001.
 
 ### Deploy config files
@@ -353,10 +351,10 @@ appropriate values.
 
 # 2. Edit /opt/myapps-stage/.env on the server with appropriate values
 
-# 3. DNS: add stage.munarriz.mooo.com at freedns.afraid.org
+# 3. DNS: add stage.yourdomain.com to your DNS provider
 
 # 4. HTTPS
-ssh $MYAPPS_SERVER 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d stage.munarriz.mooo.com'
+ssh $MYAPPS_SERVER 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d stage.yourdomain.com'
 
 # 5. Deploy
 ./deploy.sh stage deploy
