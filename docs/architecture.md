@@ -67,7 +67,7 @@ myapps/
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # Web Push notifications (VAPID)
 │   └── apps/                # Sub-applications
-│       ├── registry.rs      # App metadata registry (AppInfo, all_apps())
+│       ├── registry.rs      # App metadata registry (AppInfo, all_apps(), deployed_apps())
 │       ├── leanfin/         # LeanFin expense tracker
 │           ├── mod.rs       # LeanFin router
 │           ├── dashboard.rs # Main transactions page
