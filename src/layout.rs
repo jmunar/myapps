@@ -1,20 +1,32 @@
+use crate::i18n::Lang;
+
 /// A single nav item for the shared layout.
 pub struct NavItem {
     pub href: String,
-    pub label: &'static str,
+    pub label: String,
     pub active: bool,
+    /// If true, this item is rendered right-aligned (e.g. "Log out").
+    pub right: bool,
 }
 
 /// Render a full HTML page shell with nav and body content.
-pub fn render_page(title: &str, nav_items: &[NavItem], body_html: &str, base_path: &str) -> String {
+pub fn render_page(
+    title: &str,
+    nav_items: &[NavItem],
+    body_html: &str,
+    base_path: &str,
+    lang: Lang,
+) -> String {
+    let lang_code = lang.code();
+
     let mut nav_html = String::new();
     for item in nav_items {
         let active = if item.active { " class=\"active\"" } else { "" };
-        // "Log out" is always right-aligned
-        if item.label == "Log out" {
+        if item.right {
             nav_html.push_str(&format!(
-                r#"<a href="{href}" class="nav-right">Log out</a>"#,
+                r#"<a href="{href}" class="nav-right">{label}</a>"#,
                 href = item.href,
+                label = item.label,
             ));
         } else {
             nav_html.push_str(&format!(
@@ -27,7 +39,7 @@ pub fn render_page(title: &str, nav_items: &[NavItem], body_html: &str, base_pat
 
     format!(
         r##"<!DOCTYPE html>
-<html lang="en">
+<html lang="{lang_code}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">

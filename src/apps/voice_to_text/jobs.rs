@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use super::dashboard::voice_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -24,9 +25,13 @@ fn upload_dir() -> PathBuf {
 
 /// Render `<option>` tags for the model selector.
 /// If `selected` is provided, that model is pre-selected; otherwise the first is.
-fn render_model_options(models: &[String], selected: Option<&str>) -> String {
+fn render_model_options(models: &[String], selected: Option<&str>, lang: Lang) -> String {
     if models.is_empty() {
-        return r#"<option value="" disabled>No models found</option>"#.to_string();
+        let t = i18n::t(lang);
+        return format!(
+            r#"<option value="" disabled>{}</option>"#,
+            t.vt_new_no_models
+        );
     }
     let mut html = String::new();
     for (i, m) in models.iter().enumerate() {
@@ -40,15 +45,19 @@ fn render_model_options(models: &[String], selected: Option<&str>) -> String {
     html
 }
 
-async fn new_form(state: axum::extract::State<AppState>) -> Html<String> {
+async fn new_form(
+    state: axum::extract::State<AppState>,
+    Extension(lang): Extension<Lang>,
+) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
     let models = state.config.available_whisper_models();
-    let model_options = render_model_options(&models, None);
+    let model_options = render_model_options(&models, None, lang);
 
     let body = format!(
         r##"<div class="page-header">
-            <h1>New Transcription</h1>
-            <p>Upload an audio file or record from your microphone</p>
+            <h1>{new_title}</h1>
+            <p>{new_subtitle}</p>
         </div>
         <div class="card">
             <form hx-post="{base}/voice/upload"
@@ -57,25 +66,25 @@ async fn new_form(state: axum::extract::State<AppState>) -> Html<String> {
                   hx-swap="innerHTML"
                   class="voice-upload-form">
                 <div class="form-group">
-                    <label for="audio-file">Audio file</label>
+                    <label for="audio-file">{audio_file}</label>
                     <input type="file" id="audio-file" name="audio"
                            accept="audio/*,.wav,.mp3,.ogg,.webm,.m4a,.flac">
                 </div>
                 <div class="form-group">
-                    <label for="model">Model</label>
+                    <label for="model">{model_label}</label>
                     <select id="model" name="model">
                         {model_options}
                     </select>
                 </div>
-                <button type="submit" class="btn btn-primary">Upload &amp; Transcribe</button>
+                <button type="submit" class="btn btn-primary">{upload_btn}</button>
             </form>
             <div id="upload-result"></div>
         </div>
         <div class="card" style="margin-top:1rem;">
-            <h2>Record Audio</h2>
+            <h2>{record}</h2>
             <div id="recorder">
-                <button id="rec-start" class="btn btn-primary" onclick="startRecording()">Start Recording</button>
-                <button id="rec-stop" class="btn" onclick="stopRecording()" disabled>Stop Recording</button>
+                <button id="rec-start" class="btn btn-primary" onclick="startRecording()">{start}</button>
+                <button id="rec-stop" class="btn" onclick="stopRecording()" disabled>{stop}</button>
                 <span id="rec-status"></span>
             </div>
             <div id="rec-result"></div>
@@ -99,30 +108,43 @@ async fn new_form(state: axum::extract::State<AppState>) -> Html<String> {
             mediaRecorder.start();
             document.getElementById('rec-start').disabled = true;
             document.getElementById('rec-stop').disabled = false;
-            document.getElementById('rec-status').textContent = 'Recording…';
+            document.getElementById('rec-status').textContent = '{recording}';
         }}
         function stopRecording() {{
             mediaRecorder.stop();
             document.getElementById('rec-start').disabled = false;
             document.getElementById('rec-stop').disabled = true;
-            document.getElementById('rec-status').textContent = 'Processing…';
+            document.getElementById('rec-status').textContent = '{processing}';
         }}
-        </script>"##
+        </script>"##,
+        new_title = t.vt_new_title,
+        new_subtitle = t.vt_new_subtitle,
+        audio_file = t.vt_new_audio_file,
+        model_label = t.vt_new_model,
+        upload_btn = t.vt_new_upload_btn,
+        record = t.vt_new_record,
+        start = t.vt_new_start,
+        stop = t.vt_new_stop,
+        recording = t.vt_new_recording,
+        processing = t.vt_new_processing,
     );
     Html(render_page(
-        "VoiceToText — New",
-        &voice_nav(base, "new"),
+        &format!("VoiceToText — {}", t.vt_new),
+        &voice_nav(base, "new", lang),
         &body,
         base,
+        lang,
     ))
 }
 
 async fn upload(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     mut multipart: Multipart,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
     let dir = upload_dir();
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         return Html(format!(
@@ -188,7 +210,8 @@ async fn upload(
     match result {
         Ok(_) => Html(format!(
             r#"<p class="success">Queued <strong>{original_filename}</strong> for transcription (model: {model}).
-               <a href="{base}/voice">View jobs</a></p>"#
+               <a href="{base}/voice">{view_jobs}</a></p>"#,
+            view_jobs = t.vt_detail_view_jobs,
         )),
         Err(e) => Html(format!(r#"<p class="error">Database error: {e}</p>"#)),
     }
@@ -198,8 +221,9 @@ async fn upload(
 async fn jobs_list_partial(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
-    Html(render_jobs_tbody(&state.pool, &state.config.base_path, user_id).await)
+    Html(render_jobs_tbody(&state.pool, &state.config.base_path, user_id, lang).await)
 }
 
 #[derive(sqlx::FromRow)]
@@ -212,7 +236,8 @@ struct JobRow {
     completed_at: Option<String>,
 }
 
-fn render_job_row(j: &JobRow, base: &str) -> String {
+fn render_job_row(j: &JobRow, base: &str, lang: Lang) -> String {
+    let t = i18n::t(lang);
     let status_class = match j.status.as_str() {
         "done" => "status-done",
         "failed" => "status-failed",
@@ -220,13 +245,17 @@ fn render_job_row(j: &JobRow, base: &str) -> String {
         _ => "status-pending",
     };
     let id = j.id;
-    let detail_link = format!(r##"<a href="{base}/voice/jobs/{id}">View</a>"##);
+    let detail_link = format!(
+        r##"<a href="{base}/voice/jobs/{id}">{view}</a>"##,
+        view = t.vt_jobs_view
+    );
     let delete_btn = format!(
         r##"<form hx-post="{base}/voice/jobs/{id}/delete"
                 hx-target="#voice-jobs-body" hx-swap="innerHTML"
-                hx-confirm="Delete this job?">
+                hx-confirm="{confirm}">
             <button type="submit" class="btn-icon" title="Delete">&times;</button>
         </form>"##,
+        confirm = t.vt_jobs_delete_confirm,
     );
     format!(
         r##"<tr>
@@ -246,7 +275,12 @@ fn render_job_row(j: &JobRow, base: &str) -> String {
 }
 
 /// Shared helper: fetch jobs and render tbody rows.
-async fn render_jobs_tbody(pool: &sqlx::SqlitePool, base: &str, user_id: UserId) -> String {
+async fn render_jobs_tbody(
+    pool: &sqlx::SqlitePool,
+    base: &str,
+    user_id: UserId,
+    lang: Lang,
+) -> String {
     let jobs: Vec<JobRow> = sqlx::query_as(
         "SELECT id, status, original_filename, model_used, created_at, completed_at
          FROM voice_jobs
@@ -261,7 +295,7 @@ async fn render_jobs_tbody(pool: &sqlx::SqlitePool, base: &str, user_id: UserId)
 
     let mut rows = String::new();
     for j in &jobs {
-        rows.push_str(&render_job_row(j, base));
+        rows.push_str(&render_job_row(j, base, lang));
     }
     rows
 }
@@ -282,9 +316,11 @@ struct JobDetail {
 async fn job_detail(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(job_id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let job: Option<JobDetail> = sqlx::query_as(
         "SELECT id, status, original_filename, transcription, error_message,
@@ -301,18 +337,23 @@ async fn job_detail(
     let Some(j) = job else {
         return Html(render_page(
             "VoiceToText — Not Found",
-            &voice_nav(base, "jobs"),
-            r#"<div class="page-header"><h1>Job not found</h1></div>"#,
+            &voice_nav(base, "jobs", lang),
+            &format!(
+                r#"<div class="page-header"><h1>{}</h1></div>"#,
+                t.vt_detail_not_found
+            ),
             base,
+            lang,
         ));
     };
 
     let transcription_html = match &j.transcription {
         Some(text) => format!(
             r#"<div class="form-group">
-                <label>Transcription</label>
+                <label>{label}</label>
                 <div class="voice-transcription">{text}</div>
-            </div>"#
+            </div>"#,
+            label = t.vt_detail_transcription,
         ),
         None => String::new(),
     };
@@ -339,47 +380,50 @@ async fn job_detail(
                 .map(|m| m.to_string())
                 .collect::<Vec<_>>(),
             None,
+            lang,
         );
         format!(
             r#"<div class="form-group">
-                <label>Re-transcribe with a different model</label>
+                <label>{retranscribe}</label>
                 <form action="{base}/voice/jobs/{id}/retry" method="post" class="voice-retry-form">
                     <select name="model">{opts}</select>
-                    <button type="submit" class="btn btn-primary">Re-transcribe</button>
+                    <button type="submit" class="btn btn-primary">{retranscribe_btn}</button>
                 </form>
             </div>"#,
             id = j.id,
+            retranscribe = t.vt_detail_retranscribe,
+            retranscribe_btn = t.vt_detail_retranscribe_btn,
         )
     };
 
     let body = format!(
         r##"<div class="page-header">
             <h1>Job #{id}</h1>
-            <p><a href="{base}/voice">&larr; Back to jobs</a></p>
+            <p><a href="{base}/voice">&larr; {back}</a></p>
         </div>
         <div class="card">
             <div class="form-group">
-                <label>File</label>
+                <label>{file_label}</label>
                 <p>{filename}</p>
             </div>
             <div class="form-group">
-                <label>Status</label>
+                <label>{status_label}</label>
                 <p>{status}</p>
             </div>
             <div class="form-group">
-                <label>Model</label>
+                <label>{model_label}</label>
                 <p>{model}</p>
             </div>
             <div class="form-group">
-                <label>Processing time</label>
+                <label>{time_label}</label>
                 <p>{duration}</p>
             </div>
             <div class="form-group">
-                <label>Created</label>
+                <label>{created_label}</label>
                 <p>{created}</p>
             </div>
             <div class="form-group">
-                <label>Completed</label>
+                <label>{completed_label}</label>
                 <p>{completed}</p>
             </div>
             {error_html}
@@ -387,24 +431,33 @@ async fn job_detail(
             {retry_html}
         </div>"##,
         id = j.id,
+        back = t.vt_detail_back,
+        file_label = t.vt_detail_file,
         filename = j.original_filename,
+        status_label = t.vt_detail_status,
         status = j.status,
+        model_label = t.vt_detail_model,
         model = j.model_used,
+        time_label = t.vt_detail_time,
         duration = duration_html,
+        created_label = t.vt_detail_created,
         created = j.created_at,
+        completed_label = t.vt_detail_completed,
         completed = j.completed_at.as_deref().unwrap_or("—"),
     );
     Html(render_page(
         &format!("VoiceToText — Job #{}", j.id),
-        &voice_nav(base, "jobs"),
+        &voice_nav(base, "jobs", lang),
         &body,
         base,
+        lang,
     ))
 }
 
 async fn delete_job(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(job_id): Path<i64>,
 ) -> Html<String> {
     // Delete the audio file if it exists
@@ -430,7 +483,7 @@ async fn delete_job(
         .await
         .ok();
 
-    Html(render_jobs_tbody(&state.pool, &state.config.base_path, user_id).await)
+    Html(render_jobs_tbody(&state.pool, &state.config.base_path, user_id, lang).await)
 }
 
 #[derive(serde::Deserialize)]

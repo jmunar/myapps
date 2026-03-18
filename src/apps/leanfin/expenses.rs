@@ -5,6 +5,7 @@ use std::collections::{BTreeSet, HashMap};
 use super::dashboard::leanfin_nav;
 use super::services::expenses;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -24,8 +25,10 @@ struct LabelOption {
 async fn page(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let labels: Vec<LabelOption> = sqlx::query_as(
         "SELECT id, name, color FROM leanfin_labels WHERE user_id = ? ORDER BY name",
@@ -36,18 +39,24 @@ async fn page(
     .unwrap_or_default();
 
     if labels.is_empty() {
-        let body = r#"<div class="page-header">
-            <h1>Expenses</h1>
-            <p>Explore spending by label over time</p>
+        let body = format!(
+            r#"<div class="page-header">
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         <div class="card">
-            <div class="empty-state"><p>No labels yet. Create labels and allocate transactions first.</p></div>
-        </div>"#;
+            <div class="empty-state"><p>{no_labels}</p></div>
+        </div>"#,
+            title = t.lf_exp_title,
+            subtitle = t.lf_exp_subtitle,
+            no_labels = t.lf_exp_no_labels,
+        );
         return Html(render_page(
-            "LeanFin — Expenses",
-            &leanfin_nav(base, "expenses"),
-            body,
+            &format!("LeanFin — {}", t.lf_expenses),
+            &leanfin_nav(base, "expenses", lang),
+            &body,
             base,
+            lang,
         ));
     }
 
@@ -64,8 +73,8 @@ async fn page(
 
     let body = format!(
         r##"<div class="page-header">
-            <h1>Expenses</h1>
-            <p>Explore spending by label over time</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         <div class="card">
             <div class="expenses-controls" id="expenses-controls">
@@ -84,12 +93,12 @@ async fn page(
                 </div>
             </div>
             <div id="expenses-chart">
-                <div class="empty-state"><p>Select one or more labels to view expenses</p></div>
+                <div class="empty-state"><p>{select_labels}</p></div>
             </div>
         </div>
         <div class="card mt-2" id="expenses-txn-card" style="display:none">
             <div class="card-header">
-                <h2>Transactions</h2>
+                <h2>{transactions}</h2>
                 <span id="expenses-txn-range" class="text-sm text-secondary"></span>
             </div>
             <div id="expenses-txn-table"></div>
@@ -100,6 +109,7 @@ async fn page(
             var selectedLabels = new Set();
             var currentDays = 90;
             var currentChart = null;
+            var selectLabelsMsg = '{select_labels_js}';
 
             window.toggleLabel = function(btn) {{
                 var id = btn.dataset.labelId;
@@ -124,7 +134,7 @@ async fn page(
             function loadChart() {{
                 if (selectedLabels.size === 0) {{
                     document.getElementById('expenses-chart').innerHTML =
-                        '<div class="empty-state"><p>Select one or more labels to view expenses</p></div>';
+                        '<div class="empty-state"><p>' + selectLabelsMsg + '</p></div>';
                     document.getElementById('expenses-txn-card').style.display = 'none';
                     return;
                 }}
@@ -160,13 +170,19 @@ async fn page(
             }};
         }})();
         </script>"##,
+        title = t.lf_exp_title,
+        subtitle = t.lf_exp_subtitle,
+        select_labels = t.lf_exp_select_labels,
+        transactions = t.lf_exp_transactions,
+        select_labels_js = t.lf_exp_select_labels,
     );
 
     Html(render_page(
-        "LeanFin — Expenses",
-        &leanfin_nav(base, "expenses"),
+        &format!("LeanFin — {}", t.lf_expenses),
+        &leanfin_nav(base, "expenses", lang),
         &body,
         base,
+        lang,
     ))
 }
 
@@ -184,8 +200,11 @@ fn default_days() -> i64 {
 async fn chart_data(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     axum::extract::Query(params): axum::extract::Query<ChartQuery>,
 ) -> Html<String> {
+    let t = i18n::t(lang);
+
     let label_ids: Vec<i64> = params
         .label_ids
         .split(',')
@@ -193,7 +212,10 @@ async fn chart_data(
         .collect();
 
     if label_ids.is_empty() {
-        return Html("<div class=\"empty-state\"><p>No labels selected.</p></div>".into());
+        return Html(format!(
+            "<div class=\"empty-state\"><p>{}</p></div>",
+            t.lf_exp_no_selected
+        ));
     }
 
     let series = expenses::get_expense_series(&state.pool, user_id.0, &label_ids, params.days)
@@ -201,10 +223,10 @@ async fn chart_data(
         .unwrap_or_default();
 
     if series.is_empty() {
-        return Html(
-            "<div class=\"empty-state\"><p>No expense data for the selected labels in this period.</p></div>"
-                .into(),
-        );
+        return Html(format!(
+            "<div class=\"empty-state\"><p>{}</p></div>",
+            t.lf_exp_no_data
+        ));
     }
 
     // Collect all unique dates and label info

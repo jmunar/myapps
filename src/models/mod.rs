@@ -3,6 +3,7 @@ mod label;
 mod transaction;
 mod user;
 pub mod user_app_visibility;
+pub mod user_settings;
 
 pub use account::Account;
 pub use label::{Allocation, Label, LabelRule};

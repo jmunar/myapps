@@ -1,6 +1,7 @@
 use axum::{Extension, Router, response::Html, routing::get};
 
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::{NavItem, render_page};
 use crate::routes::AppState;
 
@@ -8,27 +9,32 @@ pub fn routes() -> Router<AppState> {
     Router::new().route("/", get(index))
 }
 
-pub fn voice_nav(base: &str, active: &str) -> Vec<NavItem> {
+pub fn voice_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
+    let t = i18n::t(lang);
     vec![
         NavItem {
             href: format!("{base}/voice"),
-            label: "VoiceToText",
+            label: "VoiceToText".to_string(),
             active: false,
+            right: false,
         },
         NavItem {
             href: format!("{base}/voice"),
-            label: "Jobs",
+            label: t.vt_jobs.to_string(),
             active: active == "jobs",
+            right: false,
         },
         NavItem {
             href: format!("{base}/voice/new"),
-            label: "New",
+            label: t.vt_new.to_string(),
             active: active == "new",
+            right: false,
         },
         NavItem {
             href: format!("{base}/logout"),
-            label: "Log out",
+            label: t.log_out.to_string(),
             active: false,
+            right: true,
         },
     ]
 }
@@ -44,7 +50,8 @@ struct JobRow {
 }
 
 /// Render a single job table row. Shared between the full page and the HTMX partial.
-fn render_job_row(j: &JobRow, base: &str) -> String {
+fn render_job_row(j: &JobRow, base: &str, lang: Lang) -> String {
+    let t = i18n::t(lang);
     let status_class = match j.status.as_str() {
         "done" => "status-done",
         "failed" => "status-failed",
@@ -52,13 +59,17 @@ fn render_job_row(j: &JobRow, base: &str) -> String {
         _ => "status-pending",
     };
     let id = j.id;
-    let detail_link = format!(r##"<a href="{base}/voice/jobs/{id}">View</a>"##);
+    let detail_link = format!(
+        r##"<a href="{base}/voice/jobs/{id}">{view}</a>"##,
+        view = t.vt_jobs_view
+    );
     let delete_btn = format!(
         r##"<form hx-post="{base}/voice/jobs/{id}/delete"
                 hx-target="#voice-jobs-body" hx-swap="innerHTML"
-                hx-confirm="Delete this job?">
-            <button type="submit" class="btn-icon" title="Delete">&times;</button>
+                hx-confirm="{confirm}">
+            <button type="submit" class="btn-icon">&times;</button>
         </form>"##,
+        confirm = t.vt_jobs_delete_confirm,
     );
     format!(
         r##"<tr>
@@ -73,15 +84,17 @@ fn render_job_row(j: &JobRow, base: &str) -> String {
         status = j.status,
         model = j.model_used,
         created = j.created_at,
-        completed = j.completed_at.as_deref().unwrap_or("—"),
+        completed = j.completed_at.as_deref().unwrap_or("\u{2014}"),
     )
 }
 
 async fn index(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let jobs: Vec<JobRow> = sqlx::query_as(
         "SELECT id, status, original_filename, model_used, created_at, completed_at
@@ -97,22 +110,22 @@ async fn index(
 
     let mut rows = String::new();
     for j in &jobs {
-        rows.push_str(&render_job_row(j, base));
+        rows.push_str(&render_job_row(j, base, lang));
     }
 
     let empty_msg = if jobs.is_empty() {
-        r#"<p class="empty-state">No transcription jobs yet. Upload an audio file to get started.</p>"#
+        format!(r#"<p class="empty-state">{}</p>"#, t.vt_jobs_empty)
     } else {
-        ""
+        String::new()
     };
 
     let body = format!(
         r##"<div class="page-header">
             <div class="page-header-row">
-                <h1>Voice to Text</h1>
-                <a href="{base}/voice/new" class="btn btn-primary">New Transcription</a>
+                <h1>{title}</h1>
+                <a href="{base}/voice/new" class="btn btn-primary">{new_btn}</a>
             </div>
-            <p>Upload audio files and get text transcriptions</p>
+            <p>{subtitle}</p>
         </div>
         <div class="card">
             {empty_msg}
@@ -123,11 +136,11 @@ async fn index(
             <table class="txn-table">
                 <thead>
                     <tr>
-                        <th>File</th>
-                        <th>Status</th>
-                        <th>Model</th>
-                        <th>Created</th>
-                        <th>Completed</th>
+                        <th>{col_file}</th>
+                        <th>{col_status}</th>
+                        <th>{col_model}</th>
+                        <th>{col_created}</th>
+                        <th>{col_completed}</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -135,12 +148,21 @@ async fn index(
                     {rows}
                 </tbody>
             </table>
-        </div>"##
+        </div>"##,
+        title = t.vt_jobs_title,
+        subtitle = t.vt_jobs_subtitle,
+        new_btn = t.vt_jobs_new_btn,
+        col_file = t.vt_jobs_col_file,
+        col_status = t.vt_jobs_col_status,
+        col_model = t.vt_jobs_col_model,
+        col_created = t.vt_jobs_col_created,
+        col_completed = t.vt_jobs_col_completed,
     );
     Html(render_page(
-        "VoiceToText — Jobs",
-        &voice_nav(base, "jobs"),
+        &format!("VoiceToText \u{2014} {}", t.vt_jobs),
+        &voice_nav(base, "jobs", lang),
         &body,
         base,
+        lang,
     ))
 }

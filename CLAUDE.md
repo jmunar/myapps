@@ -73,7 +73,10 @@ SEED_REBUILD=true ./deploy.sh stage deploy  # Deploy + wipe & re-seed
 - MindFlow-specific routes, handlers, and services live under `src/apps/mindflow/`.
 - VoiceToText-specific routes, handlers, and services live under `src/apps/voice_to_text/`.
 - ClassroomInput-specific routes and handlers live under `src/apps/classroom_input/`.
-- Shared infrastructure (auth, config, db, models, layout) stays at the top level.
+- Shared infrastructure (auth, config, db, models, layout, i18n) stays at the top level.
+- Translations live in `src/i18n/`. Adding a new UI string means adding a field
+  to the `Translations` struct in `mod.rs` and filling it in both `en.rs` and
+  `es.rs`. The compiler enforces completeness.
 - All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`, `classroom_classrooms`).
 - When adding or removing environment variables, update all three places:
   `.env.example`, the `.env` template in `deploy.sh` (`setup()`), and the

@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use super::classroom_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -29,8 +30,10 @@ struct ClassroomRow {
 async fn list(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let classrooms: Vec<ClassroomRow> = sqlx::query_as(
         "SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ? ORDER BY label ASC",
@@ -39,6 +42,10 @@ async fn list(
     .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
+
+    let delete_label = t.ci_inp_delete;
+    let delete_confirm = t.ci_cls_delete_confirm;
+    let pupils_count_label = t.ci_cls_pupils_count;
 
     let mut items = String::new();
     for c in &classrooms {
@@ -56,13 +63,13 @@ async fn list(
             r##"<div class="label-item" id="classroom-{id}">
                 <div class="label-item-info">
                     <span class="label-badge" style="--label-color:#1A6B5A">{label}</span>
-                    <span class="text-secondary text-sm">{pupil_count} pupils</span>
+                    <span class="text-secondary text-sm">{pupil_count} {pupils_count_label}</span>
                     <span class="text-secondary text-sm">{pupil_preview}{ellipsis}</span>
                 </div>
                 <div class="label-item-actions">
                     <form method="POST" action="{base}/classroom/classrooms/{id}/delete" style="display:inline"
-                          onsubmit="return confirm('Delete this classroom and all its inputs?')">
-                        <button class="btn-icon btn-icon-danger">Delete</button>
+                          onsubmit="return confirm('{delete_confirm}')">
+                        <button class="btn-icon btn-icon-danger">{delete_label}</button>
                     </form>
                 </div>
             </div>"##,
@@ -72,47 +79,58 @@ async fn list(
     }
 
     if items.is_empty() {
-        items =
-            r#"<div class="empty-state"><p>No classrooms yet. Create one below.</p></div>"#.into();
+        items = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.ci_cls_no_classrooms
+        );
     }
 
     let body = format!(
         r##"<div class="page-header">
-            <h1>Classrooms</h1>
-            <p>Manage your classrooms and their pupil lists</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
 
         <div class="card" style="max-width:40rem;">
-            <div class="card-header"><h2>Your classrooms</h2></div>
+            <div class="card-header"><h2>{your_classrooms}</h2></div>
             <div class="card-body">
                 <div class="label-list">{items}</div>
             </div>
         </div>
 
         <div class="card mt-2" style="max-width:40rem;">
-            <div class="card-header"><h2>Add classroom</h2></div>
+            <div class="card-header"><h2>{add_classroom}</h2></div>
             <div class="card-body">
                 <form method="POST" action="{base}/classroom/classrooms/create">
                     <div class="form-group">
-                        <label for="label">Label</label>
-                        <input type="text" id="label" name="label" required placeholder="e.g. 1-A" style="max-width:10rem">
+                        <label for="label">{label_lbl}</label>
+                        <input type="text" id="label" name="label" required placeholder="{placeholder}" style="max-width:10rem">
                     </div>
                     <div class="form-group">
-                        <label for="pupils">Pupils (one per line — paste from clipboard)</label>
+                        <label for="pupils">{pupils_lbl}</label>
                         <textarea id="pupils" name="pupils" rows="10" required
                                   placeholder="María García&#10;Pedro López&#10;Ana Martínez"></textarea>
                     </div>
-                    <button type="submit">Create classroom</button>
+                    <button type="submit">{create_btn}</button>
                 </form>
             </div>
-        </div>"##
+        </div>"##,
+        title = t.ci_cls_title,
+        subtitle = t.ci_cls_subtitle,
+        your_classrooms = t.ci_cls_your_classrooms,
+        add_classroom = t.ci_cls_add,
+        label_lbl = t.ci_cls_label,
+        pupils_lbl = t.ci_cls_pupils,
+        placeholder = t.ci_cls_pupils_hint,
+        create_btn = t.ci_cls_create_btn,
     );
 
     Html(render_page(
-        "Classroom — Classrooms",
-        &classroom_nav(base, "classrooms"),
+        &format!("Classroom — {}", t.ci_classrooms),
+        &classroom_nav(base, "classrooms", lang),
         &body,
         base,
+        lang,
     ))
 }
 

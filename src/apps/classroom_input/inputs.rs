@@ -9,6 +9,7 @@ use serde::Deserialize;
 use super::classroom_nav;
 use super::form_types::ColumnDef;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -51,8 +52,10 @@ struct FormTypeRow {
 async fn list(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let inputs: Vec<InputRow> = sqlx::query_as(
         "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
@@ -78,6 +81,9 @@ async fn list(
             .await
             .unwrap_or_default();
 
+    let delete_label = t.ci_inp_delete;
+    let delete_confirm = t.ci_inp_delete_confirm;
+
     let mut rows_html = String::new();
     for inp in &inputs {
         let cls_label = classrooms
@@ -102,8 +108,8 @@ async fn list(
                 <td class="txn-date">{date}</td>
                 <td>
                     <form method="POST" action="{base}/classroom/inputs/{id}/delete" style="display:inline"
-                          onsubmit="return confirm('Delete this input?')">
-                        <button class="btn-icon btn-icon-danger">Delete</button>
+                          onsubmit="return confirm('{delete_confirm}')">
+                        <button class="btn-icon btn-icon-danger">{delete_label}</button>
                     </form>
                 </td>
             </tr>"##,
@@ -113,16 +119,23 @@ async fn list(
     }
 
     let table_or_empty = if rows_html.is_empty() {
-        r#"<div class="empty-state"><p>No inputs yet. Create one to get started.</p></div>"#
-            .to_string()
+        format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.ci_inp_empty
+        )
     } else {
         format!(
             r#"<table>
                 <thead><tr>
-                    <th>Name</th><th>Classroom</th><th>Form Type</th><th>Rows</th><th>Date</th><th></th>
+                    <th>{col_name}</th><th>{col_classroom}</th><th>{col_form_type}</th><th>{col_rows}</th><th>{col_date}</th><th></th>
                 </tr></thead>
                 <tbody>{rows_html}</tbody>
-            </table>"#
+            </table>"#,
+            col_name = t.ci_inp_col_name,
+            col_classroom = t.ci_inp_col_classroom,
+            col_form_type = t.ci_inp_col_form_type,
+            col_rows = t.ci_inp_col_rows,
+            col_date = t.ci_inp_col_date,
         )
     };
 
@@ -130,31 +143,37 @@ async fn list(
         r##"<div class="page-header">
             <div class="page-header-row">
                 <div>
-                    <h1>Inputs</h1>
-                    <p>Classroom data inputs</p>
+                    <h1>{title}</h1>
+                    <p>{subtitle}</p>
                 </div>
-                <a href="{base}/classroom/new" class="btn btn-primary">+ New input</a>
+                <a href="{base}/classroom/new" class="btn btn-primary">{new_btn}</a>
             </div>
         </div>
 
         <div class="card">
             {table_or_empty}
-        </div>"##
+        </div>"##,
+        title = t.ci_inp_title,
+        subtitle = t.ci_inp_subtitle,
+        new_btn = t.ci_inp_new_btn,
     );
 
     Html(render_page(
-        "Classroom — Inputs",
-        &classroom_nav(base, "inputs"),
+        &format!("Classroom — {}", t.ci_inputs),
+        &classroom_nav(base, "inputs", lang),
         &body,
         base,
+        lang,
     ))
 }
 
 async fn new_input_page(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let classrooms: Vec<ClassroomRow> = sqlx::query_as(
         "SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ? ORDER BY label ASC",
@@ -174,22 +193,23 @@ async fn new_input_page(
 
     if classrooms.is_empty() || form_types.is_empty() {
         let msg = if classrooms.is_empty() && form_types.is_empty() {
-            "You need to create at least one <a href=\"{base}/classroom/classrooms\">classroom</a> and one <a href=\"{base}/classroom/form-types\">form type</a> first."
+            t.ci_inp_need_both.to_string()
         } else if classrooms.is_empty() {
-            "You need to create at least one <a href=\"{base}/classroom/classrooms\">classroom</a> first."
+            t.ci_inp_need_classroom.to_string()
         } else {
-            "You need to create at least one <a href=\"{base}/classroom/form-types\">form type</a> first."
+            t.ci_inp_need_form_type.to_string()
         };
-        let msg = msg.replace("{base}", base);
         let body = format!(
-            r#"<div class="page-header"><h1>New Input</h1></div>
-            <div class="card" style="max-width:36rem"><div class="card-body"><p>{msg}</p></div></div>"#
+            r#"<div class="page-header"><h1>{title}</h1></div>
+            <div class="card" style="max-width:36rem"><div class="card-body"><p>{msg}</p></div></div>"#,
+            title = t.ci_inp_new_title,
         );
         return Html(render_page(
-            "Classroom — New Input",
-            &classroom_nav(base, "inputs"),
+            &format!("Classroom — {}", t.ci_inp_new_title),
+            &classroom_nav(base, "inputs", lang),
             &body,
             base,
+            lang,
         ));
     }
 
@@ -224,10 +244,14 @@ async fn new_input_page(
         ft_opts.push_str(&format!(r#"<option value="{}">{}</option>"#, f.id, f.name));
     }
 
+    let pupil_label = t.ci_inp_pupil;
+    let select_hint = t.ci_inp_select_hint;
+    let col_bool = t.ci_ft_col_bool;
+
     let body = format!(
         r##"<div class="page-header">
-            <h1>New Input</h1>
-            <p>Select classroom and form type, then fill in the grid</p>
+            <h1>{new_title}</h1>
+            <p>{new_subtitle}</p>
         </div>
 
         <div class="card" style="max-width:60rem;">
@@ -235,15 +259,15 @@ async fn new_input_page(
                 <form method="POST" action="{base}/classroom/inputs/create" id="input-form">
                     <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
                         <div class="form-group">
-                            <label for="classroom_id">Classroom</label>
+                            <label for="classroom_id">{classroom_lbl}</label>
                             <select id="classroom_id" name="classroom_id" required>{cls_opts}</select>
                         </div>
                         <div class="form-group">
-                            <label for="form_type_id">Form Type</label>
+                            <label for="form_type_id">{form_type_lbl}</label>
                             <select id="form_type_id" name="form_type_id" required>{ft_opts}</select>
                         </div>
                         <div class="form-group" style="flex:1">
-                            <label for="input_name">Input Name</label>
+                            <label for="input_name">{name_lbl}</label>
                             <input type="text" id="input_name" name="name" required placeholder="e.g. Week 12 quiz">
                         </div>
                     </div>
@@ -251,7 +275,7 @@ async fn new_input_page(
                     <div id="grid-container" class="ci-grid-container mt-2"></div>
 
                     <input type="hidden" name="csv_data" id="csv_data">
-                    <button type="submit" class="btn btn-primary mt-2" id="submit-btn">Save input</button>
+                    <button type="submit" class="btn btn-primary mt-2" id="submit-btn">{save_btn}</button>
                 </form>
             </div>
         </div>
@@ -260,6 +284,9 @@ async fn new_input_page(
         (function() {{
             var classrooms = {cls_json};
             var formTypes = {ft_json};
+            var lblPupil = '{pupil_label}';
+            var lblSelectHint = '{select_hint}';
+            var lblBool = '{col_bool}';
 
             var clsSel = document.getElementById('classroom_id');
             var ftSel = document.getElementById('form_type_id');
@@ -273,14 +300,14 @@ async fn new_input_page(
                 var cls = classrooms.find(function(c) {{ return c.id === clsId; }});
                 var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
                 if (!cls || !ft || ft.columns.length === 0) {{
-                    gridContainer.innerHTML = '<p class="text-secondary">Select a classroom and form type with columns.</p>';
+                    gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
                     return;
                 }}
 
                 var pupils = cls.pupils;
                 var cols = ft.columns;
 
-                var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">Pupil</th>';
+                var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">' + lblPupil + '</th>';
                 for (var i = 0; i < cols.length; i++) {{
                     html += '<th>' + cols[i].name + '</th>';
                 }}
@@ -291,8 +318,11 @@ async fn new_input_page(
                     for (var c = 0; c < cols.length; c++) {{
                         var colType = cols[c].type || cols[c].col_type || 'text';
                         if (colType === 'bool') {{
+                            var parts = lblBool.split(' / ');
+                            var yes = parts[0] || 'Yes';
+                            var no = parts[1] || 'No';
                             html += '<td class="ci-col-bool"><select data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-select">'
-                                + '<option value=""></option><option value="Yes">Yes</option><option value="No">No</option></select></td>';
+                                + '<option value=""></option><option value="' + yes + '">' + yes + '</option><option value="' + no + '">' + no + '</option></select></td>';
                         }} else if (colType === 'number') {{
                             html += '<td class="ci-col-number"><input type="number" step="any" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input" inputmode="decimal"></td>';
                         }} else {{
@@ -370,7 +400,7 @@ async fn new_input_page(
                 var cols = ft.columns;
 
                 var lines = [];
-                var header = ['Pupil'];
+                var header = [lblPupil];
                 for (var i = 0; i < cols.length; i++) header.push(csvEscape(cols[i].name));
                 lines.push(header.join(','));
 
@@ -394,14 +424,21 @@ async fn new_input_page(
                 return val;
             }}
         }})();
-        </script>"##
+        </script>"##,
+        new_title = t.ci_inp_new_title,
+        new_subtitle = t.ci_inp_new_subtitle,
+        classroom_lbl = t.ci_inp_classroom,
+        form_type_lbl = t.ci_inp_form_type,
+        name_lbl = t.ci_inp_name,
+        save_btn = t.ci_inp_save,
     );
 
     Html(render_page(
-        "Classroom — New Input",
-        &classroom_nav(base, "inputs"),
+        &format!("Classroom — {}", t.ci_inp_new_title),
+        &classroom_nav(base, "inputs", lang),
         &body,
         base,
+        lang,
     ))
 }
 
@@ -436,9 +473,11 @@ async fn create(
 async fn view(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let inp: Option<InputRow> = sqlx::query_as(
         "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
@@ -453,9 +492,13 @@ async fn view(
     let Some(inp) = inp else {
         return Html(render_page(
             "Classroom — Not Found",
-            &classroom_nav(base, "inputs"),
-            r#"<div class="empty-state"><p>Input not found.</p></div>"#,
+            &classroom_nav(base, "inputs", lang),
+            &format!(
+                r#"<div class="empty-state"><p>{}</p></div>"#,
+                t.ci_inp_not_found
+            ),
             base,
+            lang,
         ));
     };
 
@@ -511,18 +554,20 @@ async fn view(
         </div>
 
         <div class="mt-2">
-            <a href="{base}/classroom" class="btn btn-secondary">Back to inputs</a>
+            <a href="{base}/classroom" class="btn btn-secondary">{back}</a>
         </div>"##,
         name = inp.name,
         cls_label = cls_label.as_deref().unwrap_or("?"),
         ft_name = ft_name.as_deref().unwrap_or("?"),
+        back = t.ci_inp_back,
     );
 
     Html(render_page(
         &format!("Classroom — {}", inp.name),
-        &classroom_nav(base, "inputs"),
+        &classroom_nav(base, "inputs", lang),
         &body,
         base,
+        lang,
     ))
 }
 

@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -36,8 +37,10 @@ struct CategoryRow {
 async fn list(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let categories: Vec<CategoryRow> = sqlx::query_as(
         r#"SELECT c.id, c.name, c.color, c.icon, c.parent_id, c.archived,
@@ -61,23 +64,28 @@ async fn list(
             ""
         };
         let archived_badge = if c.archived != 0 {
-            r#"<span class="badge badge-muted">Archived</span>"#
+            format!(
+                r#"<span class="badge badge-muted">{}</span>"#,
+                t.mf_thought_archived_badge
+            )
         } else {
-            ""
+            String::new()
         };
 
         let archive_btn = if c.archived != 0 {
             format!(
                 r#"<form method="POST" action="{base}/mindflow/categories/{id}/unarchive" style="display:inline">
-                    <button class="btn-icon">Unarchive</button>
+                    <button class="btn-icon">{}</button>
                 </form>"#,
+                t.mf_cat_unarchive,
                 id = c.id,
             )
         } else {
             format!(
                 r#"<form method="POST" action="{base}/mindflow/categories/{id}/archive" style="display:inline">
-                    <button class="btn-icon">Archive</button>
+                    <button class="btn-icon">{}</button>
                 </form>"#,
+                t.mf_cat_archive,
                 id = c.id,
             )
         };
@@ -85,10 +93,12 @@ async fn list(
         let delete_btn = if c.thought_count == 0 {
             format!(
                 r#"<form method="POST" action="{base}/mindflow/categories/{id}/delete" style="display:inline"
-                     onsubmit="return confirm('Delete this category?')">
-                    <button class="btn-icon btn-icon-danger">Delete</button>
+                     onsubmit="return confirm('{delete_confirm}')">
+                    <button class="btn-icon btn-icon-danger">{delete}</button>
                 </form>"#,
                 id = c.id,
+                delete_confirm = t.mf_cat_delete_confirm,
+                delete = t.mf_cat_delete,
             )
         } else {
             String::new()
@@ -98,76 +108,93 @@ async fn list(
             r##"<div class="label-item{archived_class}" id="category-{id}">
                 <div class="label-item-info">
                     <span class="label-badge" style="--label-color:{color}">{icon} {name}</span>
-                    <span class="text-secondary text-sm">{count} thoughts</span>
+                    <span class="text-secondary text-sm">{count} {thoughts}</span>
                     {archived_badge}
                 </div>
                 <div class="label-item-actions">
                     <button class="btn-icon"
-                            onclick="this.closest('.label-item').querySelector('.label-edit-form').toggleAttribute('hidden')">Edit</button>
+                            onclick="this.closest('.label-item').querySelector('.label-edit-form').toggleAttribute('hidden')">{edit}</button>
                     {archive_btn}
                     {delete_btn}
                 </div>
                 <form method="POST" action="{base}/mindflow/categories/{id}/edit" class="label-edit-form" hidden>
                     <input type="text" name="name" value="{name}" required>
                     <input type="color" name="color" value="{color}">
-                    <input type="text" name="icon" value="{icon}" placeholder="Icon" style="width:4rem">
-                    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                    <input type="text" name="icon" value="{icon}" placeholder="{icon_placeholder}" style="width:4rem">
+                    <button type="submit" class="btn btn-primary btn-sm">{save}</button>
                 </form>
             </div>"##,
             id = c.id,
             name = c.name,
             color = c.color,
             count = c.thought_count,
+            thoughts = t.mf_cat_thoughts,
+            edit = t.mf_cat_edit,
+            icon_placeholder = t.mf_cat_icon_placeholder,
+            save = t.mf_cat_save,
         ));
     }
 
     if items.is_empty() {
-        items =
-            r#"<div class="empty-state"><p>No categories yet. Create one below.</p></div>"#.into();
+        items = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.mf_cat_no_categories
+        );
     }
+
+    let cat_title = t.mf_cat_title;
+    let cat_subtitle = t.mf_cat_subtitle;
+    let your_categories = t.mf_cat_your_categories;
+    let create_category = t.mf_cat_create;
+    let cat_name = t.mf_cat_name;
+    let cat_color = t.mf_cat_color;
+    let cat_icon = t.mf_cat_icon;
+    let cat_icon_placeholder = t.mf_cat_icon_placeholder;
+    let cat_create_btn = t.mf_cat_create_btn;
 
     let body = format!(
         r##"<div class="page-header">
-            <h1>Categories</h1>
-            <p>Organize your thoughts into topics</p>
+            <h1>{cat_title}</h1>
+            <p>{cat_subtitle}</p>
         </div>
 
         <div class="card" style="max-width:36rem;">
-            <div class="card-header"><h2>Your categories</h2></div>
+            <div class="card-header"><h2>{your_categories}</h2></div>
             <div class="card-body">
                 <div class="label-list">{items}</div>
             </div>
         </div>
 
         <div class="card mt-2" style="max-width:36rem;">
-            <div class="card-header"><h2>Create category</h2></div>
+            <div class="card-header"><h2>{create_category}</h2></div>
             <div class="card-body">
                 <form method="POST" action="{base}/mindflow/categories/create" class="label-create-form">
                     <div class="form-row">
                         <div class="form-group" style="flex:1">
-                            <label for="name">Name</label>
+                            <label for="name">{cat_name}</label>
                             <input type="text" id="name" name="name" required placeholder="e.g. Work">
                         </div>
                         <div class="form-group">
-                            <label for="color">Color</label>
+                            <label for="color">{cat_color}</label>
                             <input type="color" id="color" name="color" value="#4CAF50">
                         </div>
                         <div class="form-group">
-                            <label for="icon">Icon</label>
-                            <input type="text" id="icon" name="icon" placeholder="optional" style="width:4rem">
+                            <label for="icon">{cat_icon}</label>
+                            <input type="text" id="icon" name="icon" placeholder="{cat_icon_placeholder}" style="width:4rem">
                         </div>
                     </div>
-                    <button type="submit">Create category</button>
+                    <button type="submit">{cat_create_btn}</button>
                 </form>
             </div>
         </div>"##
     );
 
     Html(render_page(
-        "MindFlow — Categories",
-        &mindflow_nav(base, "categories"),
+        &format!("MindFlow \u{2014} {}", t.mf_categories),
+        &mindflow_nav(base, "categories", lang),
         &body,
         base,
+        lang,
     ))
 }
 

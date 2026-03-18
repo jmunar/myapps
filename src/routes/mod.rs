@@ -1,6 +1,7 @@
 mod auth;
 mod launcher;
 mod pwa;
+mod settings;
 
 use crate::config::Config;
 use axum::{Router, middleware};
@@ -27,7 +28,8 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
     // Routes that require authentication
     let mut protected = Router::new()
         .merge(launcher::routes())
-        .merge(pwa::push_routes());
+        .merge(pwa::push_routes())
+        .merge(settings::routes());
 
     if state.config.is_app_deployed("leanfin") {
         protected = protected.nest("/leanfin", crate::apps::leanfin::router());

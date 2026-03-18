@@ -7,6 +7,7 @@ use axum::{
 
 use super::mindflow_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -33,8 +34,10 @@ struct ActionRow {
 async fn list(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let actions: Vec<ActionRow> = sqlx::query_as(
         r#"SELECT a.id, a.title, a.due_date, a.priority, a.status,
@@ -98,7 +101,7 @@ async fn list(
                 <span class="badge {priority_class}">{priority}</span>
                 {due_display}
                 <form method="POST" action="{base}/mindflow/actions/{id}/delete" style="display:inline"
-                      onsubmit="return confirm('Delete this action?')">
+                      onsubmit="return confirm('{delete_confirm}')">
                     <button class="btn-icon btn-icon-danger">&times;</button>
                 </form>
             </div>"##,
@@ -106,19 +109,25 @@ async fn list(
             title = a.title,
             priority = a.priority,
             thought_id = a.thought_id,
+            delete_confirm = t.mf_act_delete_confirm,
         ));
     }
 
     if rows.is_empty() {
-        rows = r#"<div class="empty-state"><p>No actions yet. Create actions from your thoughts.</p></div>"#.into();
+        rows = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.mf_act_no_actions
+        );
     }
 
     let pending = actions.iter().filter(|a| a.status == "pending").count();
     let done = actions.iter().filter(|a| a.status == "done").count();
 
+    let act_title = t.mf_act_title;
+
     let body = format!(
         r#"<div class="page-header">
-            <h1>Actions</h1>
+            <h1>{act_title}</h1>
             <p>{pending} pending, {done} done</p>
         </div>
         <div class="card">
@@ -129,10 +138,11 @@ async fn list(
     );
 
     Html(render_page(
-        "MindFlow — Actions",
-        &mindflow_nav(base, "actions"),
+        &format!("MindFlow \u{2014} {}", t.mf_actions),
+        &mindflow_nav(base, "actions", lang),
         &body,
         base,
+        lang,
     ))
 }
 

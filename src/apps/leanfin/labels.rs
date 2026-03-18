@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use super::dashboard::leanfin_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -39,8 +40,10 @@ struct LabelRow {
 async fn list_labels(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let labels: Vec<LabelRow> = sqlx::query_as(
         r#"SELECT l.id, l.name, l.color,
@@ -54,6 +57,12 @@ async fn list_labels(
     .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
+
+    let lbl_rules = t.lf_lbl_rules;
+    let lbl_edit = t.lf_lbl_edit;
+    let lbl_delete = t.lf_lbl_delete;
+    let lbl_delete_confirm = t.lf_lbl_delete_confirm;
+    let lbl_save = t.lf_lbl_save;
 
     let mut items = String::new();
     for l in &labels {
@@ -72,16 +81,16 @@ async fn list_labels(
                 r##"<span class="text-secondary text-sm">{rule_count}r / {txn_count}t</span>"##,
                 r##"</div>"##,
                 r##"<div class="label-item-actions">"##,
-                r##"<button class="btn-icon" hx-get="{rules_url}" hx-target="#rules-{id}" hx-swap="innerHTML">Rules</button>"##,
-                r##"<button class="btn-icon" onclick="this.closest('.label-item').querySelector('.label-edit-form').toggleAttribute('hidden')">Edit</button>"##,
-                r##"<form method="POST" action="{delete_url}" style="display:inline" onsubmit="return confirm('Delete this label?')">"##,
-                r##"<button class="btn-icon btn-icon-danger">Delete</button>"##,
+                r##"<button class="btn-icon" hx-get="{rules_url}" hx-target="#rules-{id}" hx-swap="innerHTML">{lbl_rules}</button>"##,
+                r##"<button class="btn-icon" onclick="this.closest('.label-item').querySelector('.label-edit-form').toggleAttribute('hidden')">{lbl_edit}</button>"##,
+                r##"<form method="POST" action="{delete_url}" style="display:inline" onsubmit="return confirm('{lbl_delete_confirm}')">"##,
+                r##"<button class="btn-icon btn-icon-danger">{lbl_delete}</button>"##,
                 r##"</form>"##,
                 r##"</div>"##,
                 r##"<form method="POST" action="{edit_url}" class="label-edit-form" hidden>"##,
                 r##"<input type="text" name="name" value="{name}" required>"##,
                 r##"<input type="color" name="color" value="{color}">"##,
-                r##"<button type="submit" class="btn btn-primary btn-sm">Save</button>"##,
+                r##"<button type="submit" class="btn btn-primary btn-sm">{lbl_save}</button>"##,
                 r##"</form>"##,
                 r##"<div id="rules-{id}" class="rules-panel-container"></div>"##,
                 r##"</div>"##,
@@ -94,23 +103,31 @@ async fn list_labels(
             rules_url = rules_url,
             delete_url = delete_url,
             edit_url = edit_url,
+            lbl_rules = lbl_rules,
+            lbl_edit = lbl_edit,
+            lbl_delete = lbl_delete,
+            lbl_delete_confirm = lbl_delete_confirm,
+            lbl_save = lbl_save,
         ));
     }
 
     if items.is_empty() {
-        items = r#"<div class="empty-state"><p>No labels yet. Create one below.</p></div>"#.into();
+        items = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.lf_lbl_no_labels
+        );
     }
 
     let default_color = "#4CAF50";
     let body = format!(
         r#"<div class="page-header">
-            <h1>Labels</h1>
-            <p>Organize your transactions with labels</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
 
         <div class="card" style="max-width:36rem;">
             <div class="card-header">
-                <h2>Your labels</h2>
+                <h2>{your_labels}</h2>
             </div>
             <div class="card-body">
                 <div class="label-list">{items}</div>
@@ -119,31 +136,39 @@ async fn list_labels(
 
         <div class="card mt-2" style="max-width:36rem;">
             <div class="card-header">
-                <h2>Create label</h2>
+                <h2>{create}</h2>
             </div>
             <div class="card-body">
                 <form method="POST" action="{base}/leanfin/labels/create" class="label-create-form">
                     <div class="form-row">
                         <div class="form-group" style="flex:1">
-                            <label for="name">Name</label>
+                            <label for="name">{lbl_name}</label>
                             <input type="text" id="name" name="name" required placeholder="e.g. Groceries">
                         </div>
                         <div class="form-group">
-                            <label for="color">Color</label>
+                            <label for="color">{lbl_color}</label>
                             <input type="color" id="color" name="color" value="{default_color}">
                         </div>
                     </div>
-                    <button type="submit">Create label</button>
+                    <button type="submit">{create_btn}</button>
                 </form>
             </div>
-        </div>"#
+        </div>"#,
+        title = t.lf_lbl_title,
+        subtitle = t.lf_lbl_subtitle,
+        your_labels = t.lf_lbl_your_labels,
+        create = t.lf_lbl_create,
+        lbl_name = t.lf_lbl_name,
+        lbl_color = t.lf_lbl_color,
+        create_btn = t.lf_lbl_create_btn,
     );
 
     Html(render_page(
-        "LeanFin — Labels",
-        &leanfin_nav(base, "labels"),
+        &format!("LeanFin — {}", t.lf_labels),
+        &leanfin_nav(base, "labels", lang),
         &body,
         base,
+        lang,
     ))
 }
 
@@ -227,7 +252,12 @@ struct RuleRow {
     priority: i64,
 }
 
-fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow]) -> String {
+fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) -> String {
+    let t = i18n::t(lang);
+
+    let lbl_delete = t.lf_lbl_delete;
+    let lbl_delete_rule_confirm = t.lf_lbl_delete_rule_confirm;
+
     let mut rows = String::new();
     for r in rules {
         let delete_url = format!("{base}/leanfin/labels/{label_id}/rules/{}/delete", r.id);
@@ -235,15 +265,15 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow]) -> String {
             concat!(
                 r##"<div class="rule-row">"##,
                 r##"<span class="rule-field">{field}</span>"##,
-                r##"<span class="rule-pattern">contains &ldquo;<strong>{pattern}</strong>&rdquo;</span>"##,
+                r##"<span class="rule-pattern">{contains} &ldquo;<strong>{pattern}</strong>&rdquo;</span>"##,
                 r##"<span class="rule-priority text-secondary text-sm">p{priority}</span>"##,
                 r##"<form method="POST" action="{delete_url}" "##,
                 r##"hx-post="{delete_url}" "##,
                 r##"hx-target="#rules-{label_id}" "##,
                 r##"hx-swap="innerHTML" "##,
-                r##"hx-confirm="Delete this rule?" "##,
+                r##"hx-confirm="{lbl_delete_rule_confirm}" "##,
                 r##"style="display:inline">"##,
-                r##"<button class="btn-icon btn-icon-danger btn-sm">Delete</button>"##,
+                r##"<button class="btn-icon btn-icon-danger btn-sm">{lbl_delete}</button>"##,
                 r##"</form>"##,
                 r##"</div>"##,
             ),
@@ -252,12 +282,17 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow]) -> String {
             priority = r.priority,
             delete_url = delete_url,
             label_id = label_id,
+            contains = t.lf_lbl_contains,
+            lbl_delete_rule_confirm = lbl_delete_rule_confirm,
+            lbl_delete = lbl_delete,
         ));
     }
 
     if rows.is_empty() {
-        rows = r##"<p class="text-secondary text-sm" style="padding:0.25rem 0">No rules yet.</p>"##
-            .into();
+        rows = format!(
+            r##"<p class="text-secondary text-sm" style="padding:0.25rem 0">{}</p>"##,
+            t.lf_lbl_no_rules
+        );
     }
 
     let create_url = format!("{base}/leanfin/labels/{label_id}/rules/create");
@@ -265,7 +300,7 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow]) -> String {
         concat!(
             r##"<div class="rules-panel">"##,
             r##"<div class="rules-panel-header">"##,
-            r##"<span class="text-sm" style="font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-secondary)">Auto-labeling rules</span>"##,
+            r##"<span class="text-sm" style="font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-secondary)">{auto_rules}</span>"##,
             r##"</div>"##,
             r##"<div class="rules-list">{rows}</div>"##,
             r##"<form class="rule-add-form" method="POST" action="{create_url}" "##,
@@ -273,24 +308,31 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow]) -> String {
             r##"hx-target="#rules-{label_id}" "##,
             r##"hx-swap="innerHTML">"##,
             r##"<select name="field" required>"##,
-            r##"<option value="counterparty">Counterparty</option>"##,
-            r##"<option value="description">Description</option>"##,
+            r##"<option value="counterparty">{counterparty}</option>"##,
+            r##"<option value="description">{description}</option>"##,
             r##"</select>"##,
-            r##"<input type="text" name="pattern" placeholder="contains..." required style="flex:1">"##,
-            r##"<input type="number" name="priority" value="0" title="Priority (higher wins)" style="width:3.5rem;text-align:center">"##,
-            r##"<button type="submit" class="btn btn-primary btn-sm">Add rule</button>"##,
+            r##"<input type="text" name="pattern" placeholder="{contains}..." required style="flex:1">"##,
+            r##"<input type="number" name="priority" value="0" title="{priority}" style="width:3.5rem;text-align:center">"##,
+            r##"<button type="submit" class="btn btn-primary btn-sm">{add_rule}</button>"##,
             r##"</form>"##,
             r##"</div>"##,
         ),
         rows = rows,
         create_url = create_url,
         label_id = label_id,
+        auto_rules = t.lf_lbl_auto_rules,
+        counterparty = t.lf_lbl_counterparty,
+        description = t.lf_lbl_description,
+        contains = t.lf_lbl_contains,
+        priority = t.lf_lbl_priority,
+        add_rule = t.lf_lbl_add_rule,
     )
 }
 
 async fn list_rules(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(label_id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
@@ -316,7 +358,7 @@ async fn list_rules(
     .await
     .unwrap_or_default();
 
-    Html(render_rules_panel(base, label_id, &rules))
+    Html(render_rules_panel(base, label_id, &rules, lang))
 }
 
 // ── Create rule ─────────────────────────────────────────────
@@ -331,6 +373,7 @@ struct CreateRuleForm {
 async fn create_rule(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(label_id): Path<i64>,
     Form(form): Form<CreateRuleForm>,
 ) -> Html<String> {
@@ -376,7 +419,7 @@ async fn create_rule(
     .await
     .unwrap_or_default();
 
-    Html(render_rules_panel(base, label_id, &rules))
+    Html(render_rules_panel(base, label_id, &rules, lang))
 }
 
 // ── Delete rule ─────────────────────────────────────────────
@@ -384,6 +427,7 @@ async fn create_rule(
 async fn delete_rule(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path((label_id, rule_id)): Path<(i64, i64)>,
 ) -> Html<String> {
     let base = &state.config.base_path;
@@ -407,5 +451,5 @@ async fn delete_rule(
     .await
     .unwrap_or_default();
 
-    Html(render_rules_panel(base, label_id, &rules))
+    Html(render_rules_panel(base, label_id, &rules, lang))
 }

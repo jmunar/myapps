@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::classroom_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -39,16 +40,17 @@ fn parse_columns(json: &str) -> Vec<ColumnDef> {
     serde_json::from_str(json).unwrap_or_default()
 }
 
-fn render_column_list(cols: &[ColumnDef]) -> String {
+fn render_column_list(cols: &[ColumnDef], lang: Lang) -> String {
+    let t = i18n::t(lang);
     if cols.is_empty() {
-        return String::from("<em>No columns</em>");
+        return format!("<em>{}</em>", t.ci_ft_no_columns);
     }
     let mut out = String::new();
     for c in cols {
         let type_label = match c.col_type.as_str() {
-            "number" => "Number",
-            "bool" => "Yes/No",
-            _ => "Text",
+            "number" => t.ci_ft_col_number,
+            "bool" => t.ci_ft_col_bool,
+            _ => t.ci_ft_col_text,
         };
         out.push_str(&format!(
             r#"<span class="label-badge" style="--label-color:#3182CE">{name} <small>({type_label})</small></span> "#,
@@ -61,8 +63,10 @@ fn render_column_list(cols: &[ColumnDef]) -> String {
 async fn list(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
         "SELECT id, name, columns_json FROM classroom_form_types WHERE user_id = ? ORDER BY name ASC",
@@ -72,10 +76,14 @@ async fn list(
     .await
     .unwrap_or_default();
 
+    let edit_label = t.ci_ft_edit;
+    let delete_label = t.ci_inp_delete;
+    let delete_confirm = t.ci_ft_delete_confirm;
+
     let mut items = String::new();
     for ft in &form_types {
         let cols = parse_columns(&ft.columns_json);
-        let col_html = render_column_list(&cols);
+        let col_html = render_column_list(&cols, lang);
 
         items.push_str(&format!(
             r##"<div class="label-item" id="formtype-{id}">
@@ -84,10 +92,10 @@ async fn list(
                     <div>{col_html}</div>
                 </div>
                 <div class="label-item-actions">
-                    <a href="{base}/classroom/form-types/{id}/edit" class="btn-icon">Edit</a>
+                    <a href="{base}/classroom/form-types/{id}/edit" class="btn-icon">{edit_label}</a>
                     <form method="POST" action="{base}/classroom/form-types/{id}/delete" style="display:inline"
-                          onsubmit="return confirm('Delete this form type?')">
-                        <button class="btn-icon btn-icon-danger">Delete</button>
+                          onsubmit="return confirm('{delete_confirm}')">
+                        <button class="btn-icon btn-icon-danger">{delete_label}</button>
                     </form>
                 </div>
             </div>"##,
@@ -97,48 +105,50 @@ async fn list(
     }
 
     if items.is_empty() {
-        items =
-            r#"<div class="empty-state"><p>No form types yet. Create one below.</p></div>"#.into();
+        items = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.ci_ft_no_types
+        );
     }
 
     let body = format!(
         r##"<div class="page-header">
-            <h1>Form Types</h1>
-            <p>Define column layouts for your input forms</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
 
         <div class="card" style="max-width:40rem;">
-            <div class="card-header"><h2>Your form types</h2></div>
+            <div class="card-header"><h2>{your_types}</h2></div>
             <div class="card-body">
                 <div class="label-list">{items}</div>
             </div>
         </div>
 
         <div class="card mt-2" style="max-width:40rem;">
-            <div class="card-header"><h2>Create form type</h2></div>
+            <div class="card-header"><h2>{create_heading}</h2></div>
             <div class="card-body">
                 <form method="POST" action="{base}/classroom/form-types/create">
                     <div class="form-group">
-                        <label for="name">Name</label>
+                        <label for="name">{name_lbl}</label>
                         <input type="text" id="name" name="name" required placeholder="e.g. Weekly quiz">
                     </div>
                     <div class="form-group">
-                        <label>Columns</label>
+                        <label>{columns_lbl}</label>
                         <div id="columns-editor" class="ci-columns-editor">
                             <div class="ci-column-row">
-                                <input type="text" name="col_name[]" placeholder="Column name" required>
+                                <input type="text" name="col_name[]" placeholder="{col_name_ph}" required>
                                 <select name="col_type[]">
-                                    <option value="text">Text</option>
-                                    <option value="number">Number</option>
-                                    <option value="bool">Yes / No</option>
+                                    <option value="text">{col_text}</option>
+                                    <option value="number">{col_number}</option>
+                                    <option value="bool">{col_bool}</option>
                                 </select>
                                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
                             </div>
                         </div>
                         <button type="button" class="btn btn-secondary btn-sm mt-1"
-                                onclick="addColumnRow(document.getElementById('columns-editor'))">+ Add column</button>
+                                onclick="addColumnRow(document.getElementById('columns-editor'))">{add_column}</button>
                     </div>
-                    <button type="submit" class="mt-1">Create form type</button>
+                    <button type="submit" class="mt-1">{create_btn}</button>
                 </form>
             </div>
         </div>
@@ -147,19 +157,32 @@ async fn list(
         function addColumnRow(container) {{
             var row = document.createElement('div');
             row.className = 'ci-column-row';
-            row.innerHTML = '<input type="text" name="col_name[]" placeholder="Column name" required>'
-                + '<select name="col_type[]"><option value="text">Text</option><option value="number">Number</option><option value="bool">Yes / No</option></select>'
+            row.innerHTML = '<input type="text" name="col_name[]" placeholder="{col_name_ph}" required>'
+                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
         }}
-        </script>"##
+        </script>"##,
+        title = t.ci_ft_title,
+        subtitle = t.ci_ft_subtitle,
+        your_types = t.ci_ft_your_types,
+        create_heading = t.ci_ft_create,
+        name_lbl = t.ci_ft_name,
+        columns_lbl = t.ci_ft_columns,
+        col_name_ph = t.ci_ft_col_name,
+        col_text = t.ci_ft_col_text,
+        col_number = t.ci_ft_col_number,
+        col_bool = t.ci_ft_col_bool,
+        add_column = t.ci_ft_add_column,
+        create_btn = t.ci_ft_create_btn,
     );
 
     Html(render_page(
-        "Classroom — Form Types",
-        &classroom_nav(base, "form_types"),
+        &format!("Classroom — {}", t.ci_form_types),
+        &classroom_nav(base, "form_types", lang),
         &body,
         base,
+        lang,
     ))
 }
 
@@ -203,9 +226,11 @@ async fn create(
 async fn edit_page(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let ft: Option<FormTypeRow> = sqlx::query_as(
         "SELECT id, name, columns_json FROM classroom_form_types WHERE id = ? AND user_id = ?",
@@ -219,13 +244,22 @@ async fn edit_page(
     let Some(ft) = ft else {
         return Html(render_page(
             "Classroom — Not Found",
-            &classroom_nav(base, "form_types"),
-            r#"<div class="empty-state"><p>Form type not found.</p></div>"#,
+            &classroom_nav(base, "form_types", lang),
+            &format!(
+                r#"<div class="empty-state"><p>{}</p></div>"#,
+                t.ci_ft_not_found
+            ),
             base,
+            lang,
         ));
     };
 
     let cols = parse_columns(&ft.columns_json);
+    let col_text = t.ci_ft_col_text;
+    let col_number = t.ci_ft_col_number;
+    let col_bool = t.ci_ft_col_bool;
+    let col_name_ph = t.ci_ft_col_name;
+
     let mut col_rows = String::new();
     for c in &cols {
         let sel_text = if c.col_type == "text" {
@@ -247,9 +281,9 @@ async fn edit_page(
             r#"<div class="ci-column-row">
                 <input type="text" name="col_name[]" value="{name}" required>
                 <select name="col_type[]">
-                    <option value="text"{sel_text}>Text</option>
-                    <option value="number"{sel_num}>Number</option>
-                    <option value="bool"{sel_bool}>Yes / No</option>
+                    <option value="text"{sel_text}>{col_text}</option>
+                    <option value="number"{sel_num}>{col_number}</option>
+                    <option value="bool"{sel_bool}>{col_bool}</option>
                 </select>
                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
             </div>"#,
@@ -258,37 +292,38 @@ async fn edit_page(
     }
 
     if col_rows.is_empty() {
-        col_rows = r#"<div class="ci-column-row">
-            <input type="text" name="col_name[]" placeholder="Column name" required>
-            <select name="col_type[]"><option value="text">Text</option><option value="number">Number</option><option value="bool">Yes / No</option></select>
+        col_rows = format!(
+            r#"<div class="ci-column-row">
+            <input type="text" name="col_name[]" placeholder="{col_name_ph}" required>
+            <select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>
             <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
         </div>"#
-            .into();
+        );
     }
 
     let body = format!(
         r##"<div class="page-header">
-            <h1>Edit Form Type</h1>
+            <h1>{edit_title}</h1>
         </div>
 
         <div class="card" style="max-width:40rem;">
             <div class="card-body">
                 <form method="POST" action="{base}/classroom/form-types/{id}/edit">
                     <div class="form-group">
-                        <label for="name">Name</label>
+                        <label for="name">{name_lbl}</label>
                         <input type="text" id="name" name="name" value="{name}" required>
                     </div>
                     <div class="form-group">
-                        <label>Columns</label>
+                        <label>{columns_lbl}</label>
                         <div id="columns-editor" class="ci-columns-editor">
                             {col_rows}
                         </div>
                         <button type="button" class="btn btn-secondary btn-sm mt-1"
-                                onclick="addColumnRow(document.getElementById('columns-editor'))">+ Add column</button>
+                                onclick="addColumnRow(document.getElementById('columns-editor'))">{add_column}</button>
                     </div>
                     <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
-                        <button type="submit" class="btn btn-primary">Save changes</button>
-                        <a href="{base}/classroom/form-types" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">{save_btn}</button>
+                        <a href="{base}/classroom/form-types" class="btn btn-secondary">{cancel_btn}</a>
                     </div>
                 </form>
             </div>
@@ -298,21 +333,28 @@ async fn edit_page(
         function addColumnRow(container) {{
             var row = document.createElement('div');
             row.className = 'ci-column-row';
-            row.innerHTML = '<input type="text" name="col_name[]" placeholder="Column name" required>'
-                + '<select name="col_type[]"><option value="text">Text</option><option value="number">Number</option><option value="bool">Yes / No</option></select>'
+            row.innerHTML = '<input type="text" name="col_name[]" placeholder="{col_name_ph}" required>'
+                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
         }}
         </script>"##,
         id = ft.id,
         name = ft.name,
+        edit_title = t.ci_ft_edit_title,
+        name_lbl = t.ci_ft_name,
+        columns_lbl = t.ci_ft_columns,
+        add_column = t.ci_ft_add_column,
+        save_btn = t.ci_ft_save,
+        cancel_btn = t.ci_ft_cancel,
     );
 
     Html(render_page(
-        "Classroom — Edit Form Type",
-        &classroom_nav(base, "form_types"),
+        &format!("Classroom — {}", t.ci_ft_edit_title),
+        &classroom_nav(base, "form_types", lang),
         &body,
         base,
+        lang,
     ))
 }
 

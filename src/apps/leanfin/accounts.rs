@@ -12,6 +12,7 @@ use super::services::enable_banking;
 use super::settings;
 use super::sync_handler::sync_button;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -53,15 +54,20 @@ struct ListAccountsParams {
 async fn list_accounts(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Query(params): Query<ListAccountsParams>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
     let show_archived = params.show_archived.is_some();
 
     let error_banner = if params.archive_error.is_some() {
-        r#"<div class="alert alert-error">Cannot archive: this account has unallocated transactions. Allocate all transactions first.</div>"#
+        format!(
+            r#"<div class="alert alert-error">{}</div>"#,
+            t.lf_acc_archive_error
+        )
     } else {
-        ""
+        String::new()
     };
 
     let accounts: Vec<AccountRow> = sqlx::query_as(
@@ -97,21 +103,26 @@ async fn list_accounts(
             bank_items.push_str(&format!(
                 r#"<div class="account-item account-archived">
                     <div>
-                        <div class="account-bank">{bank} <span class="archived-badge">Archived</span></div>
+                        <div class="account-bank">{bank} <span class="archived-badge">{archived}</span></div>
                         <div class="account-iban">{iban}</div>
                         {balance_html}
                     </div>
                     <div class="account-actions">
                         <form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
-                            <button type="submit" class="btn-icon">Unarchive</button>
+                            <button type="submit" class="btn-icon">{unarchive}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
-                              onsubmit="return confirm('Delete this account and all its transactions?')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                              onsubmit="return confirm('{delete_confirm_bank}')" style="display:inline">
+                            <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
                         </form>
                     </div>
                 </div>"#,
-                bank = a.bank_name, id = a.id
+                bank = a.bank_name,
+                id = a.id,
+                archived = t.lf_acc_archived,
+                unarchive = t.lf_acc_unarchive,
+                delete = t.lf_acc_delete,
+                delete_confirm_bank = t.lf_acc_delete_confirm_bank,
             ));
         } else {
             let is_expired = session_expires_at < today;
@@ -122,14 +133,19 @@ async fn list_accounts(
             } else {
                 "expiry-ok"
             };
-            let expiry_label = if is_expired { "Expired" } else { "Active" };
+            let expiry_label = if is_expired {
+                t.lf_acc_expired
+            } else {
+                t.lf_acc_active
+            };
 
             let reauth_btn = if is_expired || session_expires_at < warn_threshold {
                 format!(
                     r#"<form method="POST" action="{base}/leanfin/accounts/{}/reauth" style="display:inline">
-                        <button type="submit" class="btn-icon">Re-authorize</button>
+                        <button type="submit" class="btn-icon">{reauthorize}</button>
                     </form>"#,
-                    a.id
+                    a.id,
+                    reauthorize = t.lf_acc_reauthorize,
                 )
             } else {
                 String::new()
@@ -146,21 +162,28 @@ async fn list_accounts(
                         <span class="account-expiry {expiry_class}">{expiry_label} — {expires}</span>
                         {reauth_btn}
                         <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
-                            <button type="submit" class="btn-icon">Archive</button>
+                            <button type="submit" class="btn-icon">{archive}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
-                              onsubmit="return confirm('Delete this account and all its transactions?')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                              onsubmit="return confirm('{delete_confirm_bank}')" style="display:inline">
+                            <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
                         </form>
                     </div>
                 </div>"#,
-                a.bank_name, id = a.id
+                a.bank_name,
+                id = a.id,
+                archive = t.lf_acc_archive,
+                delete = t.lf_acc_delete,
+                delete_confirm_bank = t.lf_acc_delete_confirm_bank,
             ));
         }
     }
 
     if bank_items.is_empty() {
-        bank_items = r#"<div class="empty-state"><p>No bank accounts linked yet.</p></div>"#.into();
+        bank_items = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.lf_acc_no_bank
+        );
     }
 
     // Manual accounts section
@@ -177,21 +200,25 @@ async fn list_accounts(
             manual_items.push_str(&format!(
                 r#"<div class="account-item account-archived">
                     <div>
-                        <div class="account-bank">{name} <span class="archived-badge">Archived</span></div>
+                        <div class="account-bank">{name} <span class="archived-badge">{archived}</span></div>
                         {category_badge}
                         {balance_html}
                     </div>
                     <div class="account-actions">
                         <form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
-                            <button type="submit" class="btn-icon">Unarchive</button>
+                            <button type="submit" class="btn-icon">{unarchive}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
-                              onsubmit="return confirm('Delete this account and all its balance history?')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                              onsubmit="return confirm('{delete_confirm_manual}')" style="display:inline">
+                            <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
                         </form>
                     </div>
                 </div>"#,
-                id = a.id
+                id = a.id,
+                archived = t.lf_acc_archived,
+                unarchive = t.lf_acc_unarchive,
+                delete = t.lf_acc_delete,
+                delete_confirm_manual = t.lf_acc_delete_confirm_manual,
             ));
         } else {
             manual_items.push_str(&format!(
@@ -202,25 +229,34 @@ async fn list_accounts(
                         {balance_html}
                     </div>
                     <div class="account-actions">
-                        <a href="{base}/leanfin/accounts/manual/{id}/value" class="btn-icon">Update value</a>
-                        <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn-icon">Import CSV</a>
-                        <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">Edit</a>
+                        <a href="{base}/leanfin/accounts/manual/{id}/value" class="btn-icon">{update_value}</a>
+                        <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn-icon">{import_csv}</a>
+                        <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">{edit}</a>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
-                            <button type="submit" class="btn-icon">Archive</button>
+                            <button type="submit" class="btn-icon">{archive}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
-                              onsubmit="return confirm('Delete this account and all its balance history?')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger">Delete</button>
+                              onsubmit="return confirm('{delete_confirm_manual}')" style="display:inline">
+                            <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
                         </form>
                     </div>
                 </div>"#,
-                id = a.id
+                id = a.id,
+                update_value = t.lf_acc_update_value,
+                import_csv = t.lf_acc_import_csv,
+                edit = t.lf_acc_edit,
+                archive = t.lf_acc_archive,
+                delete = t.lf_acc_delete,
+                delete_confirm_manual = t.lf_acc_delete_confirm_manual,
             ));
         }
     }
 
     if manual_items.is_empty() {
-        manual_items = r#"<div class="empty-state"><p>No manual accounts yet.</p></div>"#.into();
+        manual_items = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.lf_acc_no_manual
+        );
     }
 
     let archived_toggle = if has_archived {
@@ -229,8 +265,9 @@ async fn list_accounts(
             r#"<label class="txn-filter-check" style="margin-left:auto">
                 <input type="checkbox" id="show-archived"{checked}
                        onchange="window.location.href='{base}/leanfin/accounts' + (this.checked ? '?show_archived=1' : '')">
-                Show archived
-            </label>"#
+                {show_archived_label}
+            </label>"#,
+            show_archived_label = t.lf_acc_show_archived,
         )
     } else {
         String::new()
@@ -239,30 +276,32 @@ async fn list_accounts(
     let has_banking_creds = settings::has_credentials(&state.pool, user_id.0).await;
     let link_btn = if has_banking_creds {
         format!(
-            r#"<a href="{base}/leanfin/accounts/link" class="btn btn-primary">+ Link account</a>"#
+            r#"<a href="{base}/leanfin/accounts/link" class="btn btn-primary">{}</a>"#,
+            t.lf_acc_link
         )
     } else {
         format!(
-            r#"<a href="{base}/leanfin/settings" class="btn btn-secondary">Configure Enable Banking</a>"#
+            r#"<a href="{base}/leanfin/settings" class="btn btn-secondary">{}</a>"#,
+            t.lf_acc_configure_eb
         )
     };
 
-    let sync_btn = sync_button(base);
+    let sync_btn = sync_button(base, lang);
     let body = format!(
         r##"<div class="page-header">
             <div class="page-header-row">
-                <h1>Accounts</h1>
+                <h1>{title}</h1>
                 <div class="sync-container" id="sync-container">
                     {sync_btn}
                 </div>
             </div>
-            <p>Manage your linked bank connections and manual accounts</p>
+            <p>{subtitle}</p>
             {archived_toggle}
         </div>
         {error_banner}
         <div class="card">
             <div class="card-header">
-                <h2>Bank Accounts</h2>
+                <h2>{bank_accounts_heading}</h2>
                 {link_btn}
             </div>
             <div class="card-body">
@@ -271,20 +310,26 @@ async fn list_accounts(
         </div>
         <div class="card">
             <div class="card-header">
-                <h2>Manual Accounts</h2>
-                <a href="{base}/leanfin/accounts/manual/new" class="btn btn-primary">+ Add account</a>
+                <h2>{manual_accounts_heading}</h2>
+                <a href="{base}/leanfin/accounts/manual/new" class="btn btn-primary">{add_account}</a>
             </div>
             <div class="card-body">
                 <div class="account-grid">{manual_items}</div>
             </div>
-        </div>"##
+        </div>"##,
+        title = t.lf_acc_title,
+        subtitle = t.lf_acc_subtitle,
+        bank_accounts_heading = t.lf_acc_bank_accounts,
+        manual_accounts_heading = t.lf_acc_manual_accounts,
+        add_account = t.lf_acc_add,
     );
 
     Html(render_page(
-        "LeanFin — Accounts",
-        &leanfin_nav(base, "accounts"),
+        &format!("LeanFin — {}", t.lf_accounts),
+        &leanfin_nav(base, "accounts", lang),
         &body,
         base,
+        lang,
     ))
 }
 
@@ -314,48 +359,68 @@ struct AccountRow {
 
 // ── Manual account: new ──────────────────────────────────────────
 
-async fn manual_new_form(state: axum::extract::State<AppState>) -> Html<String> {
+async fn manual_new_form(
+    state: axum::extract::State<AppState>,
+    Extension(lang): Extension<Lang>,
+) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
     let body = format!(
         r#"<div class="page-header">
-            <h1>Add Manual Account</h1>
-            <p>Track an asset or liability manually</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         <div class="card" style="max-width: 28rem;">
             <div class="card-body">
                 <form method="POST" action="{base}/leanfin/accounts/manual/new">
-                    <label for="name">Account name</label>
+                    <label for="name">{name_label}</label>
                     <input type="text" id="name" name="name" required placeholder="e.g. Stock Portfolio">
-                    <label for="category">Category</label>
+                    <label for="category">{category_label}</label>
                     <select id="category" name="category">
-                        <option value="investment">Investment</option>
-                        <option value="real_estate">Real Estate</option>
-                        <option value="vehicle">Vehicle</option>
-                        <option value="loan">Loan</option>
-                        <option value="crypto">Crypto</option>
-                        <option value="other">Other</option>
+                        <option value="investment">{cat_investment}</option>
+                        <option value="real_estate">{cat_real_estate}</option>
+                        <option value="vehicle">{cat_vehicle}</option>
+                        <option value="loan">{cat_loan}</option>
+                        <option value="crypto">{cat_crypto}</option>
+                        <option value="other">{cat_other}</option>
                     </select>
-                    <label for="currency">Currency</label>
+                    <label for="currency">{currency_label}</label>
                     <input type="text" id="currency" name="currency" required maxlength="3"
                            pattern="[A-Z]{{3}}" placeholder="EUR" value="EUR" style="text-transform:uppercase">
-                    <label for="initial_value">Initial value</label>
+                    <label for="initial_value">{initial_label}</label>
                     <input type="number" id="initial_value" name="initial_value" required step="0.01" placeholder="0.00">
-                    <label for="date">As of date</label>
+                    <label for="date">{date_label}</label>
                     <input type="date" id="date" name="date" required>
                     <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
-                        <button type="submit" style="flex:1">Add account</button>
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">{cancel}</a>
+                        <button type="submit" style="flex:1">{add_btn}</button>
                     </div>
                 </form>
             </div>
         </div>
-        <script>document.getElementById('date').valueAsDate = new Date();</script>"#
+        <script>document.getElementById('date').valueAsDate = new Date();</script>"#,
+        title = t.lf_acc_manual_new_title,
+        subtitle = t.lf_acc_manual_new_subtitle,
+        name_label = t.lf_acc_manual_name,
+        category_label = t.lf_acc_manual_category,
+        cat_investment = t.lf_acc_cat_investment,
+        cat_real_estate = t.lf_acc_cat_real_estate,
+        cat_vehicle = t.lf_acc_cat_vehicle,
+        cat_loan = t.lf_acc_cat_loan,
+        cat_crypto = t.lf_acc_cat_crypto,
+        cat_other = t.lf_acc_cat_other,
+        currency_label = t.lf_acc_manual_currency,
+        initial_label = t.lf_acc_manual_initial,
+        date_label = t.lf_acc_manual_date,
+        cancel = t.lf_acc_manual_cancel,
+        add_btn = t.lf_acc_manual_add_btn,
     );
     Html(render_page(
-        "LeanFin — Add Manual Account",
-        &leanfin_nav(base, "accounts"),
+        &format!("LeanFin — {}", t.lf_acc_manual_new_title),
+        &leanfin_nav(base, "accounts", lang),
         &body,
         base,
+        lang,
     ))
 }
 
@@ -426,9 +491,11 @@ async fn manual_new_submit(
 async fn manual_edit_form(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(account_id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let account: Option<ManualAccountRow> = sqlx::query_as(
         "SELECT id, account_name, asset_category FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
@@ -446,50 +513,59 @@ async fn manual_edit_form(
     let name = account.account_name.as_deref().unwrap_or("");
     let category = account.asset_category.as_deref().unwrap_or("other");
 
-    let category_options = [
-        "investment",
-        "real_estate",
-        "vehicle",
-        "loan",
-        "crypto",
-        "other",
-    ]
-    .iter()
-    .map(|c| {
-        let selected = if *c == category { " selected" } else { "" };
-        format!(r#"<option value="{c}"{selected}>{c}</option>"#)
-    })
-    .collect::<Vec<_>>()
-    .join("\n");
+    let cat_labels = [
+        ("investment", t.lf_acc_cat_investment),
+        ("real_estate", t.lf_acc_cat_real_estate),
+        ("vehicle", t.lf_acc_cat_vehicle),
+        ("loan", t.lf_acc_cat_loan),
+        ("crypto", t.lf_acc_cat_crypto),
+        ("other", t.lf_acc_cat_other),
+    ];
+
+    let category_options = cat_labels
+        .iter()
+        .map(|(value, label)| {
+            let selected = if *value == category { " selected" } else { "" };
+            format!(r#"<option value="{value}"{selected}>{label}</option>"#)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let body = format!(
         r#"<div class="page-header">
-            <h1>Edit Account</h1>
-            <p>Update account details</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         <div class="card" style="max-width: 28rem;">
             <div class="card-body">
                 <form method="POST" action="{base}/leanfin/accounts/manual/{id}/edit">
-                    <label for="name">Account name</label>
+                    <label for="name">{name_label}</label>
                     <input type="text" id="name" name="name" required value="{name}">
-                    <label for="category">Category</label>
+                    <label for="category">{category_label}</label>
                     <select id="category" name="category">
                         {category_options}
                     </select>
                     <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
-                        <button type="submit" style="flex:1">Save changes</button>
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">{cancel}</a>
+                        <button type="submit" style="flex:1">{save}</button>
                     </div>
                 </form>
             </div>
         </div>"#,
-        id = account.id
+        id = account.id,
+        title = t.lf_acc_edit_title,
+        subtitle = t.lf_acc_edit_subtitle,
+        name_label = t.lf_acc_manual_name,
+        category_label = t.lf_acc_manual_category,
+        cancel = t.lf_acc_manual_cancel,
+        save = t.lf_acc_save_changes,
     );
     Html(render_page(
-        "LeanFin — Edit Account",
-        &leanfin_nav(base, "accounts"),
+        &format!("LeanFin — {}", t.lf_acc_edit_title),
+        &leanfin_nav(base, "accounts", lang),
         &body,
         base,
+        lang,
     ))
     .into_response()
 }
@@ -534,9 +610,11 @@ async fn manual_edit_submit(
 async fn manual_value_form(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(account_id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let account: Option<ManualValueRow> = sqlx::query_as(
         "SELECT id, account_name, balance_amount, balance_currency FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
@@ -560,31 +638,37 @@ async fn manual_value_form(
 
     let body = format!(
         r#"<div class="page-header">
-            <h1>Update Value</h1>
+            <h1>{title}</h1>
             <p>Record a new value for {name}</p>
         </div>
         <div class="card" style="max-width: 28rem;">
             <div class="card-body">
                 <form method="POST" action="{base}/leanfin/accounts/manual/{id}/value">
-                    <label for="value">New value ({currency})</label>
+                    <label for="value">{value_new} ({currency})</label>
                     <input type="number" id="value" name="value" required step="0.01" value="{current}">
-                    <label for="date">As of date</label>
+                    <label for="date">{date_label}</label>
                     <input type="date" id="date" name="date" required>
                     <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
-                        <button type="submit" style="flex:1">Record value</button>
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">{cancel}</a>
+                        <button type="submit" style="flex:1">{record}</button>
                     </div>
                 </form>
             </div>
         </div>
         <script>document.getElementById('date').valueAsDate = new Date();</script>"#,
-        id = account.id
+        id = account.id,
+        title = t.lf_acc_value_title,
+        value_new = t.lf_acc_value_new,
+        date_label = t.lf_acc_value_date,
+        cancel = t.lf_acc_manual_cancel,
+        record = t.lf_acc_value_record,
     );
     Html(render_page(
-        "LeanFin — Update Value",
-        &leanfin_nav(base, "accounts"),
+        &format!("LeanFin — {}", t.lf_acc_value_title),
+        &leanfin_nav(base, "accounts", lang),
         &body,
         base,
+        lang,
     ))
     .into_response()
 }
@@ -665,9 +749,11 @@ async fn manual_value_submit(
 async fn import_csv_form(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(account_id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let account: Option<ManualValueRow> = sqlx::query_as(
         "SELECT id, account_name, balance_amount, balance_currency FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
@@ -686,35 +772,42 @@ async fn import_csv_form(
 
     let body = format!(
         r#"<div class="page-header">
-            <h1>Import CSV</h1>
+            <h1>{title}</h1>
             <p>Bulk-import historical values for {name}</p>
         </div>
         <div class="card" style="max-width: 32rem;">
             <div class="card-body">
                 <form method="POST" action="{base}/leanfin/accounts/manual/{id}/import-csv" enctype="multipart/form-data">
-                    <label for="file">CSV file</label>
+                    <label for="file">{csv_file}</label>
                     <input type="file" id="file" name="file" accept=".csv" required>
                     <div class="csv-format-help" style="margin:1rem 0; padding:0.75rem; background:var(--surface-secondary, #f5f5f5); border-radius:0.375rem; font-size:0.875rem;">
-                        <strong>Expected format:</strong>
+                        <strong>{csv_format}</strong>
                         <pre style="margin:0.5rem 0 0;">date,value
 2025-01-01,15000.00
 2025-02-01,15250.50</pre>
-                        <p style="margin:0.5rem 0 0;">Columns: <code>date</code> (YYYY-MM-DD) and <code>value</code> (or <code>balance</code>/<code>amount</code>). Max 1 MB.</p>
+                        <p style="margin:0.5rem 0 0;">{csv_format_desc}</p>
                     </div>
                     <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
-                        <button type="submit" style="flex:1">Upload &amp; import</button>
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">{cancel}</a>
+                        <button type="submit" style="flex:1">{upload}</button>
                     </div>
                 </form>
             </div>
         </div>"#,
-        id = account.id
+        id = account.id,
+        title = t.lf_acc_csv_title,
+        csv_file = t.lf_acc_csv_file,
+        csv_format = t.lf_acc_csv_format,
+        csv_format_desc = t.lf_acc_csv_format_desc,
+        cancel = t.lf_acc_manual_cancel,
+        upload = t.lf_acc_csv_upload,
     );
     Html(render_page(
-        "LeanFin — Import CSV",
-        &leanfin_nav(base, "accounts"),
+        &format!("LeanFin — {}", t.lf_acc_csv_title),
+        &leanfin_nav(base, "accounts", lang),
         &body,
         base,
+        lang,
     ))
     .into_response()
 }
@@ -722,10 +815,12 @@ async fn import_csv_form(
 async fn import_csv_submit(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(account_id): Path<i64>,
     mut multipart: axum::extract::Multipart,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     // Verify ownership
     let account: Option<ManualValueRow> = sqlx::query_as(
@@ -755,6 +850,7 @@ async fn import_csv_submit(
                         name,
                         account_id,
                         &format!("Failed to read file: {e}"),
+                        lang,
                     )
                     .into_response();
                 }
@@ -763,7 +859,8 @@ async fn import_csv_submit(
     }
 
     let Some(csv_bytes) = csv_bytes else {
-        return render_import_error(base, name, account_id, "No file uploaded").into_response();
+        return render_import_error(base, name, account_id, "No file uploaded", lang)
+            .into_response();
     };
 
     match super::services::csv_import::import_csv_balances(&state.pool, account_id, &csv_bytes)
@@ -782,8 +879,8 @@ async fn import_csv_submit(
 
             let body = format!(
                 r#"<div class="page-header">
-                    <h1>Import Failed</h1>
-                    <p>Fix the errors below and re-upload</p>
+                    <h1>{import_failed}</h1>
+                    <p>{fix_errors}</p>
                 </div>
                 <div class="card" style="max-width: 32rem;">
                     <div class="card-body">
@@ -792,19 +889,24 @@ async fn import_csv_submit(
                             <ul style="margin:0.5rem 0 0; padding-left:1.25rem;">{error_list}</ul>
                         </div>
                         <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                            <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn btn-secondary">Try again</a>
-                            <a href="{base}/leanfin/accounts" class="btn btn-secondary">Back to accounts</a>
+                            <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn btn-secondary">{try_again}</a>
+                            <a href="{base}/leanfin/accounts" class="btn btn-secondary">{back}</a>
                         </div>
                     </div>
                 </div>"#,
                 count = result.skipped.len(),
-                id = account_id
+                id = account_id,
+                import_failed = t.lf_acc_csv_import_failed,
+                fix_errors = t.lf_acc_csv_fix_errors,
+                try_again = t.lf_acc_csv_try_again,
+                back = t.lf_acc_csv_back,
             );
             Html(render_page(
-                "LeanFin — Import Failed",
-                &leanfin_nav(base, "accounts"),
+                &format!("LeanFin — {}", t.lf_acc_csv_import_failed),
+                &leanfin_nav(base, "accounts", lang),
                 &body,
                 base,
+                lang,
             ))
             .into_response()
         }
@@ -817,7 +919,7 @@ async fn import_csv_submit(
 
             let body = format!(
                 r#"<div class="page-header">
-                    <h1>Import Complete</h1>
+                    <h1>{import_complete}</h1>
                     <p>Successfully imported values for {name}</p>
                 </div>
                 <div class="card" style="max-width: 32rem;">
@@ -827,11 +929,13 @@ async fn import_csv_submit(
                             <p style="margin:0.25rem 0 0;">{balance_info}</p>
                         </div>
                         <div style="margin-top:1rem;">
-                            <a href="{base}/leanfin/accounts" class="btn btn-secondary">Back to accounts</a>
+                            <a href="{base}/leanfin/accounts" class="btn btn-secondary">{back}</a>
                         </div>
                     </div>
                 </div>"#,
-                count = result.imported
+                count = result.imported,
+                import_complete = t.lf_acc_csv_import_complete,
+                back = t.lf_acc_csv_back,
             );
 
             tracing::info!(
@@ -839,40 +943,52 @@ async fn import_csv_submit(
                 count = result.imported
             );
             Html(render_page(
-                "LeanFin — Import Complete",
-                &leanfin_nav(base, "accounts"),
+                &format!("LeanFin — {}", t.lf_acc_csv_import_complete),
+                &leanfin_nav(base, "accounts", lang),
                 &body,
                 base,
+                lang,
             ))
             .into_response()
         }
-        Err(e) => render_import_error(base, name, account_id, &e.to_string()).into_response(),
+        Err(e) => render_import_error(base, name, account_id, &e.to_string(), lang).into_response(),
     }
 }
 
-fn render_import_error(base: &str, name: &str, account_id: i64, error: &str) -> Html<String> {
+fn render_import_error(
+    base: &str,
+    name: &str,
+    account_id: i64,
+    error: &str,
+    lang: Lang,
+) -> Html<String> {
+    let t = i18n::t(lang);
     let body = format!(
         r#"<div class="page-header">
-            <h1>Import Failed</h1>
+            <h1>{import_failed}</h1>
             <p>Could not import values for {name}</p>
         </div>
         <div class="card" style="max-width: 32rem;">
             <div class="card-body">
                 <div class="alert alert-error">{error}</div>
                 <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                    <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn btn-secondary">Try again</a>
-                    <a href="{base}/leanfin/accounts" class="btn btn-secondary">Back to accounts</a>
+                    <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn btn-secondary">{try_again}</a>
+                    <a href="{base}/leanfin/accounts" class="btn btn-secondary">{back}</a>
                 </div>
             </div>
         </div>"#,
         id = account_id,
-        error = html_escape(error)
+        error = html_escape(error),
+        import_failed = t.lf_acc_csv_import_failed,
+        try_again = t.lf_acc_csv_try_again,
+        back = t.lf_acc_csv_back,
     );
     Html(render_page(
-        "LeanFin — Import Failed",
-        &leanfin_nav(base, "accounts"),
+        &format!("LeanFin — {}", t.lf_acc_csv_import_failed),
+        &leanfin_nav(base, "accounts", lang),
         &body,
         base,
+        lang,
     ))
 }
 
@@ -885,34 +1001,45 @@ fn html_escape(s: &str) -> String {
 
 // ── Link: choose bank ─────────────────────────────────────────────
 
-async fn link_form(state: axum::extract::State<AppState>) -> impl IntoResponse {
+async fn link_form(
+    state: axum::extract::State<AppState>,
+    Extension(lang): Extension<Lang>,
+) -> impl IntoResponse {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
     let body = format!(
         r#"<div class="page-header">
-            <h1>Link a bank account</h1>
-            <p>Connect to your bank via Enable Banking (PSD2)</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         <div class="card" style="max-width: 28rem;">
             <div class="card-body">
                 <form method="POST" action="{base}/leanfin/accounts/link">
-                    <label for="country">Country code</label>
+                    <label for="country">{country_label}</label>
                     <input type="text" id="country" name="country" required maxlength="2"
                            pattern="[A-Z]{{2}}" placeholder="ES" style="text-transform:uppercase">
-                    <label for="bank_name">Bank name</label>
+                    <label for="bank_name">{bank_name_label}</label>
                     <input type="text" id="bank_name" name="bank_name" required placeholder="e.g. Santander">
                     <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">Cancel</a>
-                        <button type="submit" style="flex:1">Connect bank</button>
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">{cancel}</a>
+                        <button type="submit" style="flex:1">{connect}</button>
                     </div>
                 </form>
             </div>
-        </div>"#
+        </div>"#,
+        title = t.lf_acc_link_title,
+        subtitle = t.lf_acc_link_subtitle,
+        country_label = t.lf_acc_link_country,
+        bank_name_label = t.lf_acc_link_bank_name,
+        cancel = t.lf_acc_manual_cancel,
+        connect = t.lf_acc_link_connect,
     );
     Html(render_page(
-        "LeanFin — Link Bank",
-        &leanfin_nav(base, "accounts"),
+        &format!("LeanFin — {}", t.lf_acc_link_title),
+        &leanfin_nav(base, "accounts", lang),
         &body,
         base,
+        lang,
     ))
 }
 

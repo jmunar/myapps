@@ -13,6 +13,8 @@ use rand::Rng;
 use sqlx::SqlitePool;
 use tower_cookies::Cookies;
 
+use crate::models::user_settings;
+
 const SESSION_COOKIE: &str = "session";
 const SESSION_DURATION_DAYS: i64 = 30;
 
@@ -88,6 +90,7 @@ pub async fn get_user_id_from_session(pool: &SqlitePool, token: &str) -> Result<
 }
 
 /// Axum middleware that redirects to /login if the user is not authenticated.
+/// Also injects `Lang` into request extensions based on user preferences.
 pub async fn require_auth(
     cookies: Cookies,
     state: axum::extract::State<crate::routes::AppState>,
@@ -107,7 +110,9 @@ pub async fn require_auth(
 
     match authenticated {
         Some(user_id) => {
+            let lang = user_settings::get_language(&state.pool, user_id).await;
             request.extensions_mut().insert(UserId(user_id));
+            request.extensions_mut().insert(lang);
             next.run(request).await
         }
         None => {

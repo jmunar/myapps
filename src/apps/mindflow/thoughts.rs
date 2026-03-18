@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -22,7 +23,7 @@ pub fn routes() -> Router<AppState> {
         .route("/thoughts/{id}/sub-thought", post(create_sub_thought))
 }
 
-// ── Quick capture ────────────────────────────────────────────
+// -- Quick capture ────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct CaptureForm {
@@ -34,8 +35,11 @@ struct CaptureForm {
 async fn capture(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Form(form): Form<CaptureForm>,
 ) -> Html<String> {
+    let t = i18n::t(lang);
+
     let category_id: Option<i64> = form.category_id.as_deref().and_then(|s| s.parse().ok());
     let parent_thought_id: Option<i64> = form
         .parent_thought_id
@@ -53,10 +57,13 @@ async fn capture(
     .await
     .ok();
 
-    Html(r#"<span class="text-sm text-secondary">Captured!</span>"#.into())
+    Html(format!(
+        r#"<span class="text-sm text-secondary">{}</span>"#,
+        t.mf_map_captured
+    ))
 }
 
-// ── Thought detail ───────────────────────────────────────────
+// -- Thought detail ───────────────────────────────────────────
 
 #[derive(sqlx::FromRow)]
 #[allow(dead_code)]
@@ -107,9 +114,11 @@ struct CategoryOption {
 async fn detail(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(id): Path<i64>,
 ) -> Result<Html<String>, impl IntoResponse> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let thought: Option<ThoughtRow> = sqlx::query_as(
         r#"SELECT t.id, t.content, t.status, t.category_id,
@@ -125,7 +134,7 @@ async fn detail(
     .await
     .unwrap_or(None);
 
-    let Some(t) = thought else {
+    let Some(th) = thought else {
         return Err(Redirect::to(&format!("{base}/mindflow")));
     };
 
@@ -175,30 +184,37 @@ async fn detail(
     .unwrap_or_default();
 
     // Category badge
-    let cat_badge = match (&t.category_name, &t.category_color) {
+    let cat_badge = match (&th.category_name, &th.category_color) {
         (Some(name), Some(color)) => {
             format!(r#"<span class="label-badge" style="--label-color:{color}">{name}</span>"#)
         }
-        _ => r#"<span class="label-badge" style="--label-color:#9E9E9E">Inbox</span>"#.into(),
+        _ => format!(
+            r#"<span class="label-badge" style="--label-color:#9E9E9E">{}</span>"#,
+            t.mf_thought_inbox_badge
+        ),
     };
 
-    let status_badge = if t.status == "archived" {
-        r#"<span class="badge badge-muted">Archived</span>"#
+    let status_badge = if th.status == "archived" {
+        format!(
+            r#"<span class="badge badge-muted">{}</span>"#,
+            t.mf_thought_archived_badge
+        )
     } else {
-        ""
+        String::new()
     };
 
     // Category dropdown
     let mut cat_options = format!(
-        r#"<option value="" {}>Inbox</option>"#,
-        if t.category_id.is_none() {
+        r#"<option value="" {}>{}</option>"#,
+        if th.category_id.is_none() {
             "selected"
         } else {
             ""
         },
+        t.mf_thought_inbox_badge,
     );
     for c in &categories {
-        let selected = if t.category_id == Some(c.id) {
+        let selected = if th.category_id == Some(c.id) {
             " selected"
         } else {
             ""
@@ -258,27 +274,42 @@ async fn detail(
         ));
     }
 
-    let archive_btn = if t.status == "active" {
+    let archive_btn = if th.status == "active" {
         format!(
             r#"<form method="POST" action="{base}/mindflow/thoughts/{id}/archive" style="display:inline">
-                <button class="btn btn-secondary btn-sm">Archive thought</button>
-            </form>"#
+                <button class="btn btn-secondary btn-sm">{}</button>
+            </form>"#,
+            t.mf_thought_archive,
         )
     } else {
         format!(
             r#"<form method="POST" action="{base}/mindflow/thoughts/{id}/archive" style="display:inline">
-                <button class="btn btn-secondary btn-sm">Unarchive</button>
-            </form>"#
+                <button class="btn btn-secondary btn-sm">{}</button>
+            </form>"#,
+            t.mf_thought_unarchive,
         )
     };
 
     // Build nested tree HTML from flat descendants list
     let children_html = build_tree_html(&descendants, id, base);
 
+    let thought_title = t.mf_thought_title;
+    let move_btn = t.mf_thought_move;
+    let comments_heading = t.mf_thought_comments;
+    let add_comment_placeholder = t.mf_thought_add_comment;
+    let add_btn = t.mf_thought_add_btn;
+    let actions_heading = t.mf_thought_actions;
+    let new_action_placeholder = t.mf_thought_new_action;
+    let low = t.mf_thought_low;
+    let medium = t.mf_thought_medium;
+    let high = t.mf_thought_high;
+    let sub_thoughts_heading = t.mf_thought_sub_thoughts;
+    let add_sub_placeholder = t.mf_thought_add_sub;
+
     let body = format!(
         r##"<div class="page-header">
             <div class="page-header-row">
-                <h1>Thought</h1>
+                <h1>{thought_title}</h1>
                 <div>{archive_btn}</div>
             </div>
         </div>
@@ -293,13 +324,13 @@ async fn detail(
                 <form method="POST" action="{base}/mindflow/thoughts/{id}/recategorize"
                       style="margin-top:1rem" class="form-row">
                     <select name="category_id">{cat_options}</select>
-                    <button type="submit" class="btn btn-secondary btn-sm">Move</button>
+                    <button type="submit" class="btn btn-secondary btn-sm">{move_btn}</button>
                 </form>
             </div>
         </div>
 
         <div class="card mt-2">
-            <div class="card-header"><h2>Comments</h2></div>
+            <div class="card-header"><h2>{comments_heading}</h2></div>
             <div class="card-body" id="comments-list">
                 {comments_html}
                 <form method="POST" action="{base}/mindflow/thoughts/{id}/comment"
@@ -307,54 +338,55 @@ async fn detail(
                       hx-target="#comments-list"
                       hx-swap="innerHTML"
                       class="form-row" style="margin-top:0.5rem">
-                    <input type="text" name="content" placeholder="Add a comment..." required style="flex:1">
-                    <button type="submit" class="btn btn-primary btn-sm">Add</button>
+                    <input type="text" name="content" placeholder="{add_comment_placeholder}" required style="flex:1">
+                    <button type="submit" class="btn btn-primary btn-sm">{add_btn}</button>
                 </form>
             </div>
         </div>
 
         <div class="card mt-2">
-            <div class="card-header"><h2>Actions</h2></div>
+            <div class="card-header"><h2>{actions_heading}</h2></div>
             <div class="card-body">
                 {actions_html}
                 <form method="POST" action="{base}/mindflow/thoughts/{id}/action"
                       class="form-row" style="margin-top:0.5rem">
-                    <input type="text" name="title" placeholder="New action..." required style="flex:1">
+                    <input type="text" name="title" placeholder="{new_action_placeholder}" required style="flex:1">
                     <select name="priority">
-                        <option value="low">Low</option>
-                        <option value="medium" selected>Medium</option>
-                        <option value="high">High</option>
+                        <option value="low">{low}</option>
+                        <option value="medium" selected>{medium}</option>
+                        <option value="high">{high}</option>
                     </select>
                     <input type="date" name="due_date">
-                    <button type="submit" class="btn btn-primary btn-sm">Add</button>
+                    <button type="submit" class="btn btn-primary btn-sm">{add_btn}</button>
                 </form>
             </div>
         </div>
 
         <div class="card mt-2">
-            <div class="card-header"><h2>Sub-thoughts</h2></div>
+            <div class="card-header"><h2>{sub_thoughts_heading}</h2></div>
             <div class="card-body">
                 {children_html}
                 <form method="POST" action="{base}/mindflow/thoughts/{id}/sub-thought"
                       class="form-row" style="margin-top:0.5rem">
-                    <input type="text" name="content" placeholder="Add a sub-thought..." required style="flex:1">
-                    <button type="submit" class="btn btn-primary btn-sm">Add</button>
+                    <input type="text" name="content" placeholder="{add_sub_placeholder}" required style="flex:1">
+                    <button type="submit" class="btn btn-primary btn-sm">{add_btn}</button>
                 </form>
             </div>
         </div>"##,
-        content = t.content,
-        created_at = t.created_at,
+        content = th.content,
+        created_at = th.created_at,
     );
 
     Ok(Html(render_page(
-        "MindFlow — Thought",
-        &mindflow_nav(base, ""),
+        &format!("MindFlow \u{2014} {}", t.mf_thought_title),
+        &mindflow_nav(base, "", lang),
         &body,
         base,
+        lang,
     )))
 }
 
-// ── Tree rendering helper ────────────────────────────────────
+// -- Tree rendering helper ────────────────────────────────────
 
 fn build_tree_html(descendants: &[DescendantThought], parent_id: i64, base: &str) -> String {
     let direct_children: Vec<&DescendantThought> = descendants
@@ -384,7 +416,7 @@ fn build_tree_html(descendants: &[DescendantThought], parent_id: i64, base: &str
     html
 }
 
-// ── Add comment (returns updated comment list) ──────────────
+// -- Add comment (returns updated comment list) ──────────────
 
 #[derive(Deserialize)]
 struct CommentForm {
@@ -394,10 +426,12 @@ struct CommentForm {
 async fn add_comment(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(id): Path<i64>,
     Form(form): Form<CommentForm>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     // Verify ownership
     let owns: bool = sqlx::query_scalar(
@@ -444,15 +478,16 @@ async fn add_comment(
               hx-target="#comments-list"
               hx-swap="innerHTML"
               class="form-row" style="margin-top:0.5rem">
-            <input type="text" name="content" placeholder="Add a comment..." required style="flex:1">
-            <button type="submit" class="btn btn-primary btn-sm">Add</button>
-        </form>"##
+            <input type="text" name="content" placeholder="{}" required style="flex:1">
+            <button type="submit" class="btn btn-primary btn-sm">{}</button>
+        </form>"##,
+        t.mf_thought_add_comment, t.mf_thought_add_btn,
     ));
 
     Html(html)
 }
 
-// ── Archive/unarchive thought ───────────────────────────────
+// -- Archive/unarchive thought ───────────────────────────────
 
 async fn archive(
     state: axum::extract::State<AppState>,
@@ -477,7 +512,7 @@ async fn archive(
     Redirect::to(&format!("{base}/mindflow/thoughts/{id}"))
 }
 
-// ── Recategorize thought ────────────────────────────────────
+// -- Recategorize thought ────────────────────────────────────
 
 #[derive(Deserialize)]
 struct RecategorizeForm {
@@ -506,7 +541,7 @@ async fn recategorize(
     Redirect::to(&format!("{base}/mindflow/thoughts/{id}"))
 }
 
-// ── Create action from thought detail ───────────────────────
+// -- Create action from thought detail ───────────────────────
 
 #[derive(Deserialize)]
 struct ActionForm {
@@ -540,7 +575,7 @@ async fn create_action(
     Redirect::to(&format!("{base}/mindflow/thoughts/{thought_id}"))
 }
 
-// ── Create sub-thought (nested under parent) ────────────────
+// -- Create sub-thought (nested under parent) ────────────────
 
 #[derive(Deserialize)]
 struct SubThoughtForm {
