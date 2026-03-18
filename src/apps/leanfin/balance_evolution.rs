@@ -4,6 +4,7 @@ use serde::Deserialize;
 use super::dashboard::leanfin_nav;
 use super::services::balance;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -25,8 +26,10 @@ struct AccountOption {
 async fn page(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
         "SELECT id, bank_name, iban, account_type, account_name FROM leanfin_accounts WHERE user_id = ? AND archived = 0 ORDER BY bank_name",
@@ -37,22 +40,28 @@ async fn page(
     .unwrap_or_default();
 
     if accounts.is_empty() {
-        let body = r#"<div class="page-header">
-            <h1>Balance Evolution</h1>
-            <p>Track how your account balances change over time</p>
+        let body = format!(
+            r#"<div class="page-header">
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         <div class="card">
-            <div class="empty-state"><p>No accounts yet. Link a bank account or add a manual account first.</p></div>
-        </div>"#;
+            <div class="empty-state"><p>{no_accounts}</p></div>
+        </div>"#,
+            title = t.lf_bal_title,
+            subtitle = t.lf_bal_subtitle,
+            no_accounts = t.lf_bal_no_accounts,
+        );
         return Html(render_page(
-            "LeanFin — Balance",
-            &leanfin_nav(base, "balance"),
-            body,
+            &format!("LeanFin — {}", t.lf_balance),
+            &leanfin_nav(base, "balance", lang),
+            &body,
             base,
+            lang,
         ));
     }
 
-    let mut account_options = String::from(r#"<option value="">All accounts</option>"#);
+    let mut account_options = format!(r#"<option value="">{}</option>"#, t.lf_txn_all_accounts);
     for a in &accounts {
         let display = if a.account_type == "manual" {
             a.account_name
@@ -69,8 +78,8 @@ async fn page(
 
     let body = format!(
         r##"<div class="page-header">
-            <h1>Balance Evolution</h1>
-            <p>Track how your account balances change over time</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         <div class="card">
             <div class="balance-controls" id="balance-controls">
@@ -97,12 +106,12 @@ async fn page(
             <div id="balance-data"
                  hx-get="{base}/leanfin/balance-evolution/data?account_id=&days=90"
                  hx-trigger="load, sync-done from:body">
-                <div class="loading">Loading balance data</div>
+                <div class="loading">{loading}</div>
             </div>
         </div>
         <div class="card mt-2" id="balance-txn-card" style="display:none">
             <div class="card-header">
-                <h2>Transactions</h2>
+                <h2>{transactions}</h2>
                 <span id="balance-txn-date" class="text-sm text-secondary"></span>
             </div>
             <div id="balance-txn-table"></div>
@@ -129,13 +138,18 @@ async fn page(
             }};
         }})();
         </script>"##,
+        title = t.lf_bal_title,
+        subtitle = t.lf_bal_subtitle,
+        loading = t.lf_bal_loading,
+        transactions = t.lf_exp_transactions,
     );
 
     Html(render_page(
-        "LeanFin — Balance",
-        &leanfin_nav(base, "balance"),
+        &format!("LeanFin — {}", t.lf_balance),
+        &leanfin_nav(base, "balance", lang),
         &body,
         base,
+        lang,
     ))
 }
 
@@ -167,8 +181,11 @@ where
 async fn data(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     axum::extract::Query(params): axum::extract::Query<DataQuery>,
 ) -> Html<String> {
+    let t = i18n::t(lang);
+
     let series = if let Some(account_id) = params.account_id {
         // Verify account belongs to user
         let owns: bool = sqlx::query_scalar(
@@ -181,7 +198,10 @@ async fn data(
         .unwrap_or(false);
 
         if !owns {
-            return Html("<div class=\"empty-state\"><p>Account not found.</p></div>".into());
+            return Html(format!(
+                "<div class=\"empty-state\"><p>{}</p></div>",
+                t.lf_bal_account_not_found
+            ));
         }
 
         balance::get_balance_series(&state.pool, account_id, params.days)
@@ -194,10 +214,10 @@ async fn data(
     };
 
     if series.is_empty() {
-        return Html(
-            "<div class=\"empty-state\"><p>No balance data yet. Run a sync to populate balance history.</p></div>"
-                .into(),
-        );
+        return Html(format!(
+            "<div class=\"empty-state\"><p>{}</p></div>",
+            t.lf_bal_no_data
+        ));
     }
 
     // Build JSON arrays for Frappe Charts

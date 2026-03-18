@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -32,8 +33,10 @@ struct CategoryOption {
 async fn list(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let thoughts: Vec<InboxThought> = sqlx::query_as(
         r#"SELECT id, content, created_at
@@ -60,7 +63,7 @@ async fn list(
     }
 
     let mut rows = String::new();
-    for t in &thoughts {
+    for th in &thoughts {
         rows.push_str(&format!(
             r##"<div class="thought-card">
                 <label class="thought-checkbox">
@@ -69,14 +72,17 @@ async fn list(
                 <a href="{base}/mindflow/thoughts/{id}" class="thought-content">{content}</a>
                 <span class="text-sm text-secondary">{created_at}</span>
             </div>"##,
-            id = t.id,
-            content = t.content,
-            created_at = t.created_at,
+            id = th.id,
+            content = th.content,
+            created_at = th.created_at,
         ));
     }
 
     if rows.is_empty() {
-        rows = r#"<div class="empty-state"><p>Inbox is empty. All thoughts are categorized!</p></div>"#.into();
+        rows = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.mf_inbox_empty
+        );
     }
 
     let bulk_bar = if !thoughts.is_empty() && !categories.is_empty() {
@@ -84,19 +90,22 @@ async fn list(
             r#"<form id="bulk-form" method="POST" action="{base}/mindflow/inbox/recategorize"
                   class="form-row" style="margin-bottom:1rem">
                 <select name="category_id" required>
-                    <option value="" disabled selected>Move to...</option>
+                    <option value="" disabled selected>{move_to}</option>
                     {cat_options}
                 </select>
-                <button type="submit" class="btn btn-primary btn-sm">Move selected</button>
-            </form>"#
+                <button type="submit" class="btn btn-primary btn-sm">{move_selected}</button>
+            </form>"#,
+            move_to = t.mf_inbox_move_to,
+            move_selected = t.mf_inbox_move_selected,
         )
     } else {
         String::new()
     };
 
+    let count = thoughts.len();
     let body = format!(
         r#"<div class="page-header">
-            <h1>Inbox</h1>
+            <h1>{title}</h1>
             <p>{count} uncategorized thoughts</p>
         </div>
         <div class="card">
@@ -105,14 +114,15 @@ async fn list(
                 {rows}
             </div>
         </div>"#,
-        count = thoughts.len(),
+        title = t.mf_inbox_title,
     );
 
     Html(render_page(
-        "MindFlow — Inbox",
-        &mindflow_nav(base, "inbox"),
+        &format!("MindFlow \u{2014} {}", t.mf_inbox),
+        &mindflow_nav(base, "inbox", lang),
         &body,
         base,
+        lang,
     ))
 }
 

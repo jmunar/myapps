@@ -5,6 +5,7 @@ mod mind_map;
 pub mod services;
 mod thoughts;
 
+use crate::i18n::{self, Lang};
 use crate::layout::NavItem;
 use crate::routes::AppState;
 use axum::Router;
@@ -20,37 +21,44 @@ pub fn router() -> Router<AppState> {
         .merge(actions::routes())
 }
 
-pub fn mindflow_nav(base: &str, active: &str) -> Vec<NavItem> {
+pub fn mindflow_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
+    let t = i18n::t(lang);
     vec![
         NavItem {
             href: format!("{base}/mindflow"),
-            label: "MindFlow",
+            label: "MindFlow".to_string(),
             active: false,
+            right: false,
         },
         NavItem {
             href: format!("{base}/mindflow"),
-            label: "Mind Map",
+            label: t.mf_mind_map.to_string(),
             active: active == "map",
+            right: false,
         },
         NavItem {
             href: format!("{base}/mindflow/inbox"),
-            label: "Inbox",
+            label: t.mf_inbox.to_string(),
             active: active == "inbox",
+            right: false,
         },
         NavItem {
             href: format!("{base}/mindflow/actions"),
-            label: "Actions",
+            label: t.mf_actions.to_string(),
             active: active == "actions",
+            right: false,
         },
         NavItem {
             href: format!("{base}/mindflow/categories"),
-            label: "Categories",
+            label: t.mf_categories.to_string(),
             active: active == "categories",
+            right: false,
         },
         NavItem {
             href: format!("{base}/logout"),
-            label: "Log out",
+            label: t.log_out.to_string(),
             active: false,
+            right: true,
         },
     ]
 }

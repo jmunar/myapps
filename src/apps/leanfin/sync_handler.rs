@@ -7,6 +7,7 @@ use axum::{
 
 use super::services::sync;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::routes::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -16,10 +17,12 @@ pub fn routes() -> Router<AppState> {
 async fn trigger_sync(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> impl IntoResponse {
+    let t = i18n::t(lang);
     let result = sync::run_for_user(&state.pool, &state.config, user_id.0).await;
 
-    let btn = sync_button(&state.config.base_path);
+    let btn = sync_button(&state.config.base_path, lang);
 
     let warning_html = if result.reconciliation_warnings.is_empty() {
         String::new()
@@ -30,7 +33,7 @@ async fn trigger_sync(
 
     let html = if result.errors.is_empty() {
         let msg = if result.accounts_synced == 0 {
-            "No accounts to sync".to_string()
+            t.lf_sync_no_accounts.to_string()
         } else {
             format!(
                 "Synced {} new transaction{}",
@@ -70,7 +73,8 @@ async fn trigger_sync(
 }
 
 /// Render the sync button HTML. Shared by the handler and the page templates.
-pub fn sync_button(base: &str) -> String {
+pub fn sync_button(base: &str, lang: Lang) -> String {
+    let t = i18n::t(lang);
     format!(
         r##"<button class="btn btn-secondary btn-sm sync-btn"
                 hx-post="{base}/leanfin/sync"
@@ -78,7 +82,8 @@ pub fn sync_button(base: &str) -> String {
                 hx-swap="innerHTML"
                 hx-indicator="#sync-spinner">
             <span class="sync-icon" id="sync-spinner">&#x21bb;</span>
-            Sync
-        </button>"##
+            {sync}
+        </button>"##,
+        sync = t.lf_txn_sync,
     )
 }

@@ -8,6 +8,7 @@ use sqlx::SqlitePool;
 use super::dashboard::leanfin_nav;
 use crate::auth::UserId;
 use crate::config::Config;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -115,8 +116,10 @@ pub fn routes() -> Router<AppState> {
 async fn settings_form(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let current_app_id: Option<String> = sqlx::query_scalar(
         "SELECT enable_banking_app_id FROM leanfin_user_settings WHERE user_id = ?",
@@ -131,59 +134,75 @@ async fn settings_form(
 
     let app_id_value = current_app_id.as_deref().unwrap_or("");
     let key_status = if has_key {
-        r#"<span class="status-ok">Configured</span>"#
+        format!(r#"<span class="status-ok">{}</span>"#, t.lf_set_configured)
     } else {
-        r#"<span class="status-missing">Not configured</span>"#
+        format!(
+            r#"<span class="status-missing">{}</span>"#,
+            t.lf_set_not_configured
+        )
     };
 
     let encryption_ok = state.config.encryption_key.is_some();
     let encryption_warning = if !encryption_ok {
-        r#"<div class="alert alert-error">ENCRYPTION_KEY is not configured on the server. You cannot save Enable Banking credentials until this is set.</div>"#
+        format!(
+            r#"<div class="alert alert-error">{}</div>"#,
+            t.lf_set_encryption_warning
+        )
     } else {
-        ""
+        String::new()
     };
 
     let submit_disabled = if !encryption_ok { " disabled" } else { "" };
 
     let body = format!(
         r#"<div class="page-header">
-            <h1>Settings</h1>
-            <p>Configure your Enable Banking credentials</p>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
         </div>
         {encryption_warning}
         <div class="card" style="max-width: 32rem;">
             <div class="card-body">
                 <form method="POST" action="{base}/leanfin/settings" enctype="multipart/form-data">
-                    <label for="app_id">Application ID</label>
+                    <label for="app_id">{app_id_label}</label>
                     <input type="text" id="app_id" name="app_id" value="{app_id_value}" placeholder="your-app-id">
-                    <label>Private key (RSA PEM) — {key_status}</label>
+                    <label>{private_key} — {key_status}</label>
                     <input type="file" id="key_file" name="key_file" accept=".pem,.key">
-                    <p class="form-hint">Upload your RSA private key file. Leave empty to keep the current key.</p>
+                    <p class="form-hint">{key_hint}</p>
                     <div style="display:flex; gap:0.75rem; margin-top:1rem;">
-                        <a href="{base}/leanfin" class="btn btn-secondary">Cancel</a>
-                        <button type="submit" style="flex:1"{submit_disabled}>Save</button>
+                        <a href="{base}/leanfin" class="btn btn-secondary">{cancel}</a>
+                        <button type="submit" style="flex:1"{submit_disabled}>{save}</button>
                     </div>
                 </form>
             </div>
-        </div>"#
+        </div>"#,
+        title = t.lf_set_title,
+        subtitle = t.lf_set_subtitle,
+        app_id_label = t.lf_set_app_id,
+        private_key = t.lf_set_private_key,
+        key_hint = t.lf_set_key_hint,
+        cancel = t.lf_set_cancel,
+        save = t.lf_set_save,
     );
 
     Html(render_page(
-        "LeanFin — Settings",
-        &leanfin_nav(base, "settings"),
+        &format!("LeanFin — {}", t.lf_settings),
+        &leanfin_nav(base, "settings", lang),
         &body,
         base,
+        lang,
     ))
 }
 
 async fn settings_submit(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     mut multipart: Multipart,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
 
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
     let encryption_key = match state.config.encryption_key.as_deref() {
         Some(k) => k,
         None => {
@@ -217,20 +236,24 @@ async fn settings_submit(
     {
         let body = format!(
             r#"<div class="page-header">
-                    <h1>Settings</h1>
+                    <h1>{title}</h1>
                 </div>
                 <div class="card" style="max-width: 32rem;">
                     <div class="card-body">
-                        <div class="alert alert-error">Invalid RSA private key. Please upload a valid PEM file.</div>
-                        <a href="{base}/leanfin/settings" class="btn btn-secondary">Back</a>
+                        <div class="alert alert-error">{invalid_key}</div>
+                        <a href="{base}/leanfin/settings" class="btn btn-secondary">{back}</a>
                     </div>
-                </div>"#
+                </div>"#,
+            title = t.lf_set_title,
+            invalid_key = t.lf_set_invalid_key,
+            back = t.lf_set_back,
         );
         return Html(render_page(
-            "LeanFin — Settings",
-            &leanfin_nav(base, "settings"),
+            &format!("LeanFin — {}", t.lf_settings),
+            &leanfin_nav(base, "settings", lang),
             &body,
             base,
+            lang,
         ))
         .into_response();
     }

@@ -3,6 +3,7 @@ use serde::Serialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -12,7 +13,7 @@ pub fn routes() -> Router<AppState> {
         .route("/map-data", get(map_data))
 }
 
-// ── Mind map page ────────────────────────────────────────────
+// -- Mind map page ────────────────────────────────────────────
 
 #[derive(sqlx::FromRow)]
 #[allow(dead_code)]
@@ -25,8 +26,10 @@ struct CategoryOption {
 async fn page(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
 
     let categories: Vec<CategoryOption> = sqlx::query_as(
         "SELECT id, name, color FROM mindflow_categories WHERE user_id = ? AND archived = 0 ORDER BY name",
@@ -36,7 +39,10 @@ async fn page(
     .await
     .unwrap_or_default();
 
-    let mut cat_options = String::from(r#"<option value="">Inbox (uncategorized)</option>"#);
+    let mut cat_options = format!(
+        r#"<option value="">{}</option>"#,
+        t.mf_map_inbox_uncategorized
+    );
     for c in &categories {
         cat_options.push_str(&format!(r#"<option value="{}">{}</option>"#, c.id, c.name,));
     }
@@ -58,24 +64,36 @@ async fn page(
     .unwrap_or(0);
 
     let inbox_badge = if inbox_count > 0 {
-        format!(r#"<span class="badge badge-warning">{inbox_count} in inbox</span>"#)
+        format!(
+            r#"<span class="badge badge-warning">{inbox_count} {}</span>"#,
+            t.mf_map_in_inbox
+        )
     } else {
         String::new()
     };
 
     let actions_badge = if pending_actions > 0 {
-        format!(r#"<span class="badge badge-info">{pending_actions} pending</span>"#)
+        format!(
+            r#"<span class="badge badge-info">{pending_actions} {}</span>"#,
+            t.mf_map_pending
+        )
     } else {
         String::new()
     };
 
+    let map_title = t.mf_map_title;
+    let map_subtitle = t.mf_map_subtitle;
+    let capture_placeholder = t.mf_map_capture_placeholder;
+    let capture_btn = t.mf_map_capture;
+    let first_thought = t.mf_map_first_thought;
+
     let body = format!(
         r##"<div class="page-header">
             <div class="page-header-row">
-                <h1>Mind Map</h1>
+                <h1>{map_title}</h1>
                 <div>{inbox_badge} {actions_badge}</div>
             </div>
-            <p>Your thoughts, visually connected</p>
+            <p>{map_subtitle}</p>
         </div>
 
         <div class="card">
@@ -86,12 +104,12 @@ async fn page(
                       hx-target="#capture-feedback"
                       hx-swap="innerHTML"
                       hx-on::after-request="if(event.detail.successful){{this.reset();refreshMap()}}">
-                    <input type="text" name="content" placeholder="What's on your mind?" required
+                    <input type="text" name="content" placeholder="{capture_placeholder}" required
                            class="capture-input" autocomplete="off">
                     <select name="category_id" class="capture-select">
                         {cat_options}
                     </select>
-                    <button type="submit" class="btn btn-primary">Capture</button>
+                    <button type="submit" class="btn btn-primary">{capture_btn}</button>
                 </form>
                 <div id="capture-feedback"></div>
             </div>
@@ -147,7 +165,7 @@ async fn page(
                         .attr('y', height / 2)
                         .attr('text-anchor', 'middle')
                         .attr('fill', 'var(--text-secondary)')
-                        .text('Capture your first thought to see the mind map');
+                        .text('{first_thought}');
                     return;
                 }}
 
@@ -313,14 +331,15 @@ async fn page(
     );
 
     Html(render_page(
-        "MindFlow — Mind Map",
-        &mindflow_nav(base, "map"),
+        &format!("MindFlow \u{2014} {}", t.mf_mind_map),
+        &mindflow_nav(base, "map", lang),
         &body,
         base,
+        lang,
     ))
 }
 
-// ── Map data JSON endpoint ──────────────────────────────────
+// -- Map data JSON endpoint ──────────────────────────────────
 
 #[derive(Serialize)]
 struct MapData {

@@ -1,6 +1,7 @@
 mod auth;
 mod launcher;
 mod pwa;
+mod settings;
 
 use crate::config::Config;
 use axum::{Router, middleware};
@@ -32,6 +33,7 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
         .nest("/mindflow", crate::apps::mindflow::router())
         .nest("/voice", crate::apps::voice_to_text::router())
         .nest("/classroom", crate::apps::classroom_input::router())
+        .merge(settings::routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth::require_auth,

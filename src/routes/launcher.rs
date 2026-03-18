@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use super::AppState;
 use crate::apps::registry::{AppInfo, all_apps};
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::layout::{NavItem, render_page};
 use crate::models::user_app_visibility;
 
@@ -22,7 +23,12 @@ pub fn routes() -> Router<AppState> {
         .route("/launcher/visibility", post(set_visibility))
 }
 
-fn push_script(base: &str) -> String {
+fn push_script(base: &str, lang: Lang) -> String {
+    let t = i18n::t(lang);
+    let notif_enabled = t.launcher_notif_enabled;
+    let notif_blocked = t.launcher_notif_blocked;
+    let notif_blocked_settings = t.launcher_notif_blocked_settings;
+    let notif_enable = t.launcher_notif_enable;
     format!(
         r#"<div id="push-status" style="text-align:center;margin-top:1.5rem;font-size:0.9rem;color:#888;"></div>
         <script>
@@ -30,17 +36,17 @@ fn push_script(base: &str) -> String {
             var el = document.getElementById("push-status");
             if (!("Notification" in window) || !("PushManager" in window)) return;
             if (Notification.permission === "granted") {{
-                el.textContent = "Notifications enabled";
+                el.textContent = "{notif_enabled}";
             }} else if (Notification.permission === "denied") {{
-                el.textContent = "Notifications blocked (check browser settings)";
+                el.textContent = "{notif_blocked_settings}";
             }} else {{
                 var btn = document.createElement("button");
-                btn.textContent = "Enable notifications";
+                btn.textContent = "{notif_enable}";
                 btn.className = "btn btn-secondary";
                 btn.onclick = function() {{
                     Notification.requestPermission().then(function(perm) {{
                         if (perm === "granted") {{
-                            el.textContent = "Notifications enabled";
+                            el.textContent = "{notif_enabled}";
                             navigator.serviceWorker.ready.then(function(reg) {{
                                 fetch("{base}/push/vapid-key").then(function(r) {{ return r.text(); }}).then(function(key) {{
                                     var padding = (4 - key.length % 4) % 4;
@@ -66,7 +72,7 @@ fn push_script(base: &str) -> String {
                                 }});
                             }});
                         }} else {{
-                            el.textContent = "Notifications blocked";
+                            el.textContent = "{notif_blocked}";
                         }}
                     }});
                 }};
@@ -77,7 +83,13 @@ fn push_script(base: &str) -> String {
     )
 }
 
-fn render_grid_normal(apps: &[AppInfo], visibility: &HashMap<String, bool>, base: &str) -> String {
+fn render_grid_normal(
+    apps: &[AppInfo],
+    visibility: &HashMap<String, bool>,
+    base: &str,
+    lang: Lang,
+) -> String {
+    let t = i18n::t(lang);
     let visible_apps: Vec<&AppInfo> = apps
         .iter()
         .filter(|app| *visibility.get(app.key).unwrap_or(&true))
@@ -86,9 +98,11 @@ fn render_grid_normal(apps: &[AppInfo], visibility: &HashMap<String, bool>, base
     if visible_apps.is_empty() {
         return format!(
             r#"<div class="empty-state">
-                <p>No apps visible. Click <button class="launcher-edit-btn"
-                    hx-get="{base}/launcher/edit" hx-target="{target}" hx-swap="innerHTML">&#9881;</button> to configure.</p>
+                <p>{prefix}<button class="launcher-edit-btn"
+                    hx-get="{base}/launcher/edit" hx-target="{target}" hx-swap="innerHTML">&#9881;</button>{suffix}</p>
             </div>"#,
+            prefix = t.launcher_empty_prefix,
+            suffix = t.launcher_empty_suffix,
             target = TARGET,
         );
     }
@@ -107,7 +121,7 @@ fn render_grid_normal(apps: &[AppInfo], visibility: &HashMap<String, bool>, base
                 path = app.path,
                 icon = app.icon,
                 name = app.name,
-                desc = app.description,
+                desc = t.app_description(app.key),
             )
         })
         .collect();
@@ -115,7 +129,13 @@ fn render_grid_normal(apps: &[AppInfo], visibility: &HashMap<String, bool>, base
     format!(r#"<div class="launcher-grid">{cards}</div>"#)
 }
 
-fn render_grid_edit(apps: &[AppInfo], visibility: &HashMap<String, bool>, base: &str) -> String {
+fn render_grid_edit(
+    apps: &[AppInfo],
+    visibility: &HashMap<String, bool>,
+    base: &str,
+    lang: Lang,
+) -> String {
+    let t = i18n::t(lang);
     let cards: String = apps
         .iter()
         .map(|app| {
@@ -127,7 +147,11 @@ fn render_grid_edit(apps: &[AppInfo], visibility: &HashMap<String, bool>, base: 
             } else {
                 "&#128065;&#8205;&#128488;"
             };
-            let title = if visible { "Hide app" } else { "Show app" };
+            let title = if visible {
+                t.launcher_hide
+            } else {
+                t.launcher_show
+            };
             format!(
                 r#"<div class="launcher-card launcher-card-edit{hidden_class}" id="card-{key}">
                     <div class="launcher-icon">{icon}</div>
@@ -145,7 +169,7 @@ fn render_grid_edit(apps: &[AppInfo], visibility: &HashMap<String, bool>, base: 
                 key = app.key,
                 icon = app.icon,
                 name = app.name,
-                desc = app.description,
+                desc = t.app_description(app.key),
                 target = TARGET,
             )
         })
@@ -154,64 +178,95 @@ fn render_grid_edit(apps: &[AppInfo], visibility: &HashMap<String, bool>, base: 
     format!(r#"<div class="launcher-grid">{cards}</div>"#)
 }
 
-fn render_header_normal(base: &str) -> String {
+fn render_header_normal(base: &str, lang: Lang) -> String {
+    let t = i18n::t(lang);
     format!(
         r#"<div class="page-header" style="display:flex;align-items:center;justify-content:space-between;">
             <div>
-                <h1>My Apps</h1>
-                <p>Choose an application</p>
+                <h1>{title}</h1>
+                <p>{subtitle}</p>
             </div>
-            <button class="launcher-edit-btn" hx-get="{base}/launcher/edit" hx-target="{target}" hx-swap="innerHTML" title="Configure apps">&#9881;</button>
+            <button class="launcher-edit-btn" hx-get="{base}/launcher/edit" hx-target="{target}" hx-swap="innerHTML" title="{configure}">&#9881;</button>
         </div>"#,
+        title = t.launcher_title,
+        subtitle = t.launcher_subtitle,
+        configure = t.launcher_configure,
         target = TARGET,
     )
 }
 
-fn render_header_edit(base: &str) -> String {
+fn render_header_edit(base: &str, lang: Lang) -> String {
+    let t = i18n::t(lang);
     format!(
         r#"<div class="page-header" style="display:flex;align-items:center;justify-content:space-between;">
             <div>
-                <h1>My Apps</h1>
-                <p>Toggle app visibility</p>
+                <h1>{title}</h1>
+                <p>{toggle}</p>
             </div>
-            <button class="launcher-done-btn btn btn-primary btn-sm" hx-get="{base}/launcher/grid" hx-target="{target}" hx-swap="innerHTML">Done</button>
+            <button class="launcher-done-btn btn btn-primary btn-sm" hx-get="{base}/launcher/grid" hx-target="{target}" hx-swap="innerHTML">{done}</button>
         </div>"#,
+        title = t.launcher_title,
+        toggle = t.launcher_toggle_visibility,
+        done = t.launcher_done,
         target = TARGET,
+    )
+}
+
+fn render_lang_selector(base: &str, lang: Lang) -> String {
+    let t = i18n::t(lang);
+    let en_selected = if lang == Lang::En { " selected" } else { "" };
+    let es_selected = if lang == Lang::Es { " selected" } else { "" };
+    format!(
+        r#"<form method="POST" action="{base}/settings/language" style="text-align:center;margin-top:1rem">
+            <input type="hidden" name="redirect" value="{base}/">
+            <label style="font-size:0.875rem;color:var(--text-secondary)">{label}:
+                <select name="language" onchange="this.form.submit()" style="margin-left:0.25rem">
+                    <option value="en"{en_selected}>English</option>
+                    <option value="es"{es_selected}>Español</option>
+                </select>
+            </label>
+        </form>"#,
+        label = t.language_label,
     )
 }
 
 async fn index(
     state: axum::extract::State<AppState>,
     Extension(UserId(user_id)): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+    let t = i18n::t(lang);
     let nav = vec![NavItem {
         href: format!("{base}/logout"),
-        label: "Log out",
+        label: t.log_out.to_string(),
         active: false,
+        right: true,
     }];
 
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
     let apps = all_apps();
 
-    let header = render_header_normal(base);
-    let grid = render_grid_normal(&apps, &visibility, base);
-    let push = push_script(base);
+    let header = render_header_normal(base, lang);
+    let grid = render_grid_normal(&apps, &visibility, base, lang);
+    let push = push_script(base, lang);
+    let lang_sel = render_lang_selector(base, lang);
 
-    let body = format!(r#"<div id="launcher-area">{header}{grid}</div>{push}"#);
-    Html(render_page("MyApps", &nav, &body, base))
+    let body = format!(r#"<div id="launcher-area">{header}{grid}</div>{lang_sel}{push}"#);
+    Html(render_page("MyApps", &nav, &body, base, lang))
 }
 
 async fn edit_mode(
     state: axum::extract::State<AppState>,
     Extension(UserId(user_id)): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
     let apps = all_apps();
 
-    let header = render_header_edit(base);
-    let grid = render_grid_edit(&apps, &visibility, base);
+    let header = render_header_edit(base, lang);
+    let grid = render_grid_edit(&apps, &visibility, base, lang);
 
     Html(format!("{header}{grid}"))
 }
@@ -219,13 +274,14 @@ async fn edit_mode(
 async fn grid_fragment(
     state: axum::extract::State<AppState>,
     Extension(UserId(user_id)): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
     let apps = all_apps();
 
-    let header = render_header_normal(base);
-    let grid = render_grid_normal(&apps, &visibility, base);
+    let header = render_header_normal(base, lang);
+    let grid = render_grid_normal(&apps, &visibility, base, lang);
 
     Html(format!("{header}{grid}"))
 }
@@ -239,6 +295,7 @@ struct VisibilityForm {
 async fn set_visibility(
     state: axum::extract::State<AppState>,
     Extension(UserId(user_id)): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Form(form): Form<VisibilityForm>,
 ) -> Html<String> {
     let visible = form.visible != "0";
@@ -254,8 +311,8 @@ async fn set_visibility(
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
 
     // Return edit mode view so user can keep toggling
-    let header = render_header_edit(base);
-    let grid = render_grid_edit(&apps, &visibility, base);
+    let header = render_header_edit(base, lang);
+    let grid = render_grid_edit(&apps, &visibility, base, lang);
 
     Html(format!("{header}{grid}"))
 }

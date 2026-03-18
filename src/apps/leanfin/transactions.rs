@@ -7,6 +7,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::UserId;
+use crate::i18n::{self, Lang};
 use crate::models::Transaction;
 use crate::routes::AppState;
 
@@ -126,8 +127,10 @@ struct FilterParams {
 async fn list(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Query(filter): Query<FilterParams>,
 ) -> Html<String> {
+    let t = i18n::t(lang);
     let base = &state.config.base_path;
     let page = filter.page.unwrap_or(1).max(1);
     let offset = (page - 1) * PAGE_SIZE;
@@ -218,12 +221,12 @@ async fn list(
         .unwrap_or(0);
 
     if total == 0 {
-        return Html(
+        return Html(format!(
             r#"<div class="empty-state">
-            <p>No transactions yet. Link a bank account and run a sync to get started.</p>
-        </div>"#
-                .to_string(),
-        );
+            <p>{}</p>
+        </div>"#,
+            t.lf_txn_no_transactions
+        ));
     }
 
     let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -283,7 +286,8 @@ async fn list(
                     hx-get="{base}/leanfin/transactions"
                     hx-target="#txn-table"
                     hx-include="#txn-filters"
-                    hx-vals='{{"page":{prev}}}'>Prev</button>"##,
+                    hx-vals='{{"page":{prev}}}'>{}</button>"##,
+            t.lf_txn_prev,
             prev = page - 1,
         ));
     }
@@ -293,7 +297,8 @@ async fn list(
                     hx-get="{base}/leanfin/transactions"
                     hx-target="#txn-table"
                     hx-include="#txn-filters"
-                    hx-vals='{{"page":{next}}}'>Next</button>"##,
+                    hx-vals='{{"page":{next}}}'>{}</button>"##,
+            t.lf_txn_next,
             next = page + 1,
         ));
     }
@@ -302,16 +307,22 @@ async fn list(
     Html(format!(
         r#"<table>
             <thead><tr>
-                <th>Date</th>
-                <th>Counterparty</th>
-                <th>Description</th>
-                <th>Labels</th>
-                <th>Amount</th>
-                <th>Balance</th>
+                <th>{col_date}</th>
+                <th>{col_counterparty}</th>
+                <th>{col_description}</th>
+                <th>{col_labels}</th>
+                <th>{col_amount}</th>
+                <th>{col_balance}</th>
             </tr></thead>
             <tbody>{rows}</tbody>
         </table>
-        {pagination}"#
+        {pagination}"#,
+        col_date = t.lf_txn_col_date,
+        col_counterparty = t.lf_txn_col_counterparty,
+        col_description = t.lf_txn_col_description,
+        col_labels = t.lf_txn_col_labels,
+        col_amount = t.lf_txn_col_amount,
+        col_balance = t.lf_txn_col_balance,
     ))
 }
 
@@ -320,8 +331,10 @@ async fn list(
 async fn alloc_editor(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(txn_id): Path<i64>,
 ) -> Html<String> {
+    let t = i18n::t(lang);
     let base = &state.config.base_path;
 
     // Get transaction amount
@@ -390,8 +403,10 @@ async fn alloc_editor(
     }
 
     // Label picker options
-    let mut options =
-        String::from(r#"<option value="" disabled selected>Choose label...</option>"#);
+    let mut options = format!(
+        r#"<option value="" disabled selected>{}</option>"#,
+        t.lf_alloc_choose_label
+    );
     for l in &labels {
         // Skip labels already allocated
         let already = allocs.iter().any(|a| a.label_id == l.id);
@@ -412,8 +427,8 @@ async fn alloc_editor(
             <td colspan="6">
                 <div class="alloc-editor">
                     <div class="alloc-header">
-                        <span class="text-sm"><strong>Allocations</strong> — total: <span class="mono">{abs_total:.2}</span></span>
-                        <span class="text-sm {remaining_class}">Remaining: <span class="mono">{remaining:.2}</span></span>
+                        <span class="text-sm"><strong>{alloc_title}</strong> — total: <span class="mono">{abs_total:.2}</span></span>
+                        <span class="text-sm {remaining_class}">{alloc_remaining}: <span class="mono">{remaining:.2}</span></span>
                     </div>
                     <div class="alloc-list">{alloc_rows}</div>
                     <form class="alloc-add-form"
@@ -422,20 +437,25 @@ async fn alloc_editor(
                           hx-swap="outerHTML">
                         <select name="label_id" required>{options}</select>
                         <input type="number" name="amount" step="0.01" min="0.01"
-                               value="{remaining:.2}" placeholder="Amount" required
+                               value="{remaining:.2}" placeholder="{alloc_amount}" required
                                class="alloc-amount-input mono">
-                        <button type="submit" class="btn btn-primary btn-sm">Add</button>
+                        <button type="submit" class="btn btn-primary btn-sm">{alloc_add}</button>
                     </form>
                     <div class="alloc-footer">
                         <button class="btn btn-secondary btn-sm"
                                 hx-get="{base}/leanfin/transactions/{txn_id}/row"
                                 hx-target="#txn-{txn_id}"
                                 hx-swap="outerHTML"
-                                onclick="var e=document.getElementById('alloc-editor-{txn_id}');if(e)setTimeout(function(){{e.remove()}},100)">Done</button>
+                                onclick="var e=document.getElementById('alloc-editor-{txn_id}');if(e)setTimeout(function(){{e.remove()}},100)">{alloc_done}</button>
                     </div>
                 </div>
             </td>
-        </tr>"##
+        </tr>"##,
+        alloc_title = t.lf_alloc_title,
+        alloc_remaining = t.lf_alloc_remaining,
+        alloc_amount = t.lf_alloc_amount,
+        alloc_add = t.lf_alloc_add,
+        alloc_done = t.lf_alloc_done,
     ))
 }
 
@@ -450,6 +470,7 @@ struct AddAllocForm {
 async fn alloc_add(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(txn_id): Path<i64>,
     Form(form): Form<AddAllocForm>,
 ) -> Html<String> {
@@ -475,7 +496,13 @@ async fn alloc_add(
     }
 
     // Re-render the editor
-    alloc_editor(state, Extension(UserId(user_id.0)), Path(txn_id)).await
+    alloc_editor(
+        state,
+        Extension(UserId(user_id.0)),
+        Extension(lang),
+        Path(txn_id),
+    )
+    .await
 }
 
 // ── Delete allocation ────────────────────────────────────────
@@ -483,6 +510,7 @@ async fn alloc_add(
 async fn alloc_delete(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path((txn_id, alloc_id)): Path<(i64, i64)>,
 ) -> Html<String> {
     // Delete only if the allocation's label belongs to the user
@@ -497,7 +525,13 @@ async fn alloc_delete(
     .await
     .ok();
 
-    alloc_editor(state, Extension(UserId(user_id.0)), Path(txn_id)).await
+    alloc_editor(
+        state,
+        Extension(UserId(user_id.0)),
+        Extension(lang),
+        Path(txn_id),
+    )
+    .await
 }
 
 // ── Single row (for "Done" button — refreshes row with correct class) ──
