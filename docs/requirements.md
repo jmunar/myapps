@@ -105,11 +105,15 @@ visibility into spending patterns.
 
 - GitHub Actions enforces formatting (rustfmt), linting (clippy with
   warnings-as-errors), and tests on every push and pull request.
+- Merging to `main` triggers automatic deployment: staging first (with smoke
+  test), then production (with smoke test). Deploys use a dedicated SSH user
+  with scoped sudo.
 - A scheduled security audit (`cargo audit`) runs weekly and on Cargo.toml/lock
   changes.
 - Dependabot opens weekly PRs for Cargo dependency updates and GitHub Actions
   version bumps.
-- A Makefile provides local shortcuts that mirror CI checks (`make check`).
+- A Makefile provides local shortcuts that mirror CI checks (`make check`) and
+  GitHub environment setup (`make gh-env`).
 
 ### Deployment
 

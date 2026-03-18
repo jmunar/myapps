@@ -1,0 +1,126 @@
+name: CD
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: cd-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-stage:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host deploy-target
+            HostName $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)
+            User $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f1)
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking yes
+          EOF
+
+      - name: Generate deploy config
+        run: |
+          cat > deploy/stage.env <<EOF
+          DEPLOY_DOMAIN=${{ vars.DEPLOY_DOMAIN }}
+          DEPLOY_SERVER=deploy-target
+          DEPLOY_REMOTE_DIR=${{ vars.DEPLOY_REMOTE_DIR }}
+          DEPLOY_REMOTE_BUILD_DIR=${{ vars.DEPLOY_REMOTE_BUILD_DIR }}
+          DEPLOY_SERVICE_NAME=${{ vars.DEPLOY_SERVICE_NAME }}
+          DEPLOY_NGINX_SITE=${{ vars.DEPLOY_NGINX_SITE }}
+          DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
+          DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
+          DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
+          DEPLOY_SEED_APPS=${{ vars.DEPLOY_SEED_APPS }}
+          EOF
+
+      - name: Deploy to staging
+        run: DEPLOY_CI=true ./deploy.sh stage deploy
+
+      - name: Smoke test
+        run: |
+          URL="https://${{ vars.DEPLOY_DOMAIN }}/login"
+          echo "Checking $URL ..."
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" || true)
+            echo "  Attempt $i: HTTP $STATUS"
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Smoke test passed"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Smoke test failed — /login did not return 200"
+          exit 1
+
+  deploy-prod:
+    name: Deploy to production
+    needs: deploy-stage
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host deploy-target
+            HostName $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)
+            User $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f1)
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking yes
+          EOF
+
+      - name: Generate deploy config
+        run: |
+          cat > deploy/prod.env <<EOF
+          DEPLOY_DOMAIN=${{ vars.DEPLOY_DOMAIN }}
+          DEPLOY_SERVER=deploy-target
+          DEPLOY_REMOTE_DIR=${{ vars.DEPLOY_REMOTE_DIR }}
+          DEPLOY_REMOTE_BUILD_DIR=${{ vars.DEPLOY_REMOTE_BUILD_DIR }}
+          DEPLOY_SERVICE_NAME=${{ vars.DEPLOY_SERVICE_NAME }}
+          DEPLOY_NGINX_SITE=${{ vars.DEPLOY_NGINX_SITE }}
+          DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
+          DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
+          DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
+          DEPLOY_SEED_APPS=${{ vars.DEPLOY_SEED_APPS }}
+          EOF
+
+      - name: Deploy to production
+        run: DEPLOY_CI=true ./deploy.sh prod deploy
+
+      - name: Smoke test
+        run: |
+          URL="https://${{ vars.DEPLOY_DOMAIN }}/login"
+          echo "Checking $URL ..."
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" || true)
+            echo "  Attempt $i: HTTP $STATUS"
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Smoke test passed"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Smoke test failed — /login did not return 200"
+          exit 1

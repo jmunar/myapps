@@ -43,6 +43,16 @@ SERVER="$DEPLOY_SERVER"
 
 # ── Helpers ────────────────────────────────────────────────────────
 
+# In CI (DEPLOY_CI=true) we skip -t (no TTY available for sudo prompts).
+# The deploy SSH user must have passwordless sudo configured on the server.
+ssh_server() {
+    if [[ "${DEPLOY_CI:-false}" == "true" ]]; then
+        ssh "$SERVER" "$@"
+    else
+        ssh -t "$SERVER" "$@"
+    fi
+}
+
 sync_source() {
     echo "▸ Syncing source to $SERVER:$DEPLOY_REMOTE_BUILD_DIR..."
     rsync -az --delete \
@@ -61,7 +71,7 @@ build() {
 
 install() {
     echo "▸ Installing binary and static files..."
-    ssh -t "$SERVER" DEPLOY_REMOTE_BUILD_DIR="$DEPLOY_REMOTE_BUILD_DIR" DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'INSTALL'
+    ssh_server DEPLOY_REMOTE_BUILD_DIR="$DEPLOY_REMOTE_BUILD_DIR" DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'INSTALL'
 set -euo pipefail
 sudo cp $DEPLOY_REMOTE_BUILD_DIR/target/release/myapps $DEPLOY_REMOTE_DIR/myapps.new
 sudo mv $DEPLOY_REMOTE_DIR/myapps.new $DEPLOY_REMOTE_DIR/myapps
@@ -78,9 +88,9 @@ INSTALL
 
 restart() {
     echo "▸ Restarting $DEPLOY_SERVICE_NAME service..."
-    ssh -t "$SERVER" "sudo systemctl restart $DEPLOY_SERVICE_NAME"
+    ssh_server "sudo systemctl restart $DEPLOY_SERVICE_NAME"
     echo "▸ Done. Checking status..."
-    ssh -t "$SERVER" "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME"
+    ssh_server "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME"
 }
 
 seed() {
@@ -90,7 +100,7 @@ seed() {
     echo "▸ Seeding apps: $DEPLOY_SEED_APPS..."
     for app in $DEPLOY_SEED_APPS; do
         echo "  ▸ Seeding $app (--reset)..."
-        ssh -t "$SERVER" "sudo -u myapps $DEPLOY_REMOTE_DIR/myapps seed --app $app --reset"
+        ssh_server "sudo -u myapps $DEPLOY_REMOTE_DIR/myapps seed --app $app --reset"
     done
 }
 
@@ -237,7 +247,7 @@ case "${COMMAND}" in
     deploy)  build && install && restart && seed ;;
     setup)   setup ;;
     restart) restart ;;
-    logs)    ssh -t "$SERVER" "sudo journalctl -u $DEPLOY_SERVICE_NAME -f --no-pager" ;;
-    status)  ssh -t "$SERVER" "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME" ;;
+    logs)    ssh_server "sudo journalctl -u $DEPLOY_SERVICE_NAME -f --no-pager" ;;
+    status)  ssh_server "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME" ;;
     *)       usage ;;
 esac

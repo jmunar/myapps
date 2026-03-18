@@ -49,10 +49,15 @@ SEED_REBUILD=true ./deploy.sh stage deploy  # Deploy + wipe & re-seed
 
 - **GitHub Actions CI** (`.github/workflows/ci.yml`) runs on every push to
   `main` and on PRs: format check, clippy (warnings-as-errors), and tests.
+- **GitHub Actions CD** (`.github/workflows/cd.yml`) runs on every push to
+  `main`: deploys to staging (with smoke test), then to production (with smoke
+  test). Uses `DEPLOY_CI=true` for non-interactive SSH. Requires GitHub
+  Environments (`staging`, `production`) with deploy config variables and SSH
+  secrets. See `docs/deployment.md` for setup details.
 - **Security audit** (`.github/workflows/audit.yml`) runs on Cargo.toml/lock
   changes and weekly via `cargo audit`.
-- Both workflows support `workflow_dispatch` for manual triggering from the
-  GitHub Actions UI.
+- All three workflows support `workflow_dispatch` for manual triggering from
+  the GitHub Actions UI.
 - **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for Cargo
   dependency updates and GitHub Actions version bumps.
 - `make check` runs the same checks locally before pushing.
