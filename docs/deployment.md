@@ -36,18 +36,87 @@ This avoids the complexity of cross-compilation toolchains (linkers, Docker,
   ```
 - whisper.cpp + ffmpeg (for VoiceToText) — see [whisper.cpp section](#whispercpp-voicetotext) below
 
-#### Passwordless sudo (recommended)
+#### Dedicated deploy user (recommended for CI/CD)
 
-The deploy script uses `sudo` over SSH for setup, restart, and log commands.
-To avoid being prompted for a password each time, configure passwordless sudo
-for your user on the Odroid:
+For CI/CD, use a dedicated `deploy` user instead of your personal account.
+This limits the blast radius if the SSH key (stored in GitHub Secrets) is
+compromised.
+
+```bash
+# On the Odroid — create the user
+sudo useradd --system --create-home --shell /bin/bash deploy
+sudo mkdir -p /home/deploy/.ssh
+sudo chmod 700 /home/deploy/.ssh
+sudo chown deploy:deploy /home/deploy/.ssh
+```
+
+Install the Rust toolchain for the `deploy` user (needed to build on the
+server):
+
+```bash
+sudo -u deploy bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+```
+
+Grant only the sudo commands that `deploy.sh` needs:
+
+```bash
+sudo visudo -f /etc/sudoers.d/deploy
+```
+
+```
+deploy ALL=(ALL) NOPASSWD: \
+    /usr/bin/systemctl restart myapps, \
+    /usr/bin/systemctl restart myapps-stage, \
+    /usr/bin/systemctl --no-pager status myapps, \
+    /usr/bin/systemctl --no-pager status myapps-stage, \
+    /usr/bin/cp *, \
+    /usr/bin/mv *, \
+    /usr/bin/chown *, \
+    /usr/bin/chmod *, \
+    /usr/bin/rsync *, \
+    /usr/bin/sudo -u myapps *
+```
+
+Generate a dedicated key pair and authorize it:
+
+```bash
+# On your dev machine
+ssh-keygen -t ed25519 -C "github-cd-deploy" -f ~/.ssh/myapps_deploy_cd_key -N ""
+
+# Copy the public key to the server (deploy user has no password, so use your
+# existing sudo-capable user to place it)
+cat ~/.ssh/myapps_deploy_cd_key.pub | ssh youruser@odroid.local \
+    'sudo tee /home/deploy/.ssh/authorized_keys > /dev/null && sudo chown deploy:deploy /home/deploy/.ssh/authorized_keys && sudo chmod 600 /home/deploy/.ssh/authorized_keys'
+```
+
+Upload the secrets and environment variables to GitHub using `gh`:
+
+```bash
+# Repo secrets (one-time)
+gh secret set SSH_PRIVATE_KEY < ~/.ssh/myapps_deploy_cd_key
+ssh-keyscan odroid.local | gh secret set SSH_KNOWN_HOSTS
+
+# Create GitHub environments and set all variables from deploy/*.env
+make gh-env
+```
+
+`make gh-env` reads each `deploy/*.env` file, creates the GitHub environment
+(from `DEPLOY_GH_ENVIRONMENT`), and sets all non-empty variables. Empty values
+are skipped — GitHub doesn't allow empty environment variables.
+
+Your personal user can still run `./deploy.sh` manually — the deploy user
+is only needed for CI/CD.
+
+#### Passwordless sudo (alternative for manual deploys)
+
+If you don't use the dedicated deploy user, the deploy script uses `sudo`
+over SSH for setup, restart, and log commands. To avoid being prompted for a
+password each time, configure passwordless sudo for your user on the Odroid:
 
 ```bash
 # On the Odroid
 sudo visudo -f /etc/sudoers.d/youruser
 ```
-
-Add:
 
 ```
 youruser ALL=(ALL) NOPASSWD: ALL
@@ -310,6 +379,67 @@ working dir, you can skip these.
 
 The background worker processes one job at a time to avoid memory pressure.
 With 4 GB RAM, tiny and base fit comfortably alongside the Axum server.
+
+## CI/CD Pipeline
+
+Merging to `main` triggers automatic deployment via `.github/workflows/cd.yml`:
+
+```
+push to main
+    │
+    ▼
+ [deploy-stage]  ◄── automatic
+    │ smoke test /login → 200
+    ▼
+ [deploy-prod]   ◄── automatic after staging passes
+    │ smoke test /login → 200
+    ▼
+  Done
+```
+
+CI (format, clippy, tests) runs separately via `ci.yml`. The CD pipeline
+trusts that CI has already passed on `main`.
+
+### GitHub configuration
+
+The CD workflow requires two GitHub **Environments** (`staging` and
+`production`), each with the following configuration:
+
+**Secrets** (repo-level or per-environment):
+
+| Secret             | Description                                         |
+|--------------------|-----------------------------------------------------|
+| `SSH_PRIVATE_KEY`  | Ed25519 private key authorized on the server        |
+| `SSH_KNOWN_HOSTS`  | Output of `ssh-keyscan <server-host>`               |
+
+**Environment variables** (per GitHub Environment):
+
+| Variable                  | Example (staging)           | Example (production)       |
+|---------------------------|-----------------------------|----------------------------|
+| `DEPLOY_SERVER`           | `user@odroid.local`         | `user@odroid.local`        |
+| `DEPLOY_DOMAIN`           | `stage.yourdomain.com`      | `yourdomain.com`           |
+| `DEPLOY_REMOTE_DIR`       | `/opt/myapps-stage`         | `/opt/myapps`              |
+| `DEPLOY_REMOTE_BUILD_DIR` | `~/myapps-stage-build`      | `~/myapps-build`           |
+| `DEPLOY_SERVICE_NAME`     | `myapps-stage`              | `myapps`                   |
+| `DEPLOY_NGINX_SITE`       | `myapps-stage`              | `myapps`                   |
+| `DEPLOY_PORT`             | `3001`                      | `3000`                     |
+| `DEPLOY_CRON_ENABLED`     | `false`                     | `true`                     |
+| `DEPLOY_ICON`             | `icon-stage.svg`            | `icon.svg`                 |
+| `DEPLOY_SEED_APPS`        | `leanfin mindflow classroom`| (empty)                    |
+
+These match the values in `deploy/*.env.example`.
+
+### Server prerequisites for CI/CD
+
+Use the dedicated `deploy` user (see [Dedicated deploy user](#dedicated-deploy-user-recommended-for-cicd)
+above) with scoped passwordless sudo. The `DEPLOY_CI=true` flag tells
+`deploy.sh` to skip `-t` (TTY allocation) since CI runners have no
+interactive terminal.
+
+### Manual trigger
+
+The CD workflow supports `workflow_dispatch`, so you can trigger a deploy
+manually from the GitHub Actions UI without pushing a commit.
 
 ## nginx + HTTPS
 
