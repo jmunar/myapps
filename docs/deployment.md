@@ -22,59 +22,114 @@ This avoids the complexity of cross-compilation toolchains (linkers, Docker,
 
 ### Development machine (macOS)
 
-- SSH access to the Odroid (key-based auth recommended)
+- SSH access to the Odroid via the `deploy` user (key-based auth)
 - `rsync` (pre-installed on macOS)
 
 ### Server (Odroid N2)
 
-- SSH access configured
 - nginx installed and running
-- Your SSH user must have `sudo` privileges
-- Rust toolchain — installed automatically by `./deploy.sh prod setup`, or manually:
-  ```bash
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-  ```
 - whisper.cpp + ffmpeg (for VoiceToText) — see [whisper.cpp section](#whispercpp-voicetotext) below
 
-#### Passwordless sudo (recommended)
+#### Deploy user setup
 
-The deploy script uses `sudo` over SSH for setup, restart, and log commands.
-To avoid being prompted for a password each time, configure passwordless sudo
-for your user on the Odroid:
+All deployments (both manual and CI/CD) use a dedicated `deploy` user. This
+keeps the Rust toolchain, build cache, and sudo permissions in one place, and
+limits the blast radius of the SSH key stored in GitHub Secrets.
 
 ```bash
-# On the Odroid
-sudo visudo -f /etc/sudoers.d/youruser
+# On the Odroid — create the user
+sudo useradd --system --create-home --shell /bin/bash deploy
+sudo mkdir -p /home/deploy/.ssh
+sudo chmod 700 /home/deploy/.ssh
+sudo chown deploy:deploy /home/deploy/.ssh
 ```
 
-Add:
+Install the Rust toolchain and sccache:
+
+```bash
+sudo -u deploy bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+sudo -u deploy bash -c 'source ~/.cargo/env && cargo install sccache --locked'
+```
+
+Grant only the sudo commands that `deploy.sh` needs:
+
+```bash
+sudo visudo -f /etc/sudoers.d/deploy
+```
 
 ```
-youruser ALL=(ALL) NOPASSWD: ALL
+deploy ALL=(ALL) NOPASSWD: \
+    /usr/bin/systemctl restart myapps, \
+    /usr/bin/systemctl restart myapps-stage, \
+    /usr/bin/systemctl --no-pager status myapps, \
+    /usr/bin/systemctl --no-pager status myapps-stage, \
+    /usr/bin/cp *, \
+    /usr/bin/mv *, \
+    /usr/bin/chown *, \
+    /usr/bin/chmod *, \
+    /usr/bin/rsync *, \
+    /usr/bin/sudo -u myapps *
 ```
 
-If you prefer not to do this, the script will prompt for your password
-interactively (via `ssh -t`).
+Generate a key pair and authorize it:
+
+```bash
+# On your dev machine
+ssh-keygen -t ed25519 -C "myapps-deploy" -f ~/.ssh/myapps_deploy_key -N ""
+
+# Copy the public key to the server (deploy user has no password, so use your
+# existing sudo-capable user to place it)
+cat ~/.ssh/myapps_deploy_key.pub | ssh youruser@odroid.local \
+    'sudo tee /home/deploy/.ssh/authorized_keys > /dev/null && sudo chown deploy:deploy /home/deploy/.ssh/authorized_keys && sudo chmod 600 /home/deploy/.ssh/authorized_keys'
+```
+
+Configure your local SSH to use this key (add to `~/.ssh/config`):
+
+```
+Host odroid-deploy
+    HostName odroid.local
+    User deploy
+    IdentityFile ~/.ssh/myapps_deploy_key
+```
+
+Set `DEPLOY_SERVER=odroid-deploy` in your `deploy/*.env` files.
+
+#### GitHub CD secrets
+
+Upload the SSH key and known hosts to GitHub for CI/CD:
+
+```bash
+gh secret set SSH_PRIVATE_KEY < ~/.ssh/myapps_deploy_key
+ssh-keyscan odroid.local | gh secret set SSH_KNOWN_HOSTS
+
+# Create GitHub environments and set all variables from deploy/*.env
+make gh-env
+```
+
+`make gh-env` reads each `deploy/*.env` file, creates the GitHub environment
+(from `DEPLOY_GH_ENVIRONMENT`), and sets all non-empty variables. Empty values
+are skipped — GitHub doesn't allow empty environment variables.
 
 ## Quick Start
 
 ```bash
-# 1. Configure server address
-export MYAPPS_SERVER="user@odroid.local"
+# 1. Set up the deploy user on the server (see "Deploy user setup" above)
 
-# 2. First-time server setup (installs Rust, creates user, dirs, systemd, cron, nginx)
+# 2. Set DEPLOY_SERVER in your deploy/*.env files (e.g. odroid-deploy)
+
+# 3. First-time server setup (creates myapps user, dirs, systemd, cron, nginx)
 ./deploy.sh prod setup
 
-# 3. SSH into the server and edit /opt/myapps/.env with your values
+# 4. SSH into the server and edit /opt/myapps/.env with your values
 
-# 4. Set up HTTPS on the server
-ssh $MYAPPS_SERVER 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d yourdomain.com'
+# 5. Set up HTTPS on the server
+ssh odroid-deploy 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d yourdomain.com'
 
-# 5. Sync source, build on server, install, and start the service
+# 6. Sync source, build on server, install, and start the service
 ./deploy.sh prod deploy
 
-# 6. Create your first user
-ssh $MYAPPS_SERVER 'sudo -u myapps /opt/myapps/myapps create-user --username yourname --password yourpass'
+# 7. Create your first user
+ssh odroid-deploy 'sudo -u myapps /opt/myapps/myapps create-user --username yourname --password yourpass'
 ```
 
 ## deploy.sh Commands
@@ -97,11 +152,8 @@ Available environments are defined by config files in `deploy/`:
 | `prod`      | `deploy/prod.env` | `https://yourdomain.com`          | 3000 |
 | `stage`     | `deploy/stage.env` | `https://stage.yourdomain.com`    | 3001 |
 
-Configure the SSH target via environment variable:
-
-```bash
-export MYAPPS_SERVER="user@odroid.local"   # SSH target (used by both envs)
-```
+The SSH target is set via `DEPLOY_SERVER` in each `deploy/*.env` file
+(e.g. `odroid-deploy` matching your SSH config alias).
 
 ## Deploy Flow
 
@@ -149,7 +201,7 @@ After setup, enable HTTPS with certbot (see Quick Start step 4).
 │   └── sync.log           # Cron job output
 └── static/                # (reserved for future use)
 
-~/myapps-build/            # Build directory (owned by your SSH user)
+~/myapps-build/            # Build directory (owned by deploy user)
 ├── src/
 ├── Cargo.toml
 ├── Cargo.lock
@@ -174,9 +226,13 @@ VAPID_SUBJECT=mailto:you@example.com       # VAPID subject claim
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli   # whisper.cpp binary
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 BIND_ADDR=127.0.0.1:3000
+DEPLOY_APPS=                                       # Comma-separated app keys (blank = all)
 ```
 
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
+`DEPLOY_APPS` limits which apps are mounted and shown in the launcher. Valid
+keys: `leanfin`, `mindflow`, `voice_to_text`, `classroom_input`. When empty or
+unset, all apps are available.
 `BASE_URL` is the public URL of the application. `ENCRYPTION_KEY` is needed for
 storing Enable Banking credentials (per-user encrypted settings).
 
@@ -311,6 +367,66 @@ working dir, you can skip these.
 The background worker processes one job at a time to avoid memory pressure.
 With 4 GB RAM, tiny and base fit comfortably alongside the Axum server.
 
+## CI/CD Pipeline
+
+Merging to `main` triggers automatic deployment via `.github/workflows/cd.yml`:
+
+```
+push to main
+    │
+    ▼
+ [deploy-stage]  ◄── automatic
+    │ smoke test /login → 200
+    ▼
+ [deploy-prod]   ◄── automatic after staging passes
+    │ smoke test /login → 200
+    ▼
+  Done
+```
+
+CI (format, clippy, tests) runs separately via `ci.yml`. The CD pipeline
+trusts that CI has already passed on `main`.
+
+### GitHub configuration
+
+The CD workflow requires two GitHub **Environments** (`staging` and
+`production`), each with the following configuration:
+
+**Secrets** (repo-level or per-environment):
+
+| Secret             | Description                                         |
+|--------------------|-----------------------------------------------------|
+| `SSH_PRIVATE_KEY`  | Ed25519 private key authorized on the server        |
+| `SSH_KNOWN_HOSTS`  | Output of `ssh-keyscan <server-host>`               |
+
+**Environment variables** (per GitHub Environment):
+
+| Variable                  | Example (staging)           | Example (production)       |
+|---------------------------|-----------------------------|----------------------------|
+| `DEPLOY_SERVER`           | `deploy@odroid.local`       | `deploy@odroid.local`      |
+| `DEPLOY_DOMAIN`           | `stage.yourdomain.com`      | `yourdomain.com`           |
+| `DEPLOY_REMOTE_DIR`       | `/opt/myapps-stage`         | `/opt/myapps`              |
+| `DEPLOY_REMOTE_BUILD_DIR` | `~/myapps-stage-build`      | `~/myapps-build`           |
+| `DEPLOY_SERVICE_NAME`     | `myapps-stage`              | `myapps`                   |
+| `DEPLOY_NGINX_SITE`       | `myapps-stage`              | `myapps`                   |
+| `DEPLOY_PORT`             | `3001`                      | `3000`                     |
+| `DEPLOY_CRON_ENABLED`     | `false`                     | `true`                     |
+| `DEPLOY_ICON`             | `icon-stage.svg`            | `icon.svg`                 |
+| `DEPLOY_SEED_APPS`        | `leanfin mindflow classroom`| (empty)                    |
+
+These match the values in `deploy/*.env.example`.
+
+### Server prerequisites for CI/CD
+
+The same `deploy` user is used for both manual and CI/CD deploys. The
+`DEPLOY_CI=true` flag tells `deploy.sh` to skip `-t` (TTY allocation) since
+CI runners have no interactive terminal.
+
+### Manual trigger
+
+The CD workflow supports `workflow_dispatch`, so you can trigger a deploy
+manually from the GitHub Actions UI without pushing a commit.
+
 ## nginx + HTTPS
 
 The `setup` command installs an HTTP-only nginx config at
@@ -354,13 +470,13 @@ appropriate values.
 # 3. DNS: add stage.yourdomain.com to your DNS provider
 
 # 4. HTTPS
-ssh $MYAPPS_SERVER 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d stage.yourdomain.com'
+ssh odroid-deploy 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d stage.yourdomain.com'
 
 # 5. Deploy
 ./deploy.sh stage deploy
 
 # 6. Create a user
-ssh $MYAPPS_SERVER 'sudo -u myapps /opt/myapps-stage/myapps create-user --username yourname --password yourpass'
+ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps create-user --username yourname --password yourpass'
 ```
 
 ### Deploying with seed data
@@ -383,5 +499,5 @@ SEED_REBUILD=true ./deploy.sh stage deploy
 ├── logs/
 └── static/
 
-~/myapps-stage-build/      # Build directory (owned by SSH user)
+~/myapps-stage-build/      # Build directory (owned by deploy user)
 ```

@@ -22,6 +22,10 @@ visibility into spending patterns.
   their launcher via an inline edit mode (gear icon). Hidden apps are stored
   per-user; defaults to all visible. Edit mode shows all apps with hidden
   ones dimmed/dashed.
+- **Deployable app subset** — the `DEPLOY_APPS` environment variable
+  (comma-separated app keys) limits which apps are mounted, shown in the
+  launcher, and have background workers started. When unset, all apps are
+  available.
 - Shared navigation with brand ("MyApps"), app-level nav, and logout.
 - **Multilingual support (i18n)** — English and Spanish. Users select their
   language on the login page (toggle link) or from a dropdown on the launcher.
@@ -106,11 +110,15 @@ visibility into spending patterns.
 
 - GitHub Actions enforces formatting (rustfmt), linting (clippy with
   warnings-as-errors), and tests on every push and pull request.
+- Merging to `main` triggers automatic deployment: staging first (with smoke
+  test), then production (with smoke test). Deploys use a dedicated SSH user
+  with scoped sudo.
 - A scheduled security audit (`cargo audit`) runs weekly and on Cargo.toml/lock
   changes.
 - Dependabot opens weekly PRs for Cargo dependency updates and GitHub Actions
   version bumps.
-- A Makefile provides local shortcuts that mirror CI checks (`make check`).
+- A Makefile provides local shortcuts that mirror CI checks (`make check`) and
+  GitHub environment setup (`make gh-env`).
 
 ### Deployment
 

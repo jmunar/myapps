@@ -239,3 +239,115 @@ async fn rehiding_then_showing_app_restores_visibility() {
     let body = response.text();
     assert!(body.contains(r#"href="/leanfin""#));
 }
+
+// --- DEPLOY_APPS subset tests (FEAT-33) ---
+
+#[tokio::test]
+async fn deploy_apps_none_shows_all_apps_in_launcher() {
+    let app = harness::spawn_app_with_deploy_apps(None).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("LeanFin"));
+    assert!(body.contains("MindFlow"));
+    assert!(body.contains("VoiceToText"));
+    assert!(body.contains("ClassroomInput"));
+}
+
+#[tokio::test]
+async fn deploy_apps_subset_only_shows_selected_apps_in_launcher() {
+    let app =
+        harness::spawn_app_with_deploy_apps(Some(vec!["leanfin".into(), "mindflow".into()])).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("LeanFin"));
+    assert!(body.contains("MindFlow"));
+    assert!(!body.contains("VoiceToText"));
+    assert!(!body.contains("ClassroomInput"));
+}
+
+#[tokio::test]
+async fn deploy_apps_subset_excluded_app_route_returns_404() {
+    let app = harness::spawn_app_with_deploy_apps(Some(vec!["leanfin".into()])).await;
+    app.login_as("test", "pass").await;
+
+    // LeanFin is deployed — should be reachable
+    let response = app.server.get("/leanfin").await;
+    assert_eq!(response.status_code(), 200);
+
+    // MindFlow is NOT deployed — should 404
+    let response = app.server.get("/mindflow").expect_failure().await;
+    assert_eq!(response.status_code(), 404);
+
+    // VoiceToText is NOT deployed — should 404
+    let response = app.server.get("/voice").expect_failure().await;
+    assert_eq!(response.status_code(), 404);
+
+    // ClassroomInput is NOT deployed — should 404
+    let response = app.server.get("/classroom").expect_failure().await;
+    assert_eq!(response.status_code(), 404);
+}
+
+#[tokio::test]
+async fn deploy_apps_single_app_only_mounts_that_app() {
+    let app = harness::spawn_app_with_deploy_apps(Some(vec!["classroom_input".into()])).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("ClassroomInput"));
+    assert!(!body.contains("LeanFin"));
+    assert!(!body.contains("MindFlow"));
+    assert!(!body.contains("VoiceToText"));
+
+    // Classroom route works
+    let response = app.server.get("/classroom").await;
+    assert_eq!(response.status_code(), 200);
+
+    // Others 404
+    let response = app.server.get("/leanfin").expect_failure().await;
+    assert_eq!(response.status_code(), 404);
+}
+
+#[tokio::test]
+async fn deploy_apps_edit_mode_only_shows_deployed_apps() {
+    let app =
+        harness::spawn_app_with_deploy_apps(Some(vec!["leanfin".into(), "mindflow".into()])).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/launcher/edit").await.text();
+    assert!(body.contains("LeanFin"));
+    assert!(body.contains("MindFlow"));
+    assert!(!body.contains("VoiceToText"));
+    assert!(!body.contains("ClassroomInput"));
+}
+
+#[tokio::test]
+async fn deploy_apps_empty_vec_shows_no_apps() {
+    let app = harness::spawn_app_with_deploy_apps(Some(vec![])).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("No apps visible"));
+    assert!(!body.contains("LeanFin"));
+    assert!(!body.contains("MindFlow"));
+}
+
+#[tokio::test]
+async fn deploy_apps_visibility_toggle_only_applies_to_deployed_apps() {
+    let app =
+        harness::spawn_app_with_deploy_apps(Some(vec!["leanfin".into(), "mindflow".into()])).await;
+    app.login_as("test", "pass").await;
+
+    // Hiding a non-deployed app key should be ignored
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({"app_key": "voice_to_text", "visible": "0"}))
+        .await;
+
+    // Launcher should still show the two deployed apps
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("LeanFin"));
+    assert!(body.contains("MindFlow"));
+    assert!(!body.contains("VoiceToText"));
+}

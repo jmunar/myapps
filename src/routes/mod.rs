@@ -26,18 +26,28 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
     };
 
     // Routes that require authentication
-    let protected = Router::new()
+    let mut protected = Router::new()
         .merge(launcher::routes())
         .merge(pwa::push_routes())
-        .nest("/leanfin", crate::apps::leanfin::router())
-        .nest("/mindflow", crate::apps::mindflow::router())
-        .nest("/voice", crate::apps::voice_to_text::router())
-        .nest("/classroom", crate::apps::classroom_input::router())
-        .merge(settings::routes())
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            crate::auth::require_auth,
-        ));
+        .merge(settings::routes());
+
+    if state.config.is_app_deployed("leanfin") {
+        protected = protected.nest("/leanfin", crate::apps::leanfin::router());
+    }
+    if state.config.is_app_deployed("mindflow") {
+        protected = protected.nest("/mindflow", crate::apps::mindflow::router());
+    }
+    if state.config.is_app_deployed("voice_to_text") {
+        protected = protected.nest("/voice", crate::apps::voice_to_text::router());
+    }
+    if state.config.is_app_deployed("classroom_input") {
+        protected = protected.nest("/classroom", crate::apps::classroom_input::router());
+    }
+
+    let protected = protected.layer(middleware::from_fn_with_state(
+        state.clone(),
+        crate::auth::require_auth,
+    ));
 
     // Public routes (login/logout)
     let public = auth::routes();
@@ -55,8 +65,10 @@ pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
     let bind_addr = config.bind_addr.clone();
     let worker_config = Arc::new(config.clone());
 
-    // Start background voice transcription worker
-    crate::apps::voice_to_text::services::worker::spawn(pool.clone(), worker_config);
+    // Start background voice transcription worker (only if voice_to_text is deployed)
+    if config.is_app_deployed("voice_to_text") {
+        crate::apps::voice_to_text::services::worker::spawn(pool.clone(), worker_config);
+    }
 
     let app = build_router(pool, config);
 

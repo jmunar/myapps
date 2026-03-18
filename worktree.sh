@@ -30,6 +30,13 @@ cmd_create() {
         echo "Warning: no .env found in main repo"
     fi
 
+    # Copy deploy/*.env files (gitignored, contain local deploy config)
+    for f in "$REPO_DIR"/deploy/*.env; do
+        [ -f "$f" ] || continue
+        cp "$f" "$worktree_dir/deploy/"
+    done
+    echo "Copied deploy/*.env"
+
     # Copy data/ (SQLite DBs)
     if [ -d "$REPO_DIR/data" ]; then
         cp -r "$REPO_DIR/data" "$worktree_dir/data"
@@ -110,6 +117,13 @@ cmd_remove() {
             echo "Copied .claude/settings.local.json from worktree"
         fi
     fi
+
+    # Copy deploy/*.env files back to main repo
+    for f in "$worktree_dir"/deploy/*.env; do
+        [ -f "$f" ] || continue
+        cp "$f" "$REPO_DIR/deploy/"
+    done
+    echo "Copied deploy/*.env back to main repo"
 
     git -C "$REPO_DIR" worktree remove "$worktree_dir"
     echo "Removed worktree: $worktree_dir"

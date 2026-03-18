@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use super::AppState;
-use crate::apps::registry::{AppInfo, all_apps};
+use crate::apps::registry::{AppInfo, deployed_apps};
 use crate::auth::UserId;
 use crate::i18n::{self, Lang};
 use crate::layout::{NavItem, render_page};
@@ -245,7 +245,7 @@ async fn index(
     }];
 
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
-    let apps = all_apps();
+    let apps = deployed_apps(&state.config);
 
     let header = render_header_normal(base, lang);
     let grid = render_grid_normal(&apps, &visibility, base, lang);
@@ -263,7 +263,7 @@ async fn edit_mode(
 ) -> Html<String> {
     let base = &state.config.base_path;
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
-    let apps = all_apps();
+    let apps = deployed_apps(&state.config);
 
     let header = render_header_edit(base, lang);
     let grid = render_grid_edit(&apps, &visibility, base, lang);
@@ -278,7 +278,7 @@ async fn grid_fragment(
 ) -> Html<String> {
     let base = &state.config.base_path;
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
-    let apps = all_apps();
+    let apps = deployed_apps(&state.config);
 
     let header = render_header_normal(base, lang);
     let grid = render_grid_normal(&apps, &visibility, base, lang);
@@ -301,7 +301,7 @@ async fn set_visibility(
     let visible = form.visible != "0";
 
     // Validate app_key against registry
-    let apps = all_apps();
+    let apps = deployed_apps(&state.config);
     if apps.iter().any(|a| a.key == form.app_key) {
         let _ =
             user_app_visibility::set_visibility(&state.pool, user_id, &form.app_key, visible).await;

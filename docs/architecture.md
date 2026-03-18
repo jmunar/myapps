@@ -72,7 +72,7 @@ myapps/
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # Web Push notifications (VAPID)
 │   └── apps/                # Sub-applications
-│       ├── registry.rs      # App metadata registry (AppInfo, all_apps())
+│       ├── registry.rs      # App metadata registry (AppInfo, all_apps(), deployed_apps())
 │       ├── leanfin/         # LeanFin expense tracker
 │           ├── mod.rs       # LeanFin router
 │           ├── dashboard.rs # Main transactions page
@@ -120,6 +120,7 @@ myapps/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml           # PR/push: fmt check + clippy + tests
+│   │   ├── cd.yml           # Push to main: deploy staging → production
 │   │   └── audit.yml        # Cargo security audit (weekly + on lock changes)
 │   └── dependabot.yml       # Weekly Cargo + Actions dependency updates
 ├── Cargo.toml
@@ -573,5 +574,8 @@ See [deployment.md](deployment.md) for detailed instructions.
 Development machine and server are separate. The workflow is:
 
 1. Develop and test locally (using a local SQLite DB).
-2. `./deploy.sh prod deploy` rsyncs source to the Odroid, builds natively, and
-   installs + restarts the service.
+2. Merging to `main` triggers the CD pipeline (`.github/workflows/cd.yml`),
+   which deploys to staging (with smoke test) then production (with smoke test).
+3. Manual deploys are also possible via `./deploy.sh <env> deploy`, which
+   rsyncs source to the Odroid, builds natively, and installs + restarts the
+   service.
