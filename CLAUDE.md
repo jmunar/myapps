@@ -36,8 +36,7 @@ make audit                          # Security audit (cargo audit)
 make build                          # Release build
 make run                            # Start dev server
 
-# Deploy to server (rsyncs source, builds on Odroid, installs + restarts)
-export MYAPPS_SERVER="user@odroid.local"
+# Deploy to server (rsyncs source via deploy user, builds on Odroid, installs + restarts)
 ./deploy.sh prod setup                    # First time only
 ./deploy.sh prod deploy                   # Build + install + restart
 ./deploy.sh stage setup                   # First time only (staging)
