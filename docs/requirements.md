@@ -23,6 +23,11 @@ visibility into spending patterns.
   per-user; defaults to all visible. Edit mode shows all apps with hidden
   ones dimmed/dashed.
 - Shared navigation with brand ("MyApps"), app-level nav, and logout.
+- **Multilingual support (i18n)** — English and Spanish. Users select their
+  language on the login page (toggle link) or from a dropdown on the launcher.
+  Preference is stored per-user in the database and propagated through the auth
+  middleware. Compile-time struct-based translations with zero runtime cost;
+  adding a new string field forces both language files to be updated.
 
 ### Bank account integration (LeanFin)
 

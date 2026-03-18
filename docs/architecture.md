@@ -56,14 +56,19 @@ myapps/
 │   ├── main.rs              # CLI entrypoint (clap subcommands)
 │   ├── config.rs            # Configuration (env vars)
 │   ├── db.rs                # Database pool and migrations
+│   ├── i18n/               # Internationalization (compile-time struct-based)
+│   │   ├── mod.rs           # Lang enum, Translations struct, t() dispatcher
+│   │   ├── en.rs            # English translations (const EN)
+│   │   └── es.rs            # Spanish translations (const ES)
 │   ├── layout.rs            # Shared HTML layout helper
 │   ├── models/              # Domain types (Transaction, Account, Label, etc.)
 │   ├── auth/                # Authentication & session management
 │   ├── routes/              # Top-level router, auth routes, app launcher
 │   │   ├── mod.rs           # Router setup, AppState, build_router(), nests sub-apps
-│   │   ├── auth.rs          # Login/logout
+│   │   ├── auth.rs          # Login/logout (with language toggle)
+│   │   ├── settings.rs      # Language preference handler (POST /settings/language)
 │   │   ├── pwa.rs           # PWA manifest + service worker endpoints
-│   │   └── launcher.rs      # App launcher page + visibility config (HTMX)
+│   │   └── launcher.rs      # App launcher page + visibility config + language selector
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # Web Push notifications (VAPID)
 │   └── apps/                # Sub-applications
@@ -134,6 +139,7 @@ After login, the top-level router serves:
 - `/launcher/edit` — Edit mode: toggle app visibility (HTMX partial)
 - `/launcher/grid` — Normal mode grid fragment (HTMX partial)
 - `POST /launcher/visibility` — Set app visibility preference (HTMX partial)
+- `POST /settings/language` — Set user language preference (redirects back)
 - `/manifest.json` — PWA manifest (dynamic, base_path-aware)
 - `/sw.js` — Service worker (dynamic, base_path injected, push handlers)
 - `/push/vapid-key` — VAPID public key (GET, protected)
@@ -397,6 +403,13 @@ Indexes: `account_id`, `created_at`.
 | visible | INTEGER | 1 = shown, 0 = hidden, default 1               |
 
 Missing rows default to visible — existing users see no change.
+
+### user_settings
+
+| Column   | Type    | Notes                                          |
+|----------|---------|------------------------------------------------|
+| user_id  | INTEGER | PK, FK → users, ON DELETE CASCADE              |
+| language | TEXT    | 'en' or 'es', default 'en'                     |
 
 ### push_subscriptions
 
