@@ -66,11 +66,7 @@ sync_source() {
 build() {
     sync_source
     echo "▸ Building release on $SERVER..."
-    local wrapper_override=""
-    if [[ "${DEPLOY_CI:-false}" == "true" ]]; then
-        wrapper_override="RUSTC_WRAPPER="
-    fi
-    ssh "$SERVER" "source \$HOME/.cargo/env && cd $DEPLOY_REMOTE_BUILD_DIR && $wrapper_override cargo build --release"
+    ssh "$SERVER" "source \$HOME/.cargo/env && cd $DEPLOY_REMOTE_BUILD_DIR && cargo build --release"
 }
 
 install() {
