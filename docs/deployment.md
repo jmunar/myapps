@@ -243,9 +243,13 @@ VAPID_SUBJECT=mailto:you@example.com       # VAPID subject claim
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli   # whisper.cpp binary
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 BIND_ADDR=127.0.0.1:3000
+DEPLOY_APPS=                                       # Comma-separated app keys (blank = all)
 ```
 
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
+`DEPLOY_APPS` limits which apps are mounted and shown in the launcher. Valid
+keys: `leanfin`, `mindflow`, `voice_to_text`, `classroom_input`. When empty or
+unset, all apps are available.
 `BASE_URL` is the public URL of the application. `ENCRYPTION_KEY` is needed for
 storing Enable Banking credentials (per-user encrypted settings).
 
