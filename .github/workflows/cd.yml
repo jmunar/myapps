@@ -39,13 +39,13 @@ jobs:
           DEPLOY_DOMAIN=${{ vars.DEPLOY_DOMAIN }}
           DEPLOY_SERVER=deploy-target
           DEPLOY_REMOTE_DIR=${{ vars.DEPLOY_REMOTE_DIR }}
-          DEPLOY_REMOTE_BUILD_DIR=${{ vars.DEPLOY_REMOTE_BUILD_DIR }}
+          DEPLOY_REMOTE_BUILD_DIR="${{ vars.DEPLOY_REMOTE_BUILD_DIR }}"
           DEPLOY_SERVICE_NAME=${{ vars.DEPLOY_SERVICE_NAME }}
           DEPLOY_NGINX_SITE=${{ vars.DEPLOY_NGINX_SITE }}
           DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
-          DEPLOY_SEED_APPS=${{ vars.DEPLOY_SEED_APPS }}
+          DEPLOY_SEED_APPS="${{ vars.DEPLOY_SEED_APPS }}"
           EOF
 
       - name: Deploy to staging
@@ -97,13 +97,13 @@ jobs:
           DEPLOY_DOMAIN=${{ vars.DEPLOY_DOMAIN }}
           DEPLOY_SERVER=deploy-target
           DEPLOY_REMOTE_DIR=${{ vars.DEPLOY_REMOTE_DIR }}
-          DEPLOY_REMOTE_BUILD_DIR=${{ vars.DEPLOY_REMOTE_BUILD_DIR }}
+          DEPLOY_REMOTE_BUILD_DIR="${{ vars.DEPLOY_REMOTE_BUILD_DIR }}"
           DEPLOY_SERVICE_NAME=${{ vars.DEPLOY_SERVICE_NAME }}
           DEPLOY_NGINX_SITE=${{ vars.DEPLOY_NGINX_SITE }}
           DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
-          DEPLOY_SEED_APPS=${{ vars.DEPLOY_SEED_APPS }}
+          DEPLOY_SEED_APPS="${{ vars.DEPLOY_SEED_APPS }}"
           EOF
 
       - name: Deploy to production

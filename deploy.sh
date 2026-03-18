@@ -107,7 +107,7 @@ seed() {
 setup() {
     echo "▸ Running first-time server setup on $SERVER ($ENV_NAME)..."
     echo "  (you may be prompted for your sudo password)"
-    ssh -t "$SERVER" \
+    ssh_server \
         DEPLOY_DOMAIN="$DEPLOY_DOMAIN" \
         DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" \
         DEPLOY_SERVICE_NAME="$DEPLOY_SERVICE_NAME" \
