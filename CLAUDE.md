@@ -19,7 +19,8 @@ DB, layout/styling, and config.
 # Development (local)
 cargo run -- serve                  # Start HTTP server on 127.0.0.1:3000
 cargo run -- sync                   # Run transaction sync manually
-cargo run -- create-user            # Create a user
+cargo run -- create-user            # Create a user (admin, direct password)
+cargo run -- invite                 # Generate a single-use invite link (48h)
 cargo run -- seed --app leanfin     # Seed LeanFin demo data
 cargo run -- seed --app leanfin --reset  # Wipe and re-seed demo data
 cargo run -- seed --app mindflow   # Seed MindFlow demo data

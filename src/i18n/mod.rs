@@ -48,6 +48,19 @@ pub struct Translations {
     pub login_invalid: &'static str,
     pub login_error: &'static str,
 
+    // ── Invite / Register ─────────────────────────────────────
+    pub invite_title: &'static str,
+    pub invite_subtitle: &'static str,
+    pub invite_username: &'static str,
+    pub invite_password: &'static str,
+    pub invite_confirm_password: &'static str,
+    pub invite_submit: &'static str,
+    pub invite_invalid: &'static str,
+    pub invite_expired: &'static str,
+    pub invite_used: &'static str,
+    pub invite_passwords_mismatch: &'static str,
+    pub invite_username_taken: &'static str,
+
     // ── Launcher ─────────────────────────────────────────────
     pub launcher_title: &'static str,
     pub launcher_subtitle: &'static str,

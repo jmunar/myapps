@@ -21,6 +21,8 @@ enum Command {
         #[arg(long)]
         password: String,
     },
+    /// Generate an invite link for a new user (valid 48h, single-use)
+    Invite,
     /// Generate VAPID key pair for Web Push notifications
     GenerateVapidKeys,
     /// Populate database with demo data for local development
@@ -64,6 +66,12 @@ async fn main() -> anyhow::Result<()> {
         Command::CreateUser { username, password } => {
             auth::create_user(&pool, &username, &password).await?;
             tracing::info!("User '{username}' created");
+        }
+        Command::Invite => {
+            let token = auth::create_invite(&pool).await?;
+            let fallback = format!("http://{}", config.bind_addr);
+            let base = config.base_url.as_deref().unwrap_or(&fallback);
+            println!("Invite link (valid 48h, single-use):\n{base}/invite/{token}");
         }
         Command::GenerateVapidKeys => {
             use base64::Engine;

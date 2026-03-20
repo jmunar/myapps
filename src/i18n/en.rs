@@ -13,6 +13,19 @@ pub const EN: Translations = Translations {
     login_invalid: "Invalid credentials",
     login_error: "Internal error",
 
+    // ── Invite / Register ─────────────────────────────────────
+    invite_title: "MyApps — Register",
+    invite_subtitle: "Create your account",
+    invite_username: "Username",
+    invite_password: "Password",
+    invite_confirm_password: "Confirm password",
+    invite_submit: "Create account",
+    invite_invalid: "This invite link is invalid.",
+    invite_expired: "This invite link has expired.",
+    invite_used: "This invite link has already been used.",
+    invite_passwords_mismatch: "Passwords do not match.",
+    invite_username_taken: "This username is already taken.",
+
     // ── Launcher ─────────────────────────────────────────────
     launcher_title: "My Apps",
     launcher_subtitle: "Choose an application",

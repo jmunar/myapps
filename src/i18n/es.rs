@@ -13,6 +13,19 @@ pub const ES: Translations = Translations {
     login_invalid: "Credenciales inválidas",
     login_error: "Error interno",
 
+    // ── Invite / Register ─────────────────────────────────────
+    invite_title: "MyApps — Registro",
+    invite_subtitle: "Crea tu cuenta",
+    invite_username: "Usuario",
+    invite_password: "Contraseña",
+    invite_confirm_password: "Confirmar contraseña",
+    invite_submit: "Crear cuenta",
+    invite_invalid: "Este enlace de invitación no es válido.",
+    invite_expired: "Este enlace de invitación ha expirado.",
+    invite_used: "Este enlace de invitación ya ha sido utilizado.",
+    invite_passwords_mismatch: "Las contraseñas no coinciden.",
+    invite_username_taken: "Este nombre de usuario ya está en uso.",
+
     // ── Launcher ─────────────────────────────────────────────
     launcher_title: "Mis Apps",
     launcher_subtitle: "Elige una aplicación",

@@ -128,3 +128,65 @@ pub async fn require_auth(
 
 #[derive(Clone, Copy)]
 pub struct UserId(pub i64);
+
+pub async fn create_invite(pool: &SqlitePool) -> Result<String> {
+    let token: String = hex::encode(rand::rng().random::<[u8; 32]>());
+    let expires_at = Utc::now().naive_utc() + chrono::Duration::hours(48);
+
+    sqlx::query("INSERT INTO invites (token, expires_at) VALUES (?, ?)")
+        .bind(&token)
+        .bind(expires_at)
+        .execute(pool)
+        .await?;
+
+    Ok(token)
+}
+
+#[derive(Debug)]
+pub enum InviteError {
+    NotFound,
+    Expired,
+    AlreadyUsed,
+}
+
+impl std::fmt::Display for InviteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => write!(f, "not_found"),
+            Self::Expired => write!(f, "expired"),
+            Self::AlreadyUsed => write!(f, "already_used"),
+        }
+    }
+}
+
+pub async fn validate_invite(
+    pool: &SqlitePool,
+    token: &str,
+) -> std::result::Result<(), InviteError> {
+    let invite = sqlx::query_as::<_, crate::models::Invite>(
+        "SELECT token, expires_at, used_at, created_at FROM invites WHERE token = ?",
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| InviteError::NotFound)?
+    .ok_or(InviteError::NotFound)?;
+
+    if invite.used_at.is_some() {
+        return Err(InviteError::AlreadyUsed);
+    }
+    if invite.expires_at < Utc::now().naive_utc() {
+        return Err(InviteError::Expired);
+    }
+    Ok(())
+}
+
+pub async fn mark_invite_used(pool: &SqlitePool, token: &str) -> Result<()> {
+    let now = Utc::now().naive_utc();
+    sqlx::query("UPDATE invites SET used_at = ? WHERE token = ?")
+        .bind(now)
+        .bind(token)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

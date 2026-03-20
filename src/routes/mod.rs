@@ -1,4 +1,5 @@
 mod auth;
+mod invite;
 mod launcher;
 mod pwa;
 mod settings;
@@ -49,8 +50,8 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
         crate::auth::require_auth,
     ));
 
-    // Public routes (login/logout)
-    let public = auth::routes();
+    // Public routes (login/logout, invite registration)
+    let public = auth::routes().merge(invite::routes());
 
     Router::new()
         .merge(protected)
