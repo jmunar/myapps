@@ -2,6 +2,7 @@ mod actions;
 mod categories;
 mod inbox;
 mod mind_map;
+pub mod ops;
 pub mod services;
 mod thoughts;
 

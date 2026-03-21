@@ -3,6 +3,7 @@ mod balance_evolution;
 mod dashboard;
 mod expenses;
 mod labels;
+pub mod ops;
 pub mod services;
 pub mod settings;
 mod sync_handler;

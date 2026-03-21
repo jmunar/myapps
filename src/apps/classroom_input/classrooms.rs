@@ -129,7 +129,7 @@ async fn list(
         &format!("Classroom — {}", t.ci_classrooms),
         &classroom_nav(base, "classrooms", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -171,17 +171,7 @@ async fn delete(
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    // Delete associated inputs first
-    sqlx::query("DELETE FROM classroom_inputs WHERE classroom_id = ? AND user_id = ?")
-        .bind(id)
-        .bind(user_id.0)
-        .execute(&state.pool)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM classroom_classrooms WHERE id = ? AND user_id = ?")
-        .bind(id)
-        .bind(user_id.0)
-        .execute(&state.pool)
+    super::ops::delete_classroom(&state.pool, user_id.0, id)
         .await
         .ok();
     Redirect::to(&format!("{base}/classroom/classrooms"))

@@ -181,7 +181,7 @@ async fn list(
         &format!("Classroom — {}", t.ci_form_types),
         &classroom_nav(base, "form_types", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -249,7 +249,7 @@ async fn edit_page(
                 r#"<div class="empty-state"><p>{}</p></div>"#,
                 t.ci_ft_not_found
             ),
-            base,
+            &state.config,
             lang,
         ));
     };
@@ -353,7 +353,7 @@ async fn edit_page(
         &format!("Classroom — {}", t.ci_ft_edit_title),
         &classroom_nav(base, "form_types", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -405,17 +405,7 @@ async fn delete(
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    // Delete associated inputs first
-    sqlx::query("DELETE FROM classroom_inputs WHERE form_type_id = ? AND user_id = ?")
-        .bind(id)
-        .bind(user_id.0)
-        .execute(&state.pool)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM classroom_form_types WHERE id = ? AND user_id = ?")
-        .bind(id)
-        .bind(user_id.0)
-        .execute(&state.pool)
+    super::ops::delete_form_type(&state.pool, user_id.0, id)
         .await
         .ok();
     Redirect::to(&format!("{base}/classroom/form-types"))

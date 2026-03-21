@@ -1,5 +1,6 @@
 mod dashboard;
 mod jobs;
+pub mod ops;
 pub mod services;
 
 use crate::routes::AppState;

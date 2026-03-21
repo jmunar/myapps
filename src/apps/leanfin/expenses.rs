@@ -55,7 +55,7 @@ async fn page(
             &format!("LeanFin — {}", t.lf_expenses),
             &leanfin_nav(base, "expenses", lang),
             &body,
-            base,
+            &state.config,
             lang,
         ));
     }
@@ -181,7 +181,7 @@ async fn page(
         &format!("LeanFin — {}", t.lf_expenses),
         &leanfin_nav(base, "expenses", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

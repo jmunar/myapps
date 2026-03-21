@@ -180,7 +180,7 @@ async fn index(
         &format!("LeanFin — {}", t.lf_transactions),
         &leanfin_nav(base, "transactions", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

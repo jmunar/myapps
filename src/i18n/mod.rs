@@ -412,6 +412,17 @@ pub struct Translations {
     pub ci_ft_cancel: &'static str,
     pub ci_ft_no_columns: &'static str,
     pub ci_ft_not_found: &'static str,
+
+    // ── Command Bar ─────────────────────────────────────────
+    pub cmd_placeholder: &'static str,
+    pub cmd_busy: &'static str,
+    pub cmd_error: &'static str,
+    pub cmd_not_configured: &'static str,
+    pub cmd_no_actions: &'static str,
+    pub cmd_no_params: &'static str,
+    pub cmd_confidence: &'static str,
+    pub cmd_confirm: &'static str,
+    pub cmd_cancel: &'static str,
 }
 
 impl Translations {

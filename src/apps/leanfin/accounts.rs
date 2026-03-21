@@ -328,7 +328,7 @@ async fn list_accounts(
         &format!("LeanFin — {}", t.lf_accounts),
         &leanfin_nav(base, "accounts", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -419,7 +419,7 @@ async fn manual_new_form(
         &format!("LeanFin — {}", t.lf_acc_manual_new_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -564,7 +564,7 @@ async fn manual_edit_form(
         &format!("LeanFin — {}", t.lf_acc_edit_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
     .into_response()
@@ -667,7 +667,7 @@ async fn manual_value_form(
         &format!("LeanFin — {}", t.lf_acc_value_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
     .into_response()
@@ -806,7 +806,7 @@ async fn import_csv_form(
         &format!("LeanFin — {}", t.lf_acc_csv_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
     .into_response()
@@ -846,7 +846,7 @@ async fn import_csv_submit(
                 Ok(bytes) => csv_bytes = Some(bytes.to_vec()),
                 Err(e) => {
                     return render_import_error(
-                        base,
+                        &state.config,
                         name,
                         account_id,
                         &format!("Failed to read file: {e}"),
@@ -859,7 +859,7 @@ async fn import_csv_submit(
     }
 
     let Some(csv_bytes) = csv_bytes else {
-        return render_import_error(base, name, account_id, "No file uploaded", lang)
+        return render_import_error(&state.config, name, account_id, "No file uploaded", lang)
             .into_response();
     };
 
@@ -905,7 +905,7 @@ async fn import_csv_submit(
                 &format!("LeanFin — {}", t.lf_acc_csv_import_failed),
                 &leanfin_nav(base, "accounts", lang),
                 &body,
-                base,
+                &state.config,
                 lang,
             ))
             .into_response()
@@ -946,22 +946,24 @@ async fn import_csv_submit(
                 &format!("LeanFin — {}", t.lf_acc_csv_import_complete),
                 &leanfin_nav(base, "accounts", lang),
                 &body,
-                base,
+                &state.config,
                 lang,
             ))
             .into_response()
         }
-        Err(e) => render_import_error(base, name, account_id, &e.to_string(), lang).into_response(),
+        Err(e) => render_import_error(&state.config, name, account_id, &e.to_string(), lang)
+            .into_response(),
     }
 }
 
 fn render_import_error(
-    base: &str,
+    config: &crate::config::Config,
     name: &str,
     account_id: i64,
     error: &str,
     lang: Lang,
 ) -> Html<String> {
+    let base = &config.base_path;
     let t = i18n::t(lang);
     let body = format!(
         r#"<div class="page-header">
@@ -987,7 +989,7 @@ fn render_import_error(
         &format!("LeanFin — {}", t.lf_acc_csv_import_failed),
         &leanfin_nav(base, "accounts", lang),
         &body,
-        base,
+        config,
         lang,
     ))
 }
@@ -1038,7 +1040,7 @@ async fn link_form(
         &format!("LeanFin — {}", t.lf_acc_link_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

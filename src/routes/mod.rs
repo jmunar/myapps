@@ -7,6 +7,7 @@ use crate::config::Config;
 use axum::{Router, middleware};
 use sqlx::SqlitePool;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tower_cookies::CookieManagerLayer;
 use tower_http::services::ServeDir;
 
@@ -15,6 +16,7 @@ use tower_http::services::ServeDir;
 pub struct AppState {
     pub pool: SqlitePool,
     pub config: Arc<Config>,
+    pub llm_lock: Arc<Mutex<()>>,
 }
 
 /// Build the application router without binding to a port.
@@ -23,6 +25,7 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
     let state = AppState {
         pool: pool.clone(),
         config: Arc::new(config),
+        llm_lock: Arc::new(Mutex::new(())),
     };
 
     // Routes that require authentication
@@ -42,6 +45,15 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
     }
     if state.config.is_app_deployed("classroom_input") {
         protected = protected.nest("/classroom", crate::apps::classroom_input::router());
+    }
+    if state.config.llm_enabled() {
+        tracing::info!(
+            "Command bar enabled (llama server: {})",
+            state.config.llama_server_url
+        );
+        protected = protected.nest("/command", crate::command::routes::routes());
+    } else {
+        tracing::info!("Command bar disabled (LLAMA_SERVER_URL not set)");
     }
 
     let protected = protected.layer(middleware::from_fn_with_state(

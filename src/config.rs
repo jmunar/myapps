@@ -18,6 +18,8 @@ pub struct Config {
     pub whisper_models_dir: String,
     /// Optional subset of apps to deploy (app keys). `None` means all apps.
     pub deploy_apps: Option<Vec<String>>,
+    /// Base URL of the llama.cpp server (e.g. `http://127.0.0.1:8081`).
+    pub llama_server_url: String,
 }
 
 impl Config {
@@ -47,6 +49,7 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .map(|s| s.split(',').map(|a| a.trim().to_string()).collect()),
+            llama_server_url: env::var("LLAMA_SERVER_URL").unwrap_or_default(),
         })
     }
 
@@ -56,6 +59,11 @@ impl Config {
             None => true,
             Some(apps) => apps.iter().any(|a| a == key),
         }
+    }
+
+    /// Returns true if the LLM command bar is available.
+    pub fn llm_enabled(&self) -> bool {
+        !self.llama_server_url.is_empty()
     }
 
     /// Returns the full path to a whisper GGML model file.
@@ -106,6 +114,7 @@ mod tests {
             whisper_cli_path: String::new(),
             whisper_models_dir: String::new(),
             deploy_apps,
+            llama_server_url: String::new(),
         }
     }
 

@@ -46,14 +46,13 @@ async fn capture(
         .as_deref()
         .and_then(|s| s.parse().ok());
 
-    sqlx::query(
-        "INSERT INTO mindflow_thoughts (user_id, category_id, parent_thought_id, content) VALUES (?, ?, ?, ?)",
+    super::ops::capture_thought(
+        &state.pool,
+        user_id.0,
+        &form.content,
+        category_id,
+        parent_thought_id,
     )
-    .bind(user_id.0)
-    .bind(category_id)
-    .bind(parent_thought_id)
-    .bind(&form.content)
-    .execute(&state.pool)
     .await
     .ok();
 
@@ -381,7 +380,7 @@ async fn detail(
         &format!("MindFlow \u{2014} {}", t.mf_thought_title),
         &mindflow_nav(base, "", lang),
         &body,
-        base,
+        &state.config,
         lang,
     )))
 }
@@ -600,14 +599,13 @@ async fn create_sub_thought(
             .unwrap_or(None);
 
     if let Some((category_id,)) = parent_category {
-        sqlx::query(
-            "INSERT INTO mindflow_thoughts (user_id, category_id, parent_thought_id, content) VALUES (?, ?, ?, ?)",
+        super::ops::capture_thought(
+            &state.pool,
+            user_id.0,
+            &form.content,
+            category_id,
+            Some(parent_id),
         )
-        .bind(user_id.0)
-        .bind(category_id)
-        .bind(parent_id)
-        .bind(&form.content)
-        .execute(&state.pool)
         .await
         .ok();
     }
