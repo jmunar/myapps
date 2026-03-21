@@ -129,7 +129,11 @@ ssh odroid-deploy 'sudo apt install python3-certbot-nginx && sudo certbot --ngin
 # 6. Sync source, build on server, install, and start the service
 ./deploy.sh prod deploy
 
-# 7. Create your first user
+# 7. Create your first user (option A: invite link — user picks their own password)
+ssh odroid-deploy 'sudo -u myapps /opt/myapps/myapps invite'
+# Share the printed URL with the user
+
+# 7. Create your first user (option B: direct — you choose the password)
 ssh odroid-deploy 'sudo -u myapps /opt/myapps/myapps create-user --username yourname --password yourpass'
 ```
 
@@ -589,8 +593,9 @@ ssh odroid-deploy 'sudo apt install python3-certbot-nginx && sudo certbot --ngin
 # 5. Deploy
 ./deploy.sh stage deploy
 
-# 6. Create a user
-ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps create-user --username yourname --password yourpass'
+# 6. Create a user (invite link or direct)
+ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps invite'
+# Or: ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps create-user --username yourname --password yourpass'
 ```
 
 ### Deploying with seed data

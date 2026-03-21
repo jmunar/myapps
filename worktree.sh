@@ -67,6 +67,10 @@ cmd_create() {
         osascript <<APPLESCRIPT
 tell application "iTerm2"
     tell current window
+        -- Remember current tab position before creating the new one
+        set origIndex to index of current tab
+        set tabCount to count of tabs
+
         try
             set newTab to (create tab with profile "Worktree")
         on error
@@ -74,10 +78,30 @@ tell application "iTerm2"
         end try
         tell current session of newTab
             set name to "${branch}"
+            -- Split horizontally: top runs claude, bottom is a plain terminal
+            set bottomSession to (split horizontally with same profile)
             write text "cd ${escaped_dir} && claude"
         end tell
+        tell bottomSession
+            write text "cd ${escaped_dir}"
+        end tell
+
+        -- New tab is appended at end (tabCount + 1).
+        -- Move it left until it sits right after the original tab.
+        set movesNeeded to (tabCount + 1) - (origIndex + 1)
     end tell
 end tell
+
+-- Use Cmd+Shift+Left to move the tab into position
+if movesNeeded > 0 then
+    tell application "System Events"
+        tell process "iTerm2"
+            repeat movesNeeded times
+                key code 123 using {command down, shift down}
+            end repeat
+        end tell
+    end tell
+end if
 APPLESCRIPT
         echo "Opened iTerm2 tab: $branch"
     else

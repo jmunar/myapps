@@ -26,6 +26,7 @@ A single binary with subcommands:
 myapps serve                # Start the HTTP server
 myapps sync                 # Fetch transactions from all linked accounts (cron)
 myapps create-user          # Create a user from the command line
+myapps invite               # Generate a single-use invite link (48h)
 myapps generate-vapid-keys  # Generate VAPID key pair for push notifications
 myapps seed --app leanfin           # Populate LeanFin demo data
 myapps seed --app leanfin --reset   # Wipe and re-seed demo data
@@ -67,6 +68,7 @@ myapps/
 │   ├── routes/              # Top-level router, auth routes, app launcher
 │   │   ├── mod.rs           # Router setup, AppState, build_router(), nests sub-apps
 │   │   ├── auth.rs          # Login/logout (with language toggle)
+│   │   ├── invite.rs        # Invite-link registration (GET/POST /invite/{token})
 │   │   ├── settings.rs      # Language preference handler (POST /settings/language)
 │   │   ├── pwa.rs           # PWA manifest + service worker endpoints
 │   │   └── launcher.rs      # App launcher page + visibility config + language selector
@@ -155,6 +157,7 @@ After login, the top-level router serves:
 - `/push/vapid-key` — VAPID public key (GET, protected)
 - `/push/subscribe` — Register push subscription (POST, protected)
 - `/push/unsubscribe` — Remove push subscription (POST, protected)
+- `/invite/{token}` — Invite-link registration (GET form, POST submit; public)
 - `/login`, `/logout` — Authentication (public)
 - `POST /command/interpret` — Parse natural-language input via LLM (protected, requires `LLAMA_SERVER_URL`)
 - `POST /command/execute` — Execute a confirmed command action (protected)
@@ -239,6 +242,15 @@ After login, the top-level router serves:
 | user_id    | INTEGER | FK → users                   |
 | expires_at | TEXT    | ISO 8601                     |
 | created_at | TEXT    | ISO 8601                     |
+
+### invites
+
+| Column     | Type | Notes                                  |
+|------------|------|----------------------------------------|
+| token      | TEXT | PK, random 256-bit hex                 |
+| expires_at | TEXT | ISO 8601, 48h from creation            |
+| used_at    | TEXT | Nullable, set when invite is consumed  |
+| created_at | TEXT | ISO 8601                               |
 
 ### leanfin_accounts
 

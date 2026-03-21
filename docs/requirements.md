@@ -107,6 +107,10 @@ visibility into spending patterns.
 - The server is exposed to the internet behind nginx + certbot (HTTPS).
 - User authentication via username/password with Argon2 hashing and
   session cookies.
+- **Invite-link user onboarding** — admins generate a single-use,
+  time-limited (48h) invite link via the CLI (`myapps invite`). New users
+  open the link, choose their own username and password, and are
+  automatically logged in. The admin never sees the user's password.
 - Enable Banking API uses self-signed JWTs (RS256) for authentication. Private
   keys are stored per-user in the database, encrypted at rest with AES-256-GCM
   using a server-side encryption key.
