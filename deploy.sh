@@ -159,6 +159,7 @@ VAPID_PUBLIC_KEY=
 VAPID_SUBJECT=mailto:you@example.com
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models
+LLAMA_SERVER_URL=
 BIND_ADDR=127.0.0.1:$DEPLOY_PORT
 DEPLOY_APPS=${DEPLOY_APPS:-}
 ENV
@@ -221,6 +222,7 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 120s;
     }
 }
 NGINX

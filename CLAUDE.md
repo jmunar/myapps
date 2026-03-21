@@ -74,7 +74,11 @@ SEED_REBUILD=true ./deploy.sh stage deploy  # Deploy + wipe & re-seed
 - MindFlow-specific routes, handlers, and services live under `src/apps/mindflow/`.
 - VoiceToText-specific routes, handlers, and services live under `src/apps/voice_to_text/`.
 - ClassroomInput-specific routes and handlers live under `src/apps/classroom_input/`.
-- Shared infrastructure (auth, config, db, models, layout, i18n) stays at the top level.
+- Shared infrastructure (auth, config, db, models, layout, i18n, command) stays at the top level.
+- The command bar module (`src/command/`) handles LLM-powered natural-language
+  command interpretation and execution via a llama.cpp server.
+- Each app exposes an `ops.rs` module with shared action functions callable from
+  both HTTP handlers and the command bar dispatcher. New actions go in `ops.rs`.
 - Translations live in `src/i18n/`. Adding a new UI string means adding a field
   to the `Translations` struct in `mod.rs` and filling it in both `en.rs` and
   `es.rs`. The compiler enforces completeness.

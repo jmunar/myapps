@@ -188,7 +188,7 @@ async fn settings_form(
         &format!("LeanFin — {}", t.lf_settings),
         &leanfin_nav(base, "settings", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -252,7 +252,7 @@ async fn settings_submit(
             &format!("LeanFin — {}", t.lf_settings),
             &leanfin_nav(base, "settings", lang),
             &body,
-            base,
+            &state.config,
             lang,
         ))
         .into_response();

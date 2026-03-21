@@ -1,4 +1,5 @@
-use crate::i18n::Lang;
+use crate::config::Config;
+use crate::i18n::{self, Lang};
 
 /// A single nav item for the shared layout.
 pub struct NavItem {
@@ -10,13 +11,15 @@ pub struct NavItem {
 }
 
 /// Render a full HTML page shell with nav and body content.
+/// The command bar is automatically included when the LLM is configured.
 pub fn render_page(
     title: &str,
     nav_items: &[NavItem],
     body_html: &str,
-    base_path: &str,
+    config: &Config,
     lang: Lang,
 ) -> String {
+    let base_path = &config.base_path;
     let lang_code = lang.code();
 
     let mut nav_html = String::new();
@@ -36,6 +39,22 @@ pub fn render_page(
             ));
         }
     }
+
+    let command_bar = if config.llm_enabled() {
+        let t = i18n::t(lang);
+        format!(
+            r##"<div class="command-bar">
+        <form hx-post="{base_path}/command/interpret" hx-target="#command-result" hx-swap="innerHTML" hx-indicator="#command-spinner">
+            <input type="text" name="input" placeholder="{placeholder}" autocomplete="off">
+            <span id="command-spinner" class="htmx-indicator">&#8987;</span>
+        </form>
+        <div id="command-result"></div>
+    </div>"##,
+            placeholder = t.cmd_placeholder,
+        )
+    } else {
+        String::new()
+    };
 
     format!(
         r##"<!DOCTYPE html>
@@ -96,6 +115,7 @@ pub fn render_page(
     <main>
         {body_html}
     </main>
+    {command_bar}
 </body>
 </html>"##
     )

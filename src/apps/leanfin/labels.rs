@@ -167,7 +167,7 @@ async fn list_labels(
         &format!("LeanFin — {}", t.lf_labels),
         &leanfin_nav(base, "labels", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

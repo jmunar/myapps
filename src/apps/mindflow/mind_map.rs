@@ -334,7 +334,7 @@ async fn page(
         &format!("MindFlow \u{2014} {}", t.mf_mind_map),
         &mindflow_nav(base, "map", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

@@ -162,7 +162,7 @@ async fn list(
         &format!("Classroom — {}", t.ci_inputs),
         &classroom_nav(base, "inputs", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -208,7 +208,7 @@ async fn new_input_page(
             &format!("Classroom — {}", t.ci_inp_new_title),
             &classroom_nav(base, "inputs", lang),
             &body,
-            base,
+            &state.config,
             lang,
         ));
     }
@@ -437,7 +437,7 @@ async fn new_input_page(
         &format!("Classroom — {}", t.ci_inp_new_title),
         &classroom_nav(base, "inputs", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -456,15 +456,14 @@ async fn create(
     Form(form): Form<CreateInputForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    sqlx::query(
-        "INSERT INTO classroom_inputs (user_id, classroom_id, form_type_id, name, csv_data) VALUES (?, ?, ?, ?, ?)",
+    super::ops::create_input(
+        &state.pool,
+        user_id.0,
+        form.classroom_id,
+        form.form_type_id,
+        form.name.trim(),
+        &form.csv_data,
     )
-    .bind(user_id.0)
-    .bind(form.classroom_id)
-    .bind(form.form_type_id)
-    .bind(form.name.trim())
-    .bind(&form.csv_data)
-    .execute(&state.pool)
     .await
     .ok();
     Redirect::to(&format!("{base}/classroom"))
@@ -497,7 +496,7 @@ async fn view(
                 r#"<div class="empty-state"><p>{}</p></div>"#,
                 t.ci_inp_not_found
             ),
-            base,
+            &state.config,
             lang,
         ));
     };
@@ -566,7 +565,7 @@ async fn view(
         &format!("Classroom — {}", inp.name),
         &classroom_nav(base, "inputs", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

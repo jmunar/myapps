@@ -29,6 +29,7 @@ This avoids the complexity of cross-compilation toolchains (linkers, Docker,
 
 - nginx installed and running
 - whisper.cpp + ffmpeg (for VoiceToText) — see [whisper.cpp section](#whispercpp-voicetotext) below
+- llama.cpp server (for Command Bar) — see [llama.cpp section](#llamacpp-command-bar) below
 
 #### Deploy user setup
 
@@ -222,16 +223,21 @@ File: `/opt/myapps/.env`
 
 ```bash
 DATABASE_URL=sqlite:///opt/myapps/data/myapps.db
-BASE_URL=https://yourdomain.com            # Public URL
-ENCRYPTION_KEY=                            # 32-byte hex (openssl rand -hex 32)
-VAPID_PRIVATE_KEY=                         # base64url-encoded EC private key
-VAPID_PUBLIC_KEY=                          # base64url-encoded uncompressed public key
-VAPID_SUBJECT=mailto:you@example.com       # VAPID subject claim
+BASE_URL=https://yourdomain.com                           # Public URL
+ENCRYPTION_KEY=                                           # 32-byte hex (openssl rand -hex 32)
+VAPID_PRIVATE_KEY=                                        # base64url-encoded EC private key
+VAPID_PUBLIC_KEY=                                         # base64url-encoded uncompressed public key
+VAPID_SUBJECT=mailto:you@example.com                      # VAPID subject claim
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli   # whisper.cpp binary
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
+LLAMA_SERVER_URL=                                         # llama.cpp server URL (optional)
 BIND_ADDR=127.0.0.1:3000
-DEPLOY_APPS=                                       # Comma-separated app keys (blank = all)
+DEPLOY_APPS=                                              # Comma-separated app keys (blank = all)
 ```
+
+`LLAMA_SERVER_URL` enables the command bar (natural language command entry).
+When set, myapps sends requests to a running llama.cpp server
+(`llama-server --port 8081 -m model.gguf`). When empty the command bar is hidden.
 
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
 `DEPLOY_APPS` limits which apps are mounted and shown in the launcher. Valid
@@ -370,6 +376,114 @@ working dir, you can skip these.
 
 The background worker processes one job at a time to avoid memory pressure.
 With 4 GB RAM, tiny and base fit comfortably alongside the Axum server.
+
+## llama.cpp (Command Bar)
+
+llama.cpp powers the natural-language command bar. It runs as a persistent HTTP
+server so the model stays loaded in memory between requests.
+
+### Install build dependencies
+
+```bash
+sudo apt install -y build-essential cmake
+```
+
+### Build llama.cpp
+
+```bash
+cd /opt
+sudo git clone https://github.com/ggml-org/llama.cpp.git
+cd llama.cpp
+sudo cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+sudo cmake --build build -j4
+```
+
+The server binary will be at `/opt/llama.cpp/build/bin/llama-server`.
+
+### Download a model
+
+Any small instruction-tuned GGUF model works. Qwen3.5-2B is recommended — it's
+the latest Qwen release (Feb 2026) and leads at structured output in this size
+class:
+
+```bash
+sudo mkdir -p /opt/llama.cpp/models
+cd /opt/llama.cpp/models
+sudo wget https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf
+```
+
+Model size: ~1.3 GB on disk, ~1.5 GB RAM at runtime. With whisper base loaded,
+total memory use stays under 3 GB. Alternatives: SmolLM3-3B (~2 GB, more
+capable), Gemma 3 1B-it (~0.7 GB, faster but less accurate).
+
+Qwen3.5 has a "thinking" mode enabled by default that generates internal
+reasoning before answering. This bypasses grammar constraints and wastes tokens.
+The `--chat-template chatml` flag overrides the model's default template with
+plain ChatML (which Qwen natively supports), disabling thinking entirely.
+
+### Install as a systemd service
+
+```bash
+sudo tee /etc/systemd/system/llama-server.service > /dev/null <<'SERVICE'
+[Unit]
+Description=llama.cpp inference server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/llama.cpp/build/bin/llama-server \
+    --host 127.0.0.1 \
+    --port 8081 \
+    -m /opt/llama.cpp/models/Qwen3.5-2B-Q4_K_M.gguf \
+    -c 2048 \
+    --parallel 1 \
+    --reasoning-format none \
+    --chat-template chatml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+sudo systemctl daemon-reload
+sudo systemctl enable llama-server
+sudo systemctl start llama-server
+```
+
+### Configure MyApps
+
+Add to `/opt/myapps/.env`:
+
+```bash
+LLAMA_SERVER_URL=http://127.0.0.1:8081
+```
+
+Restart myapps after updating `.env`. The command bar will appear at the bottom
+of every page.
+
+### Verify
+
+```bash
+# Check the server is running
+curl http://127.0.0.1:8081/health
+
+# Test a completion
+curl http://127.0.0.1:8081/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"messages":[{"role":"user","content":"Say hello"}],"max_tokens":32}'
+```
+
+### Performance on Odroid N2
+
+| Model | RAM | ~Inference time | Notes |
+|-------|-----|----------------|-------|
+| Qwen3.5-2B Q4_K_M | ~1.5 GB | 3–6s | Recommended |
+| SmolLM3-3B Q4_K_M | ~2.0 GB | 4–8s | More capable, higher RAM |
+| Gemma 3 1B-it Q4_K_M | ~0.7 GB | 1–3s | Fastest, less accurate |
+
+The server processes one request at a time. MyApps uses a mutex to serialize
+command requests so the server is never overloaded.
 
 ## CI/CD Pipeline
 

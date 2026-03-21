@@ -162,7 +162,7 @@ async fn index(
         &format!("VoiceToText \u{2014} {}", t.vt_jobs),
         &voice_nav(base, "jobs", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

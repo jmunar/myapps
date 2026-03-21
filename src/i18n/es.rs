@@ -390,4 +390,15 @@ pub const ES: Translations = Translations {
     ci_ft_cancel: "Cancelar",
     ci_ft_no_columns: "Sin columnas",
     ci_ft_not_found: "Tipo de formulario no encontrado.",
+
+    // ── Command Bar ─────────────────────────────────────────
+    cmd_placeholder: "Escribe un comando\u{2026}",
+    cmd_busy: "Modelo ocupado, int\u{e9}ntalo en un momento.",
+    cmd_error: "Error de comando",
+    cmd_not_configured: "Barra de comandos no configurada.",
+    cmd_no_actions: "No hay acciones disponibles.",
+    cmd_no_params: "Sin par\u{e1}metros",
+    cmd_confidence: "Confianza",
+    cmd_confirm: "Confirmar",
+    cmd_cancel: "Cancelar",
 };

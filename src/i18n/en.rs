@@ -390,4 +390,15 @@ pub const EN: Translations = Translations {
     ci_ft_cancel: "Cancel",
     ci_ft_no_columns: "No columns",
     ci_ft_not_found: "Form type not found.",
+
+    // ── Command Bar ─────────────────────────────────────────
+    cmd_placeholder: "Type a command\u{2026}",
+    cmd_busy: "Model busy, try again shortly.",
+    cmd_error: "Command error",
+    cmd_not_configured: "Command bar not configured.",
+    cmd_no_actions: "No actions available.",
+    cmd_no_params: "No parameters",
+    cmd_confidence: "Confidence",
+    cmd_confirm: "Confirm",
+    cmd_cancel: "Cancel",
 };

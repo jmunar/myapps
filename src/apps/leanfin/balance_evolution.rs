@@ -56,7 +56,7 @@ async fn page(
             &format!("LeanFin — {}", t.lf_balance),
             &leanfin_nav(base, "balance", lang),
             &body,
-            base,
+            &state.config,
             lang,
         ));
     }
@@ -148,7 +148,7 @@ async fn page(
         &format!("LeanFin — {}", t.lf_balance),
         &leanfin_nav(base, "balance", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

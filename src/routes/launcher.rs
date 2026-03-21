@@ -253,7 +253,7 @@ async fn index(
     let lang_sel = render_lang_selector(base, lang);
 
     let body = format!(r#"<div id="launcher-area">{header}{grid}</div>{lang_sel}{push}"#);
-    Html(render_page("MyApps", &nav, &body, base, lang))
+    Html(render_page("MyApps", &nav, &body, &state.config, lang))
 }
 
 async fn edit_mode(

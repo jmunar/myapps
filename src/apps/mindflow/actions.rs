@@ -141,7 +141,7 @@ async fn list(
         &format!("MindFlow \u{2014} {}", t.mf_actions),
         &mindflow_nav(base, "actions", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

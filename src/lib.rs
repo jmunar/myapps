@@ -1,5 +1,6 @@
 pub mod apps;
 pub mod auth;
+pub mod command;
 pub mod config;
 pub mod db;
 pub mod i18n;

@@ -132,7 +132,7 @@ async fn new_form(
         &format!("VoiceToText — {}", t.vt_new),
         &voice_nav(base, "new", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }
@@ -342,7 +342,7 @@ async fn job_detail(
                 r#"<div class="page-header"><h1>{}</h1></div>"#,
                 t.vt_detail_not_found
             ),
-            base,
+            &state.config,
             lang,
         ));
     };
@@ -449,7 +449,7 @@ async fn job_detail(
         &format!("VoiceToText — Job #{}", j.id),
         &voice_nav(base, "jobs", lang),
         &body,
-        base,
+        &state.config,
         lang,
     ))
 }

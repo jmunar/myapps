@@ -27,6 +27,12 @@ visibility into spending patterns.
   launcher, and have background workers started. When unset, all apps are
   available.
 - Shared navigation with brand ("MyApps"), app-level nav, and logout.
+- **Natural-language command bar** — when a llama.cpp server is configured
+  (`LLAMA_SERVER_URL`), a command bar appears on every page. Users type
+  instructions (e.g. "capture a thought about X", "delete classroom 3A"). The
+  LLM interprets the input into a structured action, which is shown for
+  confirmation before execution. Per-app `ops.rs` modules provide shared action
+  functions used by both the command bar and web handlers.
 - **Multilingual support (i18n)** — English and Spanish. Users select their
   language on the login page (toggle link) or from a dropdown on the launcher.
   Preference is stored per-user in the database and propagated through the auth
@@ -254,8 +260,8 @@ connections on an interactive mind map.
 - **Alerts** — overdue actions, stale thoughts.
 - **Date range filtering** on the mind map.
 - **Web Push integration** for push notifications.
-- **Local LLM integration** — async auto-categorization, action extraction,
-  connection finding via Llama-3.2-1B-Instruct.
+- **Local LLM integration** — MindFlow-specific: async auto-categorization,
+  action extraction, connection finding.
 
 ### ClassroomInput (fourth sub-application)
 
