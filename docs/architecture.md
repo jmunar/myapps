@@ -13,6 +13,7 @@
 | Bank aggregator  | Enable Banking PSD2 API         |
 | Notifications    | Web Push API (VAPID)            |
 | Speech-to-text   | whisper.cpp (via CLI subprocess) |
+| LLM inference    | llama.cpp server (HTTP API)     |
 | Audio conversion | ffmpeg                          |
 | Reverse proxy    | nginx + certbot                 |
 | Process manager  | systemd                         |
@@ -69,12 +70,17 @@ myapps/
 │   │   ├── settings.rs      # Language preference handler (POST /settings/language)
 │   │   ├── pwa.rs           # PWA manifest + service worker endpoints
 │   │   └── launcher.rs      # App launcher page + visibility config + language selector
+│   ├── command/             # Natural-language command bar (LLM-powered)
+│   │   ├── mod.rs           # Command types, action registry, validation
+│   │   ├── routes.rs        # POST /command/interpret + /command/execute
+│   │   └── llm.rs           # llama.cpp HTTP client (chat completions)
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # Web Push notifications (VAPID)
 │   └── apps/                # Sub-applications
 │       ├── registry.rs      # App metadata registry (AppInfo, all_apps(), deployed_apps())
 │       ├── leanfin/         # LeanFin expense tracker
 │           ├── mod.rs       # LeanFin router
+│           ├── ops.rs       # Shared action functions (command bar + handlers)
 │           ├── dashboard.rs # Main transactions page
 │           ├── transactions.rs # Transaction list + allocation editor
 │           ├── accounts.rs  # Bank account linking (OAuth flow) + manual accounts CRUD
@@ -93,6 +99,7 @@ myapps/
 │               └── seed.rs            # Demo data seeding
 │       ├── mindflow/        # MindFlow thought capture + mind map
 │       │   ├── mod.rs       # MindFlow router + nav
+│       │   ├── ops.rs       # Shared action functions (command bar + handlers)
 │       │   ├── mind_map.rs  # Mind map page (D3.js) + map data JSON endpoint
 │       │   ├── categories.rs # Category CRUD
 │       │   ├── thoughts.rs  # Thought capture, detail, comments, actions
@@ -102,6 +109,7 @@ myapps/
 │       │       └── seed.rs  # Demo data seeding
 │       ├── voice_to_text/   # VoiceToText audio transcription
 │       │   ├── mod.rs       # VoiceToText router
+│       │   ├── ops.rs       # Shared action functions (command bar + handlers)
 │       │   ├── dashboard.rs # Job list page + nav helper
 │       │   ├── jobs.rs      # Upload form, recording, job detail, HTMX partials
 │       │   └── services/
@@ -109,6 +117,7 @@ myapps/
 │       │       └── worker.rs       # Background job worker (polls pending jobs)
 │       └── classroom_input/ # ClassroomInput marks & notes recording
 │           ├── mod.rs       # ClassroomInput router + nav
+│           ├── ops.rs       # Shared action functions (command bar + handlers)
 │           ├── classrooms.rs # Classroom CRUD (label + pupil list)
 │           ├── form_types.rs # Form type CRUD (column definitions)
 │           ├── inputs.rs    # Input grid, CSV save, list, detail, delete
@@ -147,6 +156,8 @@ After login, the top-level router serves:
 - `/push/subscribe` — Register push subscription (POST, protected)
 - `/push/unsubscribe` — Remove push subscription (POST, protected)
 - `/login`, `/logout` — Authentication (public)
+- `POST /command/interpret` — Parse natural-language input via LLM (protected, requires `LLAMA_SERVER_URL`)
+- `POST /command/execute` — Execute a confirmed command action (protected)
 - `/leanfin/` — LeanFin sub-app (nested router)
   - `/leanfin/` — Transactions dashboard
   - `/leanfin/transactions` — Transaction list (HTMX partial)
