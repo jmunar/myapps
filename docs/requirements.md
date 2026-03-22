@@ -27,12 +27,14 @@ visibility into spending patterns.
   launcher, and have background workers started. When unset, all apps are
   available.
 - Shared navigation with brand ("MyApps"), app-level nav, and logout.
-- **Natural-language command bar** — when a llama.cpp server is configured
-  (`LLAMA_SERVER_URL`), a command bar appears on every page. Users type
-  instructions (e.g. "capture a thought about X", "delete classroom 3A"). The
-  LLM interprets the input into a structured action, which is shown for
-  confirmation before execution. Per-app `ops.rs` modules provide shared action
-  functions used by both the command bar and web handlers.
+- **Voice command bar** — when both a llama.cpp server (`LLAMA_SERVER_URL`) and
+  whisper models are available, a floating mic button appears on every page.
+  Users press and hold to record a voice command, release to transcribe and
+  interpret. The audio is transcribed via whisper-cli, then the LLM parses the
+  text into a structured action shown in a floating window for confirmation.
+  Users can edit the transcription before the LLM processes it. Swiping left
+  while recording discards the input. Per-app `ops.rs` modules provide shared
+  action functions used by both the command bar and web handlers.
 - **Multilingual support (i18n)** — English and Spanish. Users select their
   language on the login page (toggle link) or from a dropdown on the launcher.
   Preference is stored per-user in the database and propagated through the auth
