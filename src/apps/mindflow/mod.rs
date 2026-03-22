@@ -87,6 +87,10 @@ impl App for MindFlowApp {
         }
     }
 
+    fn migrations(&self) -> sqlx::migrate::Migrator {
+        sqlx::migrate!("src/apps/mindflow/migrations")
+    }
+
     fn router(&self) -> Router<AppState> {
         router()
     }

@@ -77,6 +77,10 @@ impl App for ClassroomInputApp {
         }
     }
 
+    fn migrations(&self) -> sqlx::migrate::Migrator {
+        sqlx::migrate!("src/apps/classroom_input/migrations")
+    }
+
     fn router(&self) -> Router<AppState> {
         router()
     }

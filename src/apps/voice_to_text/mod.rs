@@ -36,6 +36,10 @@ impl App for VoiceToTextApp {
         }
     }
 
+    fn migrations(&self) -> sqlx::migrate::Migrator {
+        sqlx::migrate!("src/apps/voice_to_text/migrations")
+    }
+
     fn router(&self) -> Router<AppState> {
         router()
     }

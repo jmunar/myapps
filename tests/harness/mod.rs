@@ -34,7 +34,7 @@ pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> Tes
         .await
         .unwrap();
 
-    sqlx::migrate!().run(&pool).await.unwrap();
+    myapps::db::migrator().run(&pool).await.unwrap();
 
     let config = myapps::config::Config {
         database_url: db_url,

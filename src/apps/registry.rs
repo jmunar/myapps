@@ -74,6 +74,11 @@ pub trait App: Send + Sync {
         None
     }
 
+    /// App-specific database migrations (embedded at compile time).
+    fn migrations(&self) -> sqlx::migrate::Migrator {
+        sqlx::migrate::Migrator::DEFAULT
+    }
+
     /// Hook called on `serve` to start background workers.
     fn on_serve(&self, _pool: SqlitePool, _config: Arc<Config>) {}
 }

@@ -48,6 +48,10 @@ impl App for LeanFinApp {
         }
     }
 
+    fn migrations(&self) -> sqlx::migrate::Migrator {
+        sqlx::migrate!("src/apps/leanfin/migrations")
+    }
+
     fn router(&self) -> Router<AppState> {
         router()
     }
