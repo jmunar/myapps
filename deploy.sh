@@ -199,8 +199,8 @@ echo "  Installed $DEPLOY_SERVICE_NAME.service"
 # Install cron job only if enabled
 if [[ "$DEPLOY_CRON_ENABLED" == "true" ]]; then
     sudo tee /etc/cron.d/$DEPLOY_SERVICE_NAME > /dev/null <<CRON
-# MyApps daily transaction sync ($DEPLOY_SERVICE_NAME)
-0 6 * * * myapps . $DEPLOY_REMOTE_DIR/.env && $DEPLOY_REMOTE_DIR/myapps sync >> $DEPLOY_REMOTE_DIR/logs/sync.log 2>&1
+# MyApps daily scheduled tasks ($DEPLOY_SERVICE_NAME)
+0 6 * * * myapps . $DEPLOY_REMOTE_DIR/.env && $DEPLOY_REMOTE_DIR/myapps cron >> $DEPLOY_REMOTE_DIR/logs/cron.log 2>&1
 CRON
     sudo chmod 644 /etc/cron.d/$DEPLOY_SERVICE_NAME
     echo "  Installed cron job (daily at 06:00)"

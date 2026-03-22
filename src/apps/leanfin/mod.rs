@@ -81,4 +81,13 @@ impl App for LeanFinApp {
     {
         Some(Box::pin(services::seed::run(pool, user_id)))
     }
+
+    fn cron<'a>(
+        &'a self,
+        pool: &'a sqlx::SqlitePool,
+        config: &'a crate::config::Config,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
+    {
+        Some(Box::pin(services::sync::run(pool, config)))
+    }
 }

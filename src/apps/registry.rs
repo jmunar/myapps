@@ -65,6 +65,15 @@ pub trait App: Send + Sync {
         None
     }
 
+    /// Scheduled task invoked by `myapps cron` (e.g. daily via system cron).
+    fn cron<'a>(
+        &'a self,
+        _pool: &'a SqlitePool,
+        _config: &'a Config,
+    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>> {
+        None
+    }
+
     /// Hook called on `serve` to start background workers.
     fn on_serve(&self, _pool: SqlitePool, _config: Arc<Config>) {}
 }

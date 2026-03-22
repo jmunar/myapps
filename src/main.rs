@@ -12,8 +12,8 @@ struct Cli {
 enum Command {
     /// Start the HTTP server
     Serve,
-    /// Fetch transactions from all linked bank accounts
-    Sync,
+    /// Run scheduled tasks for all deployed apps (e.g. daily via system cron)
+    Cron,
     /// Create a new user
     CreateUser {
         #[arg(long)]
@@ -65,7 +65,17 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Serve => routes::serve(pool, config).await?,
-        Command::Sync => apps::leanfin::services::sync::run(&pool, &config).await?,
+        Command::Cron => {
+            for app in apps::registry::deployed_app_instances(&config) {
+                if let Some(fut) = app.cron(&pool, &config) {
+                    let key = app.info().key;
+                    tracing::info!("Running cron for {key}");
+                    if let Err(e) = fut.await {
+                        tracing::error!("Cron failed for {key}: {e}");
+                    }
+                }
+            }
+        }
         Command::CreateUser { username, password } => {
             auth::create_user(&pool, &username, &password).await?;
             tracing::info!("User '{username}' created");
