@@ -274,16 +274,12 @@ async fn transcribe(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Convert + transcribe
-    let wav_path = crate::apps::voice_to_text::services::transcriber::convert_to_wav(&path)
+    let wav_path = crate::services::whisper::convert_to_wav(&path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let text = crate::apps::voice_to_text::services::transcriber::transcribe(
-        &state.config,
-        &wav_path,
-        model,
-    )
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let text = crate::services::whisper::transcribe(&state.config, &wav_path, model)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Cleanup temp files
     let _ = tokio::fs::remove_file(&path).await;
