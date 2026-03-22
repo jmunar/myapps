@@ -74,8 +74,15 @@ cmd_create() {
 tell application "iTerm2"
     tell current window
         -- Remember current tab position before creating the new one
-        set origIndex to index of current tab
+        set currentTab to current tab
         set tabCount to count of tabs
+        set origIndex to 0
+        repeat with i from 1 to tabCount
+            if tab i is currentTab then
+                set origIndex to i
+                exit repeat
+            end if
+        end repeat
 
         try
             set newTab to (create tab with profile "Worktree")
@@ -93,8 +100,8 @@ tell application "iTerm2"
         end tell
 
         -- New tab is appended at end (tabCount + 1).
-        -- Move it left until it sits right after the original tab.
-        set movesNeeded to (tabCount + 1) - (origIndex + 1)
+        -- Move it left until it sits right before the original tab.
+        set movesNeeded to (tabCount + 1) - origIndex
     end tell
 end tell
 
