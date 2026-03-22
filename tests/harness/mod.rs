@@ -100,4 +100,44 @@ impl TestApp {
             .expect_failure() // login redirects with 303
             .await;
     }
+
+    /// Seed full MindFlow demo data and log in as the seed user.
+    pub async fn seed_and_login_mindflow(&self) {
+        let user_id = myapps::auth::create_user(&self.pool, "seeduser", "seeduser")
+            .await
+            .unwrap();
+        let app = myapps::apps::mindflow::MindFlowApp;
+        myapps::apps::mindflow::services::seed::run(&self.pool, user_id, &app)
+            .await
+            .unwrap();
+
+        self.server
+            .post("/login")
+            .form(&serde_json::json!({
+                "username": "seeduser",
+                "password": "seeduser",
+            }))
+            .expect_failure()
+            .await;
+    }
+
+    /// Seed full ClassroomInput demo data and log in as the seed user.
+    pub async fn seed_and_login_classroom(&self) {
+        let user_id = myapps::auth::create_user(&self.pool, "seeduser", "seeduser")
+            .await
+            .unwrap();
+        let app = myapps::apps::classroom_input::ClassroomInputApp;
+        myapps::apps::classroom_input::services::seed::run(&self.pool, user_id, &app)
+            .await
+            .unwrap();
+
+        self.server
+            .post("/login")
+            .form(&serde_json::json!({
+                "username": "seeduser",
+                "password": "seeduser",
+            }))
+            .expect_failure()
+            .await;
+    }
 }
