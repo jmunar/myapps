@@ -1,4 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
 use std::env;
+use std::hash::{Hash, Hasher};
 
 #[derive(Clone)]
 pub struct Config {
@@ -20,6 +22,8 @@ pub struct Config {
     pub deploy_apps: Option<Vec<String>>,
     /// Base URL of the llama.cpp server (e.g. `http://127.0.0.1:8081`).
     pub llama_server_url: String,
+    /// Hash of static assets for cache-busting (computed at startup).
+    pub static_version: String,
 }
 
 impl Config {
@@ -50,6 +54,7 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .map(|s| s.split(',').map(|a| a.trim().to_string()).collect()),
             llama_server_url: env::var("LLAMA_SERVER_URL").unwrap_or_default(),
+            static_version: Self::compute_static_version(),
         })
     }
 
@@ -64,6 +69,27 @@ impl Config {
     /// Returns true if the LLM command bar is available.
     pub fn llm_enabled(&self) -> bool {
         !self.llama_server_url.is_empty()
+    }
+
+    /// Returns true if whisper transcription is available.
+    pub fn whisper_available(&self) -> bool {
+        !self.available_whisper_models().is_empty()
+    }
+
+    /// Compute a short hash of all files in the `static/` directory.
+    fn compute_static_version() -> String {
+        let mut hasher = DefaultHasher::new();
+        if let Ok(entries) = std::fs::read_dir("static") {
+            let mut paths: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+            paths.sort_by_key(|e| e.file_name());
+            for entry in paths {
+                if let Ok(contents) = std::fs::read(entry.path()) {
+                    entry.file_name().hash(&mut hasher);
+                    contents.hash(&mut hasher);
+                }
+            }
+        }
+        format!("{:x}", hasher.finish())[..8].to_string()
     }
 
     /// Returns the full path to a whisper GGML model file.
@@ -115,6 +141,7 @@ mod tests {
             whisper_models_dir: String::new(),
             deploy_apps,
             llama_server_url: String::new(),
+            static_version: String::new(),
         }
     }
 

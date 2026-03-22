@@ -45,6 +45,12 @@ cmd_create() {
         echo "Warning: no data/ directory found in main repo"
     fi
 
+    # Symlink models/ (large binary files, avoid duplicating)
+    if [ -d "$REPO_DIR/models" ]; then
+        ln -s "$REPO_DIR/models" "$worktree_dir/models"
+        echo "Symlinked models/"
+    fi
+
     # Copy Claude settings.local.json (allowed permissions)
     local settings="$REPO_DIR/.claude/settings.local.json"
     if [ -f "$settings" ]; then

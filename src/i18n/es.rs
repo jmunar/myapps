@@ -401,4 +401,15 @@ pub const ES: Translations = Translations {
     cmd_confidence: "Confianza",
     cmd_confirm: "Confirmar",
     cmd_cancel: "Cancelar",
+
+    // ── Command Bar (voice) ──────────────────────────────────
+    cmd_record: "Grabar comando",
+    cmd_voice_command: "Comando de voz",
+    cmd_recording: "Grabando\u{2026}",
+    cmd_transcribing: "Transcribiendo\u{2026}",
+    cmd_interpreting: "Interpretando\u{2026}",
+    cmd_edit: "Editar",
+    cmd_edit_done: "Listo",
+    cmd_transcribe_error: "Error de transcripci\u{f3}n",
+    cmd_mic_no_permission: "Acceso al micr\u{f3}fono denegado",
 };

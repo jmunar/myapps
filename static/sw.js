@@ -1,5 +1,5 @@
 // BASE_PATH is injected by the server before this file.
-const CACHE_NAME = "myapps-v2";
+const CACHE_NAME = "myapps-" + STATIC_VERSION;
 const STATIC_ASSETS = [
   BASE_PATH + "/static/style.css",
   BASE_PATH + "/static/htmx.min.js",

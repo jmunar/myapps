@@ -44,13 +44,14 @@ async fn manifest(state: axum::extract::State<AppState>) -> impl IntoResponse {
 
 async fn service_worker(state: axum::extract::State<AppState>) -> impl IntoResponse {
     let base = &state.config.base_path;
+    let sv = &state.config.static_version;
     let scope = if base.is_empty() {
         "/".to_string()
     } else {
         format!("{base}/")
     };
     let body = format!(
-        "const BASE_PATH = \"{base}\";\n{}",
+        "const BASE_PATH = \"{base}\";\nconst STATIC_VERSION = \"{sv}\";\n{}",
         include_str!("../../static/sw.js"),
     );
     Response::builder()

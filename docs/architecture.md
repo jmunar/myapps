@@ -74,7 +74,7 @@ myapps/
 │   │   └── launcher.rs      # App launcher page + visibility config + language selector
 │   ├── command/             # Natural-language command bar (LLM-powered)
 │   │   ├── mod.rs           # Command types, action registry, validation
-│   │   ├── routes.rs        # POST /command/interpret + /command/execute
+│   │   ├── routes.rs        # POST /command/interpret + /execute + /transcribe
 │   │   └── llm.rs           # llama.cpp HTTP client (chat completions)
 │   ├── services/            # Shared services
 │   │   └── notify.rs        # Web Push notifications (VAPID)
@@ -125,6 +125,7 @@ myapps/
 │           ├── inputs.rs    # Input grid, CSV save, list, detail, delete
 │           └── services/
 │               └── seed.rs  # Demo data seeding
+├── models/                  # Whisper GGML model files (gitignored, symlinked in worktrees)
 ├── static/                  # CSS, JS (htmx, frappe-charts, d3), PWA assets (icon, sw.js, manifest)
 ├── .claude/agents/          # Claude Code agent prompts
 │   └── frontend-tester.md   # Agent for generating integration tests
@@ -159,6 +160,7 @@ After login, the top-level router serves:
 - `/push/unsubscribe` — Remove push subscription (POST, protected)
 - `/invite/{token}` — Invite-link registration (GET form, POST submit; public)
 - `/login`, `/logout` — Authentication (public)
+- `POST /command/transcribe` — Record audio → whisper transcription (protected, requires whisper models)
 - `POST /command/interpret` — Parse natural-language input via LLM (protected, requires `LLAMA_SERVER_URL`)
 - `POST /command/execute` — Execute a confirmed command action (protected)
 - `/leanfin/` — LeanFin sub-app (nested router)
