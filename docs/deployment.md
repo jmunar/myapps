@@ -188,7 +188,7 @@ Run once on a fresh server. It:
 4. Creates `$DEPLOY_REMOTE_DIR/{data,logs,static}` with proper ownership
 5. Creates `$DEPLOY_REMOTE_DIR/.env` template (chmod 600)
 6. Installs the systemd unit for the environment
-7. Installs a cron job for daily sync at 06:00 (if `DEPLOY_CRON_ENABLED=true`)
+7. Installs a cron job for daily scheduled tasks at 06:00 (if `DEPLOY_CRON_ENABLED=true`)
 8. Installs an nginx site config for the configured domain
 
 After setup, enable HTTPS with certbot (see Quick Start step 4).
@@ -203,7 +203,7 @@ After setup, enable HTTPS with certbot (see Quick Start step 4).
 ├── data/
 │   └── myapps.db          # SQLite database (created on first run)
 ├── logs/
-│   └── sync.log           # Cron job output
+│   └── cron.log           # Cron job output
 └── static/                # (reserved for future use)
 
 ~/myapps-build/            # Build directory (owned by deploy user)
@@ -264,7 +264,7 @@ sudo journalctl -u myapps -f    # tail logs
 Installed at `/etc/cron.d/myapps` by `setup`. Runs daily at 06:00:
 
 ```
-0 6 * * * myapps . /opt/myapps/.env && /opt/myapps/myapps sync >> /opt/myapps/logs/sync.log 2>&1
+0 6 * * * myapps . /opt/myapps/.env && /opt/myapps/myapps cron >> /opt/myapps/logs/cron.log 2>&1
 ```
 
 ## Web Push Notifications

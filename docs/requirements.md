@@ -143,8 +143,8 @@ visibility into spending patterns.
 - Development happens on a separate machine (not the server).
 - Source is rsynced to the server and compiled natively on the Odroid N2.
 - The application runs as a systemd service on the server.
-- The cron job is a system crontab entry that invokes the same binary with a
-  `sync` subcommand.
+- The cron job is a system crontab entry that invokes the same binary with the
+  `cron` subcommand, which runs each deployed app's scheduled tasks.
 
 ### Reliability
 
