@@ -27,9 +27,6 @@ build:
 run:
 	cargo run -- serve
 
-seed:
-	cargo run -- seed --app leanfin
-	cargo run -- seed --app mindflow
 
 # CD: create GitHub environments and set variables from deploy/*.env
 gh-env:

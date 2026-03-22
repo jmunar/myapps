@@ -21,12 +21,8 @@ cargo run -- serve                  # Start HTTP server on 127.0.0.1:3000
 cargo run -- sync                   # Run transaction sync manually
 cargo run -- create-user            # Create a user (admin, direct password)
 cargo run -- invite                 # Generate a single-use invite link (48h)
-cargo run -- seed --app leanfin     # Seed LeanFin demo data
-cargo run -- seed --app leanfin --reset  # Wipe and re-seed demo data
-cargo run -- seed --app mindflow   # Seed MindFlow demo data
-cargo run -- seed --app mindflow --reset  # Wipe and re-seed demo data
-cargo run -- seed --app classroom  # Seed ClassroomInput demo data
-cargo run -- seed --app classroom --reset  # Wipe and re-seed demo data
+cargo run -- seed --user <name>              # Seed all apps for a user
+cargo run -- cleanup-users --days 7             # Delete users inactive >7 days
 
 # Makefile shortcuts
 make check                          # fmt-check + clippy + test (same as CI)
@@ -42,7 +38,7 @@ make run                            # Start dev server
 ./deploy.sh prod deploy                   # Build + install + restart
 ./deploy.sh stage setup                   # First time only (staging)
 ./deploy.sh stage deploy                  # Build + install + restart (staging)
-SEED_REBUILD=true ./deploy.sh stage deploy  # Deploy + wipe & re-seed
+./deploy.sh stage deploy                  # Deploy (auto-seeds on invite registration)
 ```
 
 ## CI/CD
@@ -83,9 +79,9 @@ SEED_REBUILD=true ./deploy.sh stage deploy  # Deploy + wipe & re-seed
   to the `Translations` struct in `mod.rs` and filling it in both `en.rs` and
   `es.rs`. The compiler enforces completeness.
 - All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`, `classroom_classrooms`).
-- When adding or removing environment variables, update all three places:
-  `.env.example`, the `.env` template in `deploy.sh` (`setup()`), and the
-  Environment Variables section in `docs/deployment.md`.
+- When adding or removing environment variables, update all four places:
+  `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`
+  (`setup()`), and the Environment Variables section in `docs/deployment.md`.
 
 ## Testing
 
