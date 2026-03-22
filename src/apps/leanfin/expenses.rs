@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashMap};
 use super::dashboard::leanfin_nav;
 use super::services::expenses;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -28,7 +28,7 @@ async fn page(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let labels: Vec<LabelOption> = sqlx::query_as(
         "SELECT id, name, color FROM leanfin_labels WHERE user_id = ? ORDER BY name",
@@ -203,7 +203,7 @@ async fn chart_data(
     Extension(lang): Extension<Lang>,
     axum::extract::Query(params): axum::extract::Query<ChartQuery>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let label_ids: Vec<i64> = params
         .label_ids

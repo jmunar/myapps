@@ -24,6 +24,9 @@ pub trait App: Send + Sync {
     /// Static metadata (key, name, icon, launcher path).
     fn info(&self) -> AppInfo;
 
+    /// Translated app description for the launcher.
+    fn description(&self, lang: crate::i18n::Lang) -> &'static str;
+
     /// Axum router, nested under `info().path`.
     fn router(&self) -> Router<AppState>;
 
@@ -81,13 +84,5 @@ pub fn deployed_app_instances(config: &Config) -> Vec<Box<dyn App>> {
     all_app_instances()
         .into_iter()
         .filter(|app| config.is_app_deployed(app.info().key))
-        .collect()
-}
-
-/// Returns app metadata for the launcher.
-pub fn deployed_apps(config: &Config) -> Vec<AppInfo> {
-    deployed_app_instances(config)
-        .iter()
-        .map(|app| app.info())
         .collect()
 }

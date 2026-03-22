@@ -1,5 +1,6 @@
 mod actions;
 mod categories;
+pub mod i18n;
 mod inbox;
 mod mind_map;
 pub mod ops;
@@ -7,7 +8,7 @@ pub mod services;
 mod thoughts;
 
 use crate::apps::registry::{App, AppInfo};
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::NavItem;
 use crate::routes::AppState;
 use axum::Router;
@@ -25,6 +26,7 @@ pub fn router() -> Router<AppState> {
 
 pub fn mindflow_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
+    let ct = crate::i18n::t(lang);
     vec![
         NavItem {
             href: format!("{base}/mindflow"),
@@ -58,7 +60,7 @@ pub fn mindflow_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         },
         NavItem {
             href: format!("{base}/logout"),
-            label: t.log_out.to_string(),
+            label: ct.log_out.to_string(),
             active: false,
             right: true,
         },
@@ -75,6 +77,13 @@ impl App for MindFlowApp {
             description: "Thought capture &amp; mind map",
             icon: "\u{1F9E0}",
             path: "/mindflow",
+        }
+    }
+
+    fn description(&self, lang: crate::i18n::Lang) -> &'static str {
+        match lang {
+            crate::i18n::Lang::En => "Thought capture &amp; mind map",
+            crate::i18n::Lang::Es => "Captura de ideas y mapa mental",
         }
     }
 

@@ -7,7 +7,7 @@ use axum::{
 
 use super::mindflow_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -37,7 +37,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let actions: Vec<ActionRow> = sqlx::query_as(
         r#"SELECT a.id, a.title, a.due_date, a.priority, a.status,

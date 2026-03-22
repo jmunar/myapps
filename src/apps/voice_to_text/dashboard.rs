@@ -1,7 +1,7 @@
 use axum::{Extension, Router, response::Html, routing::get};
 
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::{NavItem, render_page};
 use crate::routes::AppState;
 
@@ -10,7 +10,8 @@ pub fn routes() -> Router<AppState> {
 }
 
 pub fn voice_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
+    let ct = crate::i18n::t(lang);
     vec![
         NavItem {
             href: format!("{base}/voice"),
@@ -32,7 +33,7 @@ pub fn voice_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         },
         NavItem {
             href: format!("{base}/logout"),
-            label: t.log_out.to_string(),
+            label: ct.log_out.to_string(),
             active: false,
             right: true,
         },
@@ -51,7 +52,7 @@ struct JobRow {
 
 /// Render a single job table row. Shared between the full page and the HTMX partial.
 fn render_job_row(j: &JobRow, base: &str, lang: Lang) -> String {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let status_class = match j.status.as_str() {
         "done" => "status-done",
         "failed" => "status-failed",
@@ -94,7 +95,7 @@ async fn index(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let jobs: Vec<JobRow> = sqlx::query_as(
         "SELECT id, status, original_filename, model_used, created_at, completed_at

@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -38,7 +38,7 @@ async fn capture(
     Extension(lang): Extension<Lang>,
     Form(form): Form<CaptureForm>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let category_id: Option<i64> = form.category_id.as_deref().and_then(|s| s.parse().ok());
     let parent_thought_id: Option<i64> = form
@@ -117,7 +117,7 @@ async fn detail(
     Path(id): Path<i64>,
 ) -> Result<Html<String>, impl IntoResponse> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let thought: Option<ThoughtRow> = sqlx::query_as(
         r#"SELECT t.id, t.content, t.status, t.category_id,
@@ -430,7 +430,7 @@ async fn add_comment(
     Form(form): Form<CommentForm>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     // Verify ownership
     let owns: bool = sqlx::query_scalar(

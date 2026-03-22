@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use super::dashboard::voice_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -27,7 +27,7 @@ fn upload_dir() -> PathBuf {
 /// If `selected` is provided, that model is pre-selected; otherwise the first is.
 fn render_model_options(models: &[String], selected: Option<&str>, lang: Lang) -> String {
     if models.is_empty() {
-        let t = i18n::t(lang);
+        let t = super::i18n::t(lang);
         return format!(
             r#"<option value="" disabled>{}</option>"#,
             t.vt_new_no_models
@@ -50,7 +50,7 @@ async fn new_form(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let models = state.config.available_whisper_models();
     let model_options = render_model_options(&models, None, lang);
 
@@ -144,7 +144,7 @@ async fn upload(
     mut multipart: Multipart,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let dir = upload_dir();
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         return Html(format!(
@@ -237,7 +237,7 @@ struct JobRow {
 }
 
 fn render_job_row(j: &JobRow, base: &str, lang: Lang) -> String {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let status_class = match j.status.as_str() {
         "done" => "status-done",
         "failed" => "status-failed",
@@ -320,7 +320,7 @@ async fn job_detail(
     Path(job_id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let job: Option<JobDetail> = sqlx::query_as(
         "SELECT id, status, original_filename, transcription, error_message,

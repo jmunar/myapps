@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -29,7 +29,7 @@ async fn page(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let categories: Vec<CategoryOption> = sqlx::query_as(
         "SELECT id, name, color FROM mindflow_categories WHERE user_id = ? AND archived = 0 ORDER BY name",

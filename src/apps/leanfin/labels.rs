@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::dashboard::leanfin_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -43,7 +43,7 @@ async fn list_labels(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let labels: Vec<LabelRow> = sqlx::query_as(
         r#"SELECT l.id, l.name, l.color,
@@ -253,7 +253,7 @@ struct RuleRow {
 }
 
 fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) -> String {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let lbl_delete = t.lf_lbl_delete;
     let lbl_delete_rule_confirm = t.lf_lbl_delete_rule_confirm;

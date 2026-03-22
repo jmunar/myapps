@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use super::AppState;
-use crate::apps::registry::{AppInfo, deployed_apps};
+use crate::apps::registry::{App, deployed_app_instances};
 use crate::auth::UserId;
 use crate::i18n::{self, Lang};
 use crate::layout::{NavItem, render_page};
@@ -84,15 +84,15 @@ fn push_script(base: &str, lang: Lang) -> String {
 }
 
 fn render_grid_normal(
-    apps: &[AppInfo],
+    apps: &[Box<dyn App>],
     visibility: &HashMap<String, bool>,
     base: &str,
     lang: Lang,
 ) -> String {
     let t = i18n::t(lang);
-    let visible_apps: Vec<&AppInfo> = apps
+    let visible_apps: Vec<&Box<dyn App>> = apps
         .iter()
-        .filter(|app| *visibility.get(app.key).unwrap_or(&true))
+        .filter(|app| *visibility.get(app.info().key).unwrap_or(&true))
         .collect();
 
     if visible_apps.is_empty() {
@@ -110,6 +110,7 @@ fn render_grid_normal(
     let cards: String = visible_apps
         .iter()
         .map(|app| {
+            let info = app.info();
             format!(
                 r#"<a href="{base}{path}" class="launcher-card">
                     <div class="launcher-icon">{icon}</div>
@@ -118,10 +119,10 @@ fn render_grid_normal(
                         <p>{desc}</p>
                     </div>
                 </a>"#,
-                path = app.path,
-                icon = app.icon,
-                name = app.name,
-                desc = t.app_description(app.key),
+                path = info.path,
+                icon = info.icon,
+                name = info.name,
+                desc = app.description(lang),
             )
         })
         .collect();
@@ -130,7 +131,7 @@ fn render_grid_normal(
 }
 
 fn render_grid_edit(
-    apps: &[AppInfo],
+    apps: &[Box<dyn App>],
     visibility: &HashMap<String, bool>,
     base: &str,
     lang: Lang,
@@ -139,7 +140,8 @@ fn render_grid_edit(
     let cards: String = apps
         .iter()
         .map(|app| {
-            let visible = *visibility.get(app.key).unwrap_or(&true);
+            let info = app.info();
+            let visible = *visibility.get(info.key).unwrap_or(&true);
             let hidden_class = if visible { "" } else { " hidden" };
             let toggle_val = if visible { "0" } else { "1" };
             let eye = if visible {
@@ -166,10 +168,10 @@ fn render_grid_edit(
                         hx-swap="innerHTML"
                         title="{title}">{eye}</button>
                 </div>"#,
-                key = app.key,
-                icon = app.icon,
-                name = app.name,
-                desc = t.app_description(app.key),
+                key = info.key,
+                icon = info.icon,
+                name = info.name,
+                desc = app.description(lang),
                 target = TARGET,
             )
         })
@@ -245,7 +247,7 @@ async fn index(
     }];
 
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
-    let apps = deployed_apps(&state.config);
+    let apps = deployed_app_instances(&state.config);
 
     let header = render_header_normal(base, lang);
     let grid = render_grid_normal(&apps, &visibility, base, lang);
@@ -263,7 +265,7 @@ async fn edit_mode(
 ) -> Html<String> {
     let base = &state.config.base_path;
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
-    let apps = deployed_apps(&state.config);
+    let apps = deployed_app_instances(&state.config);
 
     let header = render_header_edit(base, lang);
     let grid = render_grid_edit(&apps, &visibility, base, lang);
@@ -278,7 +280,7 @@ async fn grid_fragment(
 ) -> Html<String> {
     let base = &state.config.base_path;
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
-    let apps = deployed_apps(&state.config);
+    let apps = deployed_app_instances(&state.config);
 
     let header = render_header_normal(base, lang);
     let grid = render_grid_normal(&apps, &visibility, base, lang);
@@ -301,8 +303,8 @@ async fn set_visibility(
     let visible = form.visible != "0";
 
     // Validate app_key against registry
-    let apps = deployed_apps(&state.config);
-    if apps.iter().any(|a| a.key == form.app_key) {
+    let apps = deployed_app_instances(&state.config);
+    if apps.iter().any(|a| a.info().key == form.app_key) {
         let _ =
             user_app_visibility::set_visibility(&state.pool, user_id, &form.app_key, visible).await;
     }

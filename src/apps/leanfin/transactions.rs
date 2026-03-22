@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::models::Transaction;
 use crate::routes::AppState;
 
@@ -130,7 +130,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
     Query(filter): Query<FilterParams>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let base = &state.config.base_path;
     let page = filter.page.unwrap_or(1).max(1);
     let offset = (page - 1) * PAGE_SIZE;
@@ -334,7 +334,7 @@ async fn alloc_editor(
     Extension(lang): Extension<Lang>,
     Path(txn_id): Path<i64>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let base = &state.config.base_path;
 
     // Get transaction amount

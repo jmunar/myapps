@@ -4,7 +4,7 @@ use serde::Deserialize;
 use super::dashboard::leanfin_nav;
 use super::services::balance;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -29,7 +29,7 @@ async fn page(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
         "SELECT id, bank_name, iban, account_type, account_name FROM leanfin_accounts WHERE user_id = ? AND archived = 0 ORDER BY bank_name",
@@ -184,7 +184,7 @@ async fn data(
     Extension(lang): Extension<Lang>,
     axum::extract::Query(params): axum::extract::Query<DataQuery>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let series = if let Some(account_id) = params.account_id {
         // Verify account belongs to user

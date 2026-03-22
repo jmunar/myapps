@@ -2,7 +2,7 @@ use axum::{Extension, Router, response::Html, routing::get};
 
 use super::sync_handler::sync_button;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::{NavItem, render_page};
 use crate::routes::AppState;
 
@@ -11,7 +11,8 @@ pub fn routes() -> Router<AppState> {
 }
 
 pub fn leanfin_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
+    let ct = crate::i18n::t(lang);
     vec![
         NavItem {
             href: format!("{base}/leanfin"),
@@ -57,7 +58,7 @@ pub fn leanfin_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         },
         NavItem {
             href: format!("{base}/logout"),
-            label: t.log_out.to_string(),
+            label: ct.log_out.to_string(),
             active: false,
             right: true,
         },
@@ -85,7 +86,7 @@ async fn index(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
         "SELECT id, bank_name, iban, account_type, account_name FROM leanfin_accounts WHERE user_id = ? ORDER BY bank_name",

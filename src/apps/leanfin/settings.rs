@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 use super::dashboard::leanfin_nav;
 use crate::auth::UserId;
 use crate::config::Config;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -119,7 +119,7 @@ async fn settings_form(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let current_app_id: Option<String> = sqlx::query_scalar(
         "SELECT enable_banking_app_id FROM leanfin_user_settings WHERE user_id = ?",
@@ -202,7 +202,7 @@ async fn settings_submit(
     use axum::response::IntoResponse;
 
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let encryption_key = match state.config.encryption_key.as_deref() {
         Some(k) => k,
         None => {

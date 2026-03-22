@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::classroom_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -41,7 +41,7 @@ fn parse_columns(json: &str) -> Vec<ColumnDef> {
 }
 
 fn render_column_list(cols: &[ColumnDef], lang: Lang) -> String {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     if cols.is_empty() {
         return format!("<em>{}</em>", t.ci_ft_no_columns);
     }
@@ -66,7 +66,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
         "SELECT id, name, columns_json FROM classroom_form_types WHERE user_id = ? ORDER BY name ASC",
@@ -230,7 +230,7 @@ async fn edit_page(
     Path(id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let ft: Option<FormTypeRow> = sqlx::query_as(
         "SELECT id, name, columns_json FROM classroom_form_types WHERE id = ? AND user_id = ?",

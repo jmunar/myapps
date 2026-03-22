@@ -12,7 +12,7 @@ use super::services::enable_banking;
 use super::settings;
 use super::sync_handler::sync_button;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -58,7 +58,7 @@ async fn list_accounts(
     Query(params): Query<ListAccountsParams>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let show_archived = params.show_archived.is_some();
 
     let error_banner = if params.archive_error.is_some() {
@@ -364,7 +364,7 @@ async fn manual_new_form(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let body = format!(
         r#"<div class="page-header">
             <h1>{title}</h1>
@@ -495,7 +495,7 @@ async fn manual_edit_form(
     Path(account_id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let account: Option<ManualAccountRow> = sqlx::query_as(
         "SELECT id, account_name, asset_category FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
@@ -614,7 +614,7 @@ async fn manual_value_form(
     Path(account_id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let account: Option<ManualValueRow> = sqlx::query_as(
         "SELECT id, account_name, balance_amount, balance_currency FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
@@ -753,7 +753,7 @@ async fn import_csv_form(
     Path(account_id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let account: Option<ManualValueRow> = sqlx::query_as(
         "SELECT id, account_name, balance_amount, balance_currency FROM leanfin_accounts WHERE id = ? AND user_id = ? AND account_type = 'manual' AND archived = 0",
@@ -820,7 +820,7 @@ async fn import_csv_submit(
     mut multipart: axum::extract::Multipart,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     // Verify ownership
     let account: Option<ManualValueRow> = sqlx::query_as(
@@ -964,7 +964,7 @@ fn render_import_error(
     lang: Lang,
 ) -> Html<String> {
     let base = &config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let body = format!(
         r#"<div class="page-header">
             <h1>{import_failed}</h1>
@@ -1008,7 +1008,7 @@ async fn link_form(
     Extension(lang): Extension<Lang>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let body = format!(
         r#"<div class="page-header">
             <h1>{title}</h1>

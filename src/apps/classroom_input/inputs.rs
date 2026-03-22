@@ -9,7 +9,7 @@ use serde::Deserialize;
 use super::classroom_nav;
 use super::form_types::ColumnDef;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -55,7 +55,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let inputs: Vec<InputRow> = sqlx::query_as(
         "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
@@ -173,7 +173,7 @@ async fn new_input_page(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let classrooms: Vec<ClassroomRow> = sqlx::query_as(
         "SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ? ORDER BY label ASC",
@@ -476,7 +476,7 @@ async fn view(
     Path(id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let inp: Option<InputRow> = sqlx::query_as(
         "SELECT id, classroom_id, form_type_id, name, csv_data, created_at

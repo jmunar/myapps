@@ -1,4 +1,5 @@
 mod dashboard;
+pub mod i18n;
 mod jobs;
 pub mod ops;
 pub mod services;
@@ -25,6 +26,13 @@ impl App for VoiceToTextApp {
             description: "Audio transcription with Whisper",
             icon: "\u{1F3A4}",
             path: "/voice",
+        }
+    }
+
+    fn description(&self, lang: crate::i18n::Lang) -> &'static str {
+        match lang {
+            crate::i18n::Lang::En => "Audio transcription with Whisper",
+            crate::i18n::Lang::Es => "Transcripción de audio con Whisper",
         }
     }
 

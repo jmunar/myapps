@@ -1,11 +1,12 @@
 mod classrooms;
 mod form_types;
+pub mod i18n;
 mod inputs;
 pub mod ops;
 pub mod services;
 
 use crate::apps::registry::{App, AppInfo};
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::NavItem;
 use crate::routes::AppState;
 use axum::Router;
@@ -21,6 +22,7 @@ pub fn router() -> Router<AppState> {
 
 pub fn classroom_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
+    let ct = crate::i18n::t(lang);
     vec![
         NavItem {
             href: format!("{base}/classroom"),
@@ -48,7 +50,7 @@ pub fn classroom_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         },
         NavItem {
             href: format!("{base}/logout"),
-            label: t.log_out.to_string(),
+            label: ct.log_out.to_string(),
             active: false,
             right: true,
         },
@@ -65,6 +67,13 @@ impl App for ClassroomInputApp {
             description: "Record marks &amp; notes for classrooms",
             icon: "\u{270E}",
             path: "/classroom",
+        }
+    }
+
+    fn description(&self, lang: crate::i18n::Lang) -> &'static str {
+        match lang {
+            crate::i18n::Lang::En => "Record marks &amp; notes for classrooms",
+            crate::i18n::Lang::Es => "Registro de notas y observaciones del aula",
         }
     }
 

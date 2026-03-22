@@ -2,6 +2,7 @@ mod accounts;
 mod balance_evolution;
 mod dashboard;
 mod expenses;
+pub mod i18n;
 mod labels;
 pub mod ops;
 pub mod services;
@@ -37,6 +38,13 @@ impl App for LeanFinApp {
             description: "Personal expense tracker",
             icon: "$",
             path: "/leanfin",
+        }
+    }
+
+    fn description(&self, lang: crate::i18n::Lang) -> &'static str {
+        match lang {
+            crate::i18n::Lang::En => "Personal expense tracker",
+            crate::i18n::Lang::Es => "Gestor de gastos personales",
         }
     }
 
