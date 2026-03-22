@@ -110,6 +110,7 @@ pub async fn require_auth(
 
     match authenticated {
         Some(user_id) => {
+            touch_last_active(&state.pool, user_id).await;
             let lang = user_settings::get_language(&state.pool, user_id).await;
             request.extensions_mut().insert(UserId(user_id));
             request.extensions_mut().insert(lang);
@@ -189,4 +190,31 @@ pub async fn mark_invite_used(pool: &SqlitePool, token: &str) -> Result<()> {
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Update the user's last_active_at timestamp, at most once per hour to avoid
+/// excessive writes on every request.
+pub async fn touch_last_active(pool: &SqlitePool, user_id: i64) {
+    let now = Utc::now().naive_utc();
+    // Only update if the last recorded activity is older than 1 hour (or NULL)
+    let _ = sqlx::query(
+        "UPDATE users SET last_active_at = ? WHERE id = ? AND (last_active_at IS NULL OR last_active_at < ?)",
+    )
+    .bind(now)
+    .bind(user_id)
+    .bind(now - chrono::Duration::hours(1))
+    .execute(pool)
+    .await;
+}
+
+/// Delete users who have been inactive for more than `days` days.
+/// Returns the number of deleted users.
+pub async fn cleanup_inactive_users(pool: &SqlitePool, days: i64) -> Result<u64> {
+    let cutoff = Utc::now().naive_utc() - chrono::Duration::days(days);
+    let result =
+        sqlx::query("DELETE FROM users WHERE last_active_at IS NOT NULL AND last_active_at < ?")
+            .bind(cutoff)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected())
 }

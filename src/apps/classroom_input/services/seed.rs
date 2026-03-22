@@ -1,31 +1,21 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
 
-use crate::auth;
-
-pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
-    if reset {
-        let result = sqlx::query("DELETE FROM users WHERE username = 'demo'")
-            .execute(pool)
-            .await?;
-        if result.rows_affected() > 0 {
-            tracing::info!("Wiped demo user and all associated data");
-        }
-    }
-
-    let user_id = match auth::create_user(pool, "demo", "demo").await {
-        Ok(id) => {
-            tracing::info!("Created demo user (username: demo, password: demo)");
-            id
-        }
-        Err(_) => {
-            let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'demo'")
-                .fetch_one(pool)
-                .await?;
-            tracing::info!("Demo user already exists");
-            row.0
-        }
-    };
+pub async fn run(pool: &SqlitePool, user_id: i64) -> Result<()> {
+    // Wipe all ClassroomInput data for this user (cascade handles inputs)
+    sqlx::query("DELETE FROM classroom_inputs WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM classroom_form_types WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM classroom_classrooms WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    tracing::info!("Cleared existing ClassroomInput data for user {user_id}");
 
     // ── Classrooms ────────────────────────────────────────────────
     let classrooms: &[(&str, &[&str])] = &[
@@ -91,7 +81,7 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     for (label, pupils) in classrooms {
         let pupils_text = pupils.join("\n");
         let result = sqlx::query(
-            "INSERT OR IGNORE INTO classroom_classrooms (user_id, label, pupils) VALUES (?, ?, ?)",
+            "INSERT INTO classroom_classrooms (user_id, label, pupils) VALUES (?, ?, ?)",
         )
         .bind(user_id)
         .bind(label)
@@ -125,7 +115,7 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     let mut ft_count = 0u64;
     for (name, columns_json) in form_types {
         let result = sqlx::query(
-            "INSERT OR IGNORE INTO classroom_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
+            "INSERT INTO classroom_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
         )
         .bind(user_id)
         .bind(name)
@@ -231,9 +221,7 @@ Mario Campos,6,6,5,Needs improvement";
     }
 
     tracing::info!("Seeded {inp_count} inputs");
-    tracing::info!(
-        "ClassroomInput seed complete. Run `cargo run -- serve` and login with demo / demo"
-    );
+    tracing::info!("ClassroomInput seed complete");
 
     Ok(())
 }
@@ -273,7 +261,7 @@ async fn insert_input(
     csv: &str,
 ) -> u64 {
     sqlx::query(
-        "INSERT OR IGNORE INTO classroom_inputs (user_id, classroom_id, form_type_id, name, csv_data) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO classroom_inputs (user_id, classroom_id, form_type_id, name, csv_data) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(user_id)
     .bind(classroom_id)

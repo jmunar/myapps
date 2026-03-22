@@ -22,6 +22,10 @@ pub struct Config {
     pub deploy_apps: Option<Vec<String>>,
     /// Base URL of the llama.cpp server (e.g. `http://127.0.0.1:8081`).
     pub llama_server_url: String,
+    /// Whether to auto-seed deployed apps when a new user registers via invite.
+    pub seed: bool,
+    /// Number of days of inactivity before a user is cleaned up. 0 = disabled.
+    pub cleanup_inactive_days: i64,
     /// Hash of static assets for cache-busting (computed at startup).
     pub static_version: String,
 }
@@ -54,6 +58,14 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .map(|s| s.split(',').map(|a| a.trim().to_string()).collect()),
             llama_server_url: env::var("LLAMA_SERVER_URL").unwrap_or_default(),
+            seed: env::var("SEED")
+                .ok()
+                .map(|s| s.eq_ignore_ascii_case("true") || s == "1")
+                .unwrap_or(false),
+            cleanup_inactive_days: env::var("CLEANUP_INACTIVE_DAYS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0),
             static_version: Self::compute_static_version(),
         })
     }
@@ -141,6 +153,8 @@ mod tests {
             whisper_models_dir: String::new(),
             deploy_apps,
             llama_server_url: String::new(),
+            seed: false,
+            cleanup_inactive_days: 0,
             static_version: String::new(),
         }
     }
