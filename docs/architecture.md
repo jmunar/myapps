@@ -29,6 +29,9 @@ myapps create-user          # Create a user from the command line
 myapps invite               # Generate a single-use invite link (48h)
 myapps generate-vapid-keys  # Generate VAPID key pair for push notifications
 myapps seed --user <name>           # Seed all apps for a user (cleans existing app data)
+myapps delete-user --username <name>            # Delete a user and all their data
+myapps delete-user-app-data --username <name>   # Delete all app data (keeps user account)
+myapps delete-user-app-data --username <name> --app leanfin  # Delete data for one app only
 myapps cleanup-users --days 7       # Delete users inactive for >7 days
 ```
 

@@ -22,6 +22,9 @@ cargo run -- cron                   # Run scheduled app tasks (e.g. bank sync)
 cargo run -- create-user            # Create a user (admin, direct password)
 cargo run -- invite                 # Generate a single-use invite link (48h)
 cargo run -- seed --user <name>              # Seed all apps for a user
+cargo run -- delete-user --username <name>      # Delete a user and all their data
+cargo run -- delete-user-app-data --username <name>          # Delete all app data (keeps user)
+cargo run -- delete-user-app-data --username <name> --app X  # Delete data for one app
 cargo run -- cleanup-users --days 7             # Delete users inactive >7 days
 
 # Makefile shortcuts
