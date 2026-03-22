@@ -1930,18 +1930,48 @@ dependencies = [
 name = "myapps"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "axum-test",
+ "chrono",
+ "clap",
+ "myapps-classroom-input",
+ "myapps-core",
+ "myapps-leanfin",
+ "myapps-mindflow",
+ "myapps-voice-to-text",
+ "serde_json",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
+name = "myapps-classroom-input"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "myapps-core",
+ "myapps-test-harness",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "myapps-core"
+version = "0.1.0"
+dependencies = [
  "aes-gcm",
  "anyhow",
  "argon2",
  "axum",
- "axum-test",
  "base64 0.22.1",
  "chrono",
  "clap",
- "csv",
  "dotenvy",
  "hex",
- "jsonwebtoken",
  "rand 0.9.2",
  "rand_core 0.6.4",
  "reqwest",
@@ -1957,6 +1987,70 @@ dependencies = [
  "url",
  "uuid",
  "web-push",
+]
+
+[[package]]
+name = "myapps-leanfin"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "axum",
+ "axum-test",
+ "chrono",
+ "csv",
+ "hex",
+ "jsonwebtoken",
+ "myapps-core",
+ "myapps-test-harness",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "myapps-mindflow"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "myapps-core",
+ "myapps-test-harness",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "myapps-test-harness"
+version = "0.1.0"
+dependencies = [
+ "axum-test",
+ "myapps-core",
+ "serde_json",
+ "sqlx",
+]
+
+[[package]]
+name = "myapps-voice-to-text"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "myapps-core",
+ "myapps-test-harness",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

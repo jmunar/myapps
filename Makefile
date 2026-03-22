@@ -5,10 +5,10 @@ fmt:
 	cargo fmt
 
 lint:
-	cargo clippy -- -D warnings
+	cargo clippy --workspace -- -D warnings
 
 test:
-	cargo test
+	cargo test --workspace
 
 # CI: runs everything that the GitHub Actions workflow checks
 check: fmt-check lint test

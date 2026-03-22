@@ -62,36 +62,56 @@ make screenshots                    # Regenerate README screenshots (needs Node.
   dependency updates and GitHub Actions version bumps.
 - `make check` runs the same checks locally before pushing.
 
+## Workspace Structure
+
+The project is a Cargo workspace with separate crates:
+
+```
+crates/
+  myapps-core/           # Shared infra: auth, config, db, i18n, layout, routes, services, command, registry
+  myapps-leanfin/        # LeanFin app
+  myapps-mindflow/       # MindFlow app
+  myapps-voice-to-text/  # VoiceToText app
+  myapps-classroom-input/# ClassroomInput app
+src/
+  main.rs                # Thin binary: CLI + app registration
+  lib.rs                 # Re-export facade for tests
+```
+
+Apps depend on `myapps-core`. No app depends on another app. The root binary
+assembles all crates.
+
 ## Project Conventions
 
 - SQL queries use runtime-checked sqlx (no compile-time macros).
-- Core migrations (auth, sessions, settings) live in `migrations/`.
-  App-specific migrations live in each app's `migrations/` directory
-  (e.g. `src/apps/leanfin/migrations/`). All are merged by timestamp
+- Core migrations live in `crates/myapps-core/migrations/`.
+  App-specific migrations live in each app crate's `migrations/` directory
+  (e.g. `crates/myapps-leanfin/migrations/`). All are merged by timestamp
   and run automatically on startup via `db::migrator()`.
 - Environment variables are loaded from `.env` in development (via dotenvy).
 - No secrets in the repo. See `.env.example` for required variables.
 - Keep memory footprint minimal — avoid unnecessary allocations and large
   dependencies.
-- LeanFin-specific routes, handlers, and services live under `src/apps/leanfin/`.
-- MindFlow-specific routes, handlers, and services live under `src/apps/mindflow/`.
-- VoiceToText-specific routes, handlers, and services live under `src/apps/voice_to_text/`.
-- ClassroomInput-specific routes and handlers live under `src/apps/classroom_input/`.
+- LeanFin-specific routes, handlers, and services live in `crates/myapps-leanfin/`.
+- MindFlow-specific routes, handlers, and services live in `crates/myapps-mindflow/`.
+- VoiceToText-specific routes, handlers, and services live in `crates/myapps-voice-to-text/`.
+- ClassroomInput-specific routes and handlers live in `crates/myapps-classroom-input/`.
 - Shared infrastructure (auth, config, db, models, layout, i18n, command,
-  services) stays at the top level. Shared services (whisper transcription,
-  push notifications) live in `src/services/`.
-- Each app implements the `App` trait in `src/apps/registry.rs`. The trait
-  provides hooks for migrations, routing, commands, seeding, scheduled tasks
-  (`cron`), and background workers (`on_serve`). Adding a new app means
-  implementing the trait and registering in `all_app_instances()`.
-- The command bar module (`src/command/`) handles LLM-powered natural-language
-  command interpretation and execution via a llama.cpp server.
+  services) lives in `crates/myapps-core/`. Shared services (whisper
+  transcription, push notifications) live in `crates/myapps-core/src/services/`.
+- Each app implements the `App` trait from `myapps_core::registry`. The trait
+  provides hooks for migrations, routing, CSS, commands, seeding, scheduled
+  tasks (`cron`), and background workers (`on_serve`). To add a new app, run
+  `/add-app <AppName>` which scaffolds the crate and wires it into the
+  workspace.
+- The command bar module (`crates/myapps-core/src/command/`) handles LLM-powered
+  natural-language command interpretation and execution via a llama.cpp server.
 - Each app exposes an `ops.rs` module with shared action functions callable from
   both HTTP handlers and the command bar dispatcher. New actions go in `ops.rs`.
-- Shared translations (auth, launcher, command bar) live in `src/i18n/`.
-  App-specific translations live in each app's `i18n.rs` module. Both use
-  compile-time struct-based translations; adding a field forces both EN and ES
-  to be updated.
+- Shared translations (auth, launcher, command bar) live in
+  `crates/myapps-core/src/i18n/`. App-specific translations live in each app
+  crate's `i18n.rs` module. Both use compile-time struct-based translations;
+  adding a field forces both EN and ES to be updated.
 - All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `classroom_input_classrooms`).
 - When adding or removing environment variables, update all four places:
   `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`
@@ -102,7 +122,11 @@ make screenshots                    # Regenerate README screenshots (needs Node.
 - After any frontend change (routes, handlers, HTML templates, CSS classes used
   in assertions), run the **frontend-tester agent**
   (`.claude/agents/frontend-tester.md`) to generate or update integration tests.
-- Tests live in `tests/` and use `axum-test`; see the agent file for patterns.
+- App-specific tests live in each app crate's `tests/` directory
+  (e.g. `crates/myapps-leanfin/tests/`). Platform-level auth and launcher
+  tests live at the root `tests/`. The shared `myapps-test-harness` crate
+  (`crates/myapps-test-harness/`) provides `spawn_app()` and `TestApp`
+  helpers. Tests use `axum-test`; see the agent file for patterns.
 
 ## Documentation
 

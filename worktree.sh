@@ -168,7 +168,12 @@ cmd_remove() {
     done
     echo "Copied deploy/*.env back to main repo"
 
-    git -C "$REPO_DIR" worktree remove --force "$worktree_dir"
+    git -C "$REPO_DIR" worktree remove --force "$worktree_dir" 2>/dev/null || true
+    # If untracked files prevented full removal, delete manually and prune.
+    if [ -d "$worktree_dir" ]; then
+        rm -rf "$worktree_dir"
+        git -C "$REPO_DIR" worktree prune
+    fi
     echo "Removed worktree: $worktree_dir"
 
     # Delete the local branch only if the remote branch is already gone
