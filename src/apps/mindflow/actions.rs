@@ -109,21 +109,21 @@ async fn list(
             title = a.title,
             priority = a.priority,
             thought_id = a.thought_id,
-            delete_confirm = t.mf_act_delete_confirm,
+            delete_confirm = t.act_delete_confirm,
         ));
     }
 
     if rows.is_empty() {
         rows = format!(
             r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.mf_act_no_actions
+            t.act_no_actions
         );
     }
 
     let pending = actions.iter().filter(|a| a.status == "pending").count();
     let done = actions.iter().filter(|a| a.status == "done").count();
 
-    let act_title = t.mf_act_title;
+    let act_title = t.act_title;
 
     let body = format!(
         r#"<div class="page-header">
@@ -138,7 +138,7 @@ async fn list(
     );
 
     Html(render_page(
-        &format!("MindFlow \u{2014} {}", t.mf_actions),
+        &format!("MindFlow \u{2014} {}", t.actions),
         &mindflow_nav(base, "actions", lang),
         &body,
         &state.config,

@@ -21,13 +21,13 @@ pub fn voice_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         },
         NavItem {
             href: format!("{base}/voice"),
-            label: t.vt_jobs.to_string(),
+            label: t.jobs.to_string(),
             active: active == "jobs",
             right: false,
         },
         NavItem {
             href: format!("{base}/voice/new"),
-            label: t.vt_new.to_string(),
+            label: t.new.to_string(),
             active: active == "new",
             right: false,
         },
@@ -62,7 +62,7 @@ fn render_job_row(j: &JobRow, base: &str, lang: Lang) -> String {
     let id = j.id;
     let detail_link = format!(
         r##"<a href="{base}/voice/jobs/{id}">{view}</a>"##,
-        view = t.vt_jobs_view
+        view = t.jobs_view
     );
     let delete_btn = format!(
         r##"<form hx-post="{base}/voice/jobs/{id}/delete"
@@ -70,7 +70,7 @@ fn render_job_row(j: &JobRow, base: &str, lang: Lang) -> String {
                 hx-confirm="{confirm}">
             <button type="submit" class="btn-icon">&times;</button>
         </form>"##,
-        confirm = t.vt_jobs_delete_confirm,
+        confirm = t.jobs_delete_confirm,
     );
     format!(
         r##"<tr>
@@ -115,7 +115,7 @@ async fn index(
     }
 
     let empty_msg = if jobs.is_empty() {
-        format!(r#"<p class="empty-state">{}</p>"#, t.vt_jobs_empty)
+        format!(r#"<p class="empty-state">{}</p>"#, t.jobs_empty)
     } else {
         String::new()
     };
@@ -150,17 +150,17 @@ async fn index(
                 </tbody>
             </table>
         </div>"##,
-        title = t.vt_jobs_title,
-        subtitle = t.vt_jobs_subtitle,
-        new_btn = t.vt_jobs_new_btn,
-        col_file = t.vt_jobs_col_file,
-        col_status = t.vt_jobs_col_status,
-        col_model = t.vt_jobs_col_model,
-        col_created = t.vt_jobs_col_created,
-        col_completed = t.vt_jobs_col_completed,
+        title = t.jobs_title,
+        subtitle = t.jobs_subtitle,
+        new_btn = t.jobs_new_btn,
+        col_file = t.jobs_col_file,
+        col_status = t.jobs_col_status,
+        col_model = t.jobs_col_model,
+        col_created = t.jobs_col_created,
+        col_completed = t.jobs_col_completed,
     );
     Html(render_page(
-        &format!("VoiceToText \u{2014} {}", t.vt_jobs),
+        &format!("VoiceToText \u{2014} {}", t.jobs),
         &voice_nav(base, "jobs", lang),
         &body,
         &state.config,

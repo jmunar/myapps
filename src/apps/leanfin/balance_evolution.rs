@@ -48,12 +48,12 @@ async fn page(
         <div class="card">
             <div class="empty-state"><p>{no_accounts}</p></div>
         </div>"#,
-            title = t.lf_bal_title,
-            subtitle = t.lf_bal_subtitle,
-            no_accounts = t.lf_bal_no_accounts,
+            title = t.bal_title,
+            subtitle = t.bal_subtitle,
+            no_accounts = t.bal_no_accounts,
         );
         return Html(render_page(
-            &format!("LeanFin — {}", t.lf_balance),
+            &format!("LeanFin — {}", t.balance),
             &leanfin_nav(base, "balance", lang),
             &body,
             &state.config,
@@ -61,7 +61,7 @@ async fn page(
         ));
     }
 
-    let mut account_options = format!(r#"<option value="">{}</option>"#, t.lf_txn_all_accounts);
+    let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
     for a in &accounts {
         let display = if a.account_type == "manual" {
             a.account_name
@@ -138,14 +138,14 @@ async fn page(
             }};
         }})();
         </script>"##,
-        title = t.lf_bal_title,
-        subtitle = t.lf_bal_subtitle,
-        loading = t.lf_bal_loading,
-        transactions = t.lf_exp_transactions,
+        title = t.bal_title,
+        subtitle = t.bal_subtitle,
+        loading = t.bal_loading,
+        transactions = t.exp_transactions,
     );
 
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_balance),
+        &format!("LeanFin — {}", t.balance),
         &leanfin_nav(base, "balance", lang),
         &body,
         &state.config,
@@ -200,7 +200,7 @@ async fn data(
         if !owns {
             return Html(format!(
                 "<div class=\"empty-state\"><p>{}</p></div>",
-                t.lf_bal_account_not_found
+                t.bal_account_not_found
             ));
         }
 
@@ -216,7 +216,7 @@ async fn data(
     if series.is_empty() {
         return Html(format!(
             "<div class=\"empty-state\"><p>{}</p></div>",
-            t.lf_bal_no_data
+            t.bal_no_data
         ));
     }
 

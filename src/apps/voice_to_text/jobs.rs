@@ -28,10 +28,7 @@ fn upload_dir() -> PathBuf {
 fn render_model_options(models: &[String], selected: Option<&str>, lang: Lang) -> String {
     if models.is_empty() {
         let t = super::i18n::t(lang);
-        return format!(
-            r#"<option value="" disabled>{}</option>"#,
-            t.vt_new_no_models
-        );
+        return format!(r#"<option value="" disabled>{}</option>"#, t.new_no_models);
     }
     let mut html = String::new();
     for (i, m) in models.iter().enumerate() {
@@ -117,19 +114,19 @@ async fn new_form(
             document.getElementById('rec-status').textContent = '{processing}';
         }}
         </script>"##,
-        new_title = t.vt_new_title,
-        new_subtitle = t.vt_new_subtitle,
-        audio_file = t.vt_new_audio_file,
-        model_label = t.vt_new_model,
-        upload_btn = t.vt_new_upload_btn,
-        record = t.vt_new_record,
-        start = t.vt_new_start,
-        stop = t.vt_new_stop,
-        recording = t.vt_new_recording,
-        processing = t.vt_new_processing,
+        new_title = t.new_title,
+        new_subtitle = t.new_subtitle,
+        audio_file = t.new_audio_file,
+        model_label = t.new_model,
+        upload_btn = t.new_upload_btn,
+        record = t.new_record,
+        start = t.new_start,
+        stop = t.new_stop,
+        recording = t.new_recording,
+        processing = t.new_processing,
     );
     Html(render_page(
-        &format!("VoiceToText — {}", t.vt_new),
+        &format!("VoiceToText — {}", t.new),
         &voice_nav(base, "new", lang),
         &body,
         &state.config,
@@ -211,7 +208,7 @@ async fn upload(
         Ok(_) => Html(format!(
             r#"<p class="success">Queued <strong>{original_filename}</strong> for transcription (model: {model}).
                <a href="{base}/voice">{view_jobs}</a></p>"#,
-            view_jobs = t.vt_detail_view_jobs,
+            view_jobs = t.detail_view_jobs,
         )),
         Err(e) => Html(format!(r#"<p class="error">Database error: {e}</p>"#)),
     }
@@ -247,7 +244,7 @@ fn render_job_row(j: &JobRow, base: &str, lang: Lang) -> String {
     let id = j.id;
     let detail_link = format!(
         r##"<a href="{base}/voice/jobs/{id}">{view}</a>"##,
-        view = t.vt_jobs_view
+        view = t.jobs_view
     );
     let delete_btn = format!(
         r##"<form hx-post="{base}/voice/jobs/{id}/delete"
@@ -255,7 +252,7 @@ fn render_job_row(j: &JobRow, base: &str, lang: Lang) -> String {
                 hx-confirm="{confirm}">
             <button type="submit" class="btn-icon" title="Delete">&times;</button>
         </form>"##,
-        confirm = t.vt_jobs_delete_confirm,
+        confirm = t.jobs_delete_confirm,
     );
     format!(
         r##"<tr>
@@ -340,7 +337,7 @@ async fn job_detail(
             &voice_nav(base, "jobs", lang),
             &format!(
                 r#"<div class="page-header"><h1>{}</h1></div>"#,
-                t.vt_detail_not_found
+                t.detail_not_found
             ),
             &state.config,
             lang,
@@ -353,7 +350,7 @@ async fn job_detail(
                 <label>{label}</label>
                 <div class="voice-transcription">{text}</div>
             </div>"#,
-            label = t.vt_detail_transcription,
+            label = t.detail_transcription,
         ),
         None => String::new(),
     };
@@ -391,8 +388,8 @@ async fn job_detail(
                 </form>
             </div>"#,
             id = j.id,
-            retranscribe = t.vt_detail_retranscribe,
-            retranscribe_btn = t.vt_detail_retranscribe_btn,
+            retranscribe = t.detail_retranscribe,
+            retranscribe_btn = t.detail_retranscribe_btn,
         )
     };
 
@@ -431,18 +428,18 @@ async fn job_detail(
             {retry_html}
         </div>"##,
         id = j.id,
-        back = t.vt_detail_back,
-        file_label = t.vt_detail_file,
+        back = t.detail_back,
+        file_label = t.detail_file,
         filename = j.original_filename,
-        status_label = t.vt_detail_status,
+        status_label = t.detail_status,
         status = j.status,
-        model_label = t.vt_detail_model,
+        model_label = t.detail_model,
         model = j.model_used,
-        time_label = t.vt_detail_time,
+        time_label = t.detail_time,
         duration = duration_html,
-        created_label = t.vt_detail_created,
+        created_label = t.detail_created,
         created = j.created_at,
-        completed_label = t.vt_detail_completed,
+        completed_label = t.detail_completed,
         completed = j.completed_at.as_deref().unwrap_or("—"),
     );
     Html(render_page(

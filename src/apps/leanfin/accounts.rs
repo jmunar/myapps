@@ -64,7 +64,7 @@ async fn list_accounts(
     let error_banner = if params.archive_error.is_some() {
         format!(
             r#"<div class="alert alert-error">{}</div>"#,
-            t.lf_acc_archive_error
+            t.acc_archive_error
         )
     } else {
         String::new()
@@ -119,10 +119,10 @@ async fn list_accounts(
                 </div>"#,
                 bank = a.bank_name,
                 id = a.id,
-                archived = t.lf_acc_archived,
-                unarchive = t.lf_acc_unarchive,
-                delete = t.lf_acc_delete,
-                delete_confirm_bank = t.lf_acc_delete_confirm_bank,
+                archived = t.acc_archived,
+                unarchive = t.acc_unarchive,
+                delete = t.acc_delete,
+                delete_confirm_bank = t.acc_delete_confirm_bank,
             ));
         } else {
             let is_expired = session_expires_at < today;
@@ -134,9 +134,9 @@ async fn list_accounts(
                 "expiry-ok"
             };
             let expiry_label = if is_expired {
-                t.lf_acc_expired
+                t.acc_expired
             } else {
-                t.lf_acc_active
+                t.acc_active
             };
 
             let reauth_btn = if is_expired || session_expires_at < warn_threshold {
@@ -145,7 +145,7 @@ async fn list_accounts(
                         <button type="submit" class="btn-icon">{reauthorize}</button>
                     </form>"#,
                     a.id,
-                    reauthorize = t.lf_acc_reauthorize,
+                    reauthorize = t.acc_reauthorize,
                 )
             } else {
                 String::new()
@@ -172,18 +172,15 @@ async fn list_accounts(
                 </div>"#,
                 a.bank_name,
                 id = a.id,
-                archive = t.lf_acc_archive,
-                delete = t.lf_acc_delete,
-                delete_confirm_bank = t.lf_acc_delete_confirm_bank,
+                archive = t.acc_archive,
+                delete = t.acc_delete,
+                delete_confirm_bank = t.acc_delete_confirm_bank,
             ));
         }
     }
 
     if bank_items.is_empty() {
-        bank_items = format!(
-            r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.lf_acc_no_bank
-        );
+        bank_items = format!(r#"<div class="empty-state"><p>{}</p></div>"#, t.acc_no_bank);
     }
 
     // Manual accounts section
@@ -215,10 +212,10 @@ async fn list_accounts(
                     </div>
                 </div>"#,
                 id = a.id,
-                archived = t.lf_acc_archived,
-                unarchive = t.lf_acc_unarchive,
-                delete = t.lf_acc_delete,
-                delete_confirm_manual = t.lf_acc_delete_confirm_manual,
+                archived = t.acc_archived,
+                unarchive = t.acc_unarchive,
+                delete = t.acc_delete,
+                delete_confirm_manual = t.acc_delete_confirm_manual,
             ));
         } else {
             manual_items.push_str(&format!(
@@ -242,12 +239,12 @@ async fn list_accounts(
                     </div>
                 </div>"#,
                 id = a.id,
-                update_value = t.lf_acc_update_value,
-                import_csv = t.lf_acc_import_csv,
-                edit = t.lf_acc_edit,
-                archive = t.lf_acc_archive,
-                delete = t.lf_acc_delete,
-                delete_confirm_manual = t.lf_acc_delete_confirm_manual,
+                update_value = t.acc_update_value,
+                import_csv = t.acc_import_csv,
+                edit = t.acc_edit,
+                archive = t.acc_archive,
+                delete = t.acc_delete,
+                delete_confirm_manual = t.acc_delete_confirm_manual,
             ));
         }
     }
@@ -255,7 +252,7 @@ async fn list_accounts(
     if manual_items.is_empty() {
         manual_items = format!(
             r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.lf_acc_no_manual
+            t.acc_no_manual
         );
     }
 
@@ -267,7 +264,7 @@ async fn list_accounts(
                        onchange="window.location.href='{base}/leanfin/accounts' + (this.checked ? '?show_archived=1' : '')">
                 {show_archived_label}
             </label>"#,
-            show_archived_label = t.lf_acc_show_archived,
+            show_archived_label = t.acc_show_archived,
         )
     } else {
         String::new()
@@ -277,12 +274,12 @@ async fn list_accounts(
     let link_btn = if has_banking_creds {
         format!(
             r#"<a href="{base}/leanfin/accounts/link" class="btn btn-primary">{}</a>"#,
-            t.lf_acc_link
+            t.acc_link
         )
     } else {
         format!(
             r#"<a href="{base}/leanfin/settings" class="btn btn-secondary">{}</a>"#,
-            t.lf_acc_configure_eb
+            t.acc_configure_eb
         )
     };
 
@@ -317,15 +314,15 @@ async fn list_accounts(
                 <div class="account-grid">{manual_items}</div>
             </div>
         </div>"##,
-        title = t.lf_acc_title,
-        subtitle = t.lf_acc_subtitle,
-        bank_accounts_heading = t.lf_acc_bank_accounts,
-        manual_accounts_heading = t.lf_acc_manual_accounts,
-        add_account = t.lf_acc_add,
+        title = t.acc_title,
+        subtitle = t.acc_subtitle,
+        bank_accounts_heading = t.acc_bank_accounts,
+        manual_accounts_heading = t.acc_manual_accounts,
+        add_account = t.acc_add,
     );
 
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_accounts),
+        &format!("LeanFin — {}", t.accounts),
         &leanfin_nav(base, "accounts", lang),
         &body,
         &state.config,
@@ -399,24 +396,24 @@ async fn manual_new_form(
             </div>
         </div>
         <script>document.getElementById('date').valueAsDate = new Date();</script>"#,
-        title = t.lf_acc_manual_new_title,
-        subtitle = t.lf_acc_manual_new_subtitle,
-        name_label = t.lf_acc_manual_name,
-        category_label = t.lf_acc_manual_category,
-        cat_investment = t.lf_acc_cat_investment,
-        cat_real_estate = t.lf_acc_cat_real_estate,
-        cat_vehicle = t.lf_acc_cat_vehicle,
-        cat_loan = t.lf_acc_cat_loan,
-        cat_crypto = t.lf_acc_cat_crypto,
-        cat_other = t.lf_acc_cat_other,
-        currency_label = t.lf_acc_manual_currency,
-        initial_label = t.lf_acc_manual_initial,
-        date_label = t.lf_acc_manual_date,
-        cancel = t.lf_acc_manual_cancel,
-        add_btn = t.lf_acc_manual_add_btn,
+        title = t.acc_manual_new_title,
+        subtitle = t.acc_manual_new_subtitle,
+        name_label = t.acc_manual_name,
+        category_label = t.acc_manual_category,
+        cat_investment = t.acc_cat_investment,
+        cat_real_estate = t.acc_cat_real_estate,
+        cat_vehicle = t.acc_cat_vehicle,
+        cat_loan = t.acc_cat_loan,
+        cat_crypto = t.acc_cat_crypto,
+        cat_other = t.acc_cat_other,
+        currency_label = t.acc_manual_currency,
+        initial_label = t.acc_manual_initial,
+        date_label = t.acc_manual_date,
+        cancel = t.acc_manual_cancel,
+        add_btn = t.acc_manual_add_btn,
     );
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_acc_manual_new_title),
+        &format!("LeanFin — {}", t.acc_manual_new_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
         &state.config,
@@ -514,12 +511,12 @@ async fn manual_edit_form(
     let category = account.asset_category.as_deref().unwrap_or("other");
 
     let cat_labels = [
-        ("investment", t.lf_acc_cat_investment),
-        ("real_estate", t.lf_acc_cat_real_estate),
-        ("vehicle", t.lf_acc_cat_vehicle),
-        ("loan", t.lf_acc_cat_loan),
-        ("crypto", t.lf_acc_cat_crypto),
-        ("other", t.lf_acc_cat_other),
+        ("investment", t.acc_cat_investment),
+        ("real_estate", t.acc_cat_real_estate),
+        ("vehicle", t.acc_cat_vehicle),
+        ("loan", t.acc_cat_loan),
+        ("crypto", t.acc_cat_crypto),
+        ("other", t.acc_cat_other),
     ];
 
     let category_options = cat_labels
@@ -553,15 +550,15 @@ async fn manual_edit_form(
             </div>
         </div>"#,
         id = account.id,
-        title = t.lf_acc_edit_title,
-        subtitle = t.lf_acc_edit_subtitle,
-        name_label = t.lf_acc_manual_name,
-        category_label = t.lf_acc_manual_category,
-        cancel = t.lf_acc_manual_cancel,
-        save = t.lf_acc_save_changes,
+        title = t.acc_edit_title,
+        subtitle = t.acc_edit_subtitle,
+        name_label = t.acc_manual_name,
+        category_label = t.acc_manual_category,
+        cancel = t.acc_manual_cancel,
+        save = t.acc_save_changes,
     );
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_acc_edit_title),
+        &format!("LeanFin — {}", t.acc_edit_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
         &state.config,
@@ -657,14 +654,14 @@ async fn manual_value_form(
         </div>
         <script>document.getElementById('date').valueAsDate = new Date();</script>"#,
         id = account.id,
-        title = t.lf_acc_value_title,
-        value_new = t.lf_acc_value_new,
-        date_label = t.lf_acc_value_date,
-        cancel = t.lf_acc_manual_cancel,
-        record = t.lf_acc_value_record,
+        title = t.acc_value_title,
+        value_new = t.acc_value_new,
+        date_label = t.acc_value_date,
+        cancel = t.acc_manual_cancel,
+        record = t.acc_value_record,
     );
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_acc_value_title),
+        &format!("LeanFin — {}", t.acc_value_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
         &state.config,
@@ -795,15 +792,15 @@ async fn import_csv_form(
             </div>
         </div>"#,
         id = account.id,
-        title = t.lf_acc_csv_title,
-        csv_file = t.lf_acc_csv_file,
-        csv_format = t.lf_acc_csv_format,
-        csv_format_desc = t.lf_acc_csv_format_desc,
-        cancel = t.lf_acc_manual_cancel,
-        upload = t.lf_acc_csv_upload,
+        title = t.acc_csv_title,
+        csv_file = t.acc_csv_file,
+        csv_format = t.acc_csv_format,
+        csv_format_desc = t.acc_csv_format_desc,
+        cancel = t.acc_manual_cancel,
+        upload = t.acc_csv_upload,
     );
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_acc_csv_title),
+        &format!("LeanFin — {}", t.acc_csv_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
         &state.config,
@@ -896,13 +893,13 @@ async fn import_csv_submit(
                 </div>"#,
                 count = result.skipped.len(),
                 id = account_id,
-                import_failed = t.lf_acc_csv_import_failed,
-                fix_errors = t.lf_acc_csv_fix_errors,
-                try_again = t.lf_acc_csv_try_again,
-                back = t.lf_acc_csv_back,
+                import_failed = t.acc_csv_import_failed,
+                fix_errors = t.acc_csv_fix_errors,
+                try_again = t.acc_csv_try_again,
+                back = t.acc_csv_back,
             );
             Html(render_page(
-                &format!("LeanFin — {}", t.lf_acc_csv_import_failed),
+                &format!("LeanFin — {}", t.acc_csv_import_failed),
                 &leanfin_nav(base, "accounts", lang),
                 &body,
                 &state.config,
@@ -934,8 +931,8 @@ async fn import_csv_submit(
                     </div>
                 </div>"#,
                 count = result.imported,
-                import_complete = t.lf_acc_csv_import_complete,
-                back = t.lf_acc_csv_back,
+                import_complete = t.acc_csv_import_complete,
+                back = t.acc_csv_back,
             );
 
             tracing::info!(
@@ -943,7 +940,7 @@ async fn import_csv_submit(
                 count = result.imported
             );
             Html(render_page(
-                &format!("LeanFin — {}", t.lf_acc_csv_import_complete),
+                &format!("LeanFin — {}", t.acc_csv_import_complete),
                 &leanfin_nav(base, "accounts", lang),
                 &body,
                 &state.config,
@@ -981,12 +978,12 @@ fn render_import_error(
         </div>"#,
         id = account_id,
         error = html_escape(error),
-        import_failed = t.lf_acc_csv_import_failed,
-        try_again = t.lf_acc_csv_try_again,
-        back = t.lf_acc_csv_back,
+        import_failed = t.acc_csv_import_failed,
+        try_again = t.acc_csv_try_again,
+        back = t.acc_csv_back,
     );
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_acc_csv_import_failed),
+        &format!("LeanFin — {}", t.acc_csv_import_failed),
         &leanfin_nav(base, "accounts", lang),
         &body,
         config,
@@ -1029,15 +1026,15 @@ async fn link_form(
                 </form>
             </div>
         </div>"#,
-        title = t.lf_acc_link_title,
-        subtitle = t.lf_acc_link_subtitle,
-        country_label = t.lf_acc_link_country,
-        bank_name_label = t.lf_acc_link_bank_name,
-        cancel = t.lf_acc_manual_cancel,
-        connect = t.lf_acc_link_connect,
+        title = t.acc_link_title,
+        subtitle = t.acc_link_subtitle,
+        country_label = t.acc_link_country,
+        bank_name_label = t.acc_link_bank_name,
+        cancel = t.acc_manual_cancel,
+        connect = t.acc_link_connect,
     );
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_acc_link_title),
+        &format!("LeanFin — {}", t.acc_link_title),
         &leanfin_nav(base, "accounts", lang),
         &body,
         &state.config,

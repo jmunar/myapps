@@ -22,37 +22,37 @@ pub fn leanfin_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         },
         NavItem {
             href: format!("{base}/leanfin"),
-            label: t.lf_transactions.to_string(),
+            label: t.transactions.to_string(),
             active: active == "transactions",
             right: false,
         },
         NavItem {
             href: format!("{base}/leanfin/accounts"),
-            label: t.lf_accounts.to_string(),
+            label: t.accounts.to_string(),
             active: active == "accounts",
             right: false,
         },
         NavItem {
             href: format!("{base}/leanfin/balance-evolution"),
-            label: t.lf_balance.to_string(),
+            label: t.balance.to_string(),
             active: active == "balance",
             right: false,
         },
         NavItem {
             href: format!("{base}/leanfin/expenses"),
-            label: t.lf_expenses.to_string(),
+            label: t.expenses.to_string(),
             active: active == "expenses",
             right: false,
         },
         NavItem {
             href: format!("{base}/leanfin/labels"),
-            label: t.lf_labels.to_string(),
+            label: t.labels.to_string(),
             active: active == "labels",
             right: false,
         },
         NavItem {
             href: format!("{base}/leanfin/settings"),
-            label: t.lf_settings.to_string(),
+            label: t.settings.to_string(),
             active: active == "settings",
             right: false,
         },
@@ -96,7 +96,7 @@ async fn index(
     .await
     .unwrap_or_default();
 
-    let mut account_options = format!(r#"<option value="">{}</option>"#, t.lf_txn_all_accounts);
+    let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
     for a in &accounts {
         let display = if a.account_type == "manual" {
             a.account_name
@@ -118,7 +118,7 @@ async fn index(
             .await
             .unwrap_or_default();
 
-    let mut label_options = format!(r#"<option value="">{}</option>"#, t.lf_txn_all_labels);
+    let mut label_options = format!(r#"<option value="">{}</option>"#, t.txn_all_labels);
     for l in &labels {
         label_options.push_str(&format!(r#"<option value="{}">{}</option>"#, l.id, l.name,));
     }
@@ -171,14 +171,14 @@ async fn index(
                 <div class="loading">{loading}</div>
             </div>
         </div>"##,
-        title = t.lf_txn_title,
-        subtitle = t.lf_txn_subtitle,
-        search = t.lf_txn_search,
-        not_allocated = t.lf_txn_not_allocated,
-        loading = t.lf_txn_loading,
+        title = t.txn_title,
+        subtitle = t.txn_subtitle,
+        search = t.txn_search,
+        not_allocated = t.txn_not_allocated,
+        loading = t.txn_loading,
     );
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_transactions),
+        &format!("LeanFin — {}", t.transactions),
         &leanfin_nav(base, "transactions", lang),
         &body,
         &state.config,

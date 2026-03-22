@@ -32,19 +32,19 @@ pub fn classroom_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         },
         NavItem {
             href: format!("{base}/classroom"),
-            label: t.ci_inputs.to_string(),
+            label: t.inputs.to_string(),
             active: active == "inputs",
             right: false,
         },
         NavItem {
             href: format!("{base}/classroom/classrooms"),
-            label: t.ci_classrooms.to_string(),
+            label: t.classrooms.to_string(),
             active: active == "classrooms",
             right: false,
         },
         NavItem {
             href: format!("{base}/classroom/form-types"),
-            label: t.ci_form_types.to_string(),
+            label: t.form_types.to_string(),
             active: active == "form_types",
             right: false,
         },

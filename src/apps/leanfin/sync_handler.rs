@@ -33,7 +33,7 @@ async fn trigger_sync(
 
     let html = if result.errors.is_empty() {
         let msg = if result.accounts_synced == 0 {
-            t.lf_sync_no_accounts.to_string()
+            t.sync_no_accounts.to_string()
         } else {
             format!(
                 "Synced {} new transaction{}",
@@ -84,6 +84,6 @@ pub fn sync_button(base: &str, lang: Lang) -> String {
             <span class="sync-icon" id="sync-spinner">&#x21bb;</span>
             {sync}
         </button>"##,
-        sync = t.lf_txn_sync,
+        sync = t.txn_sync,
     )
 }

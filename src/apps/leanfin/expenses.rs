@@ -47,12 +47,12 @@ async fn page(
         <div class="card">
             <div class="empty-state"><p>{no_labels}</p></div>
         </div>"#,
-            title = t.lf_exp_title,
-            subtitle = t.lf_exp_subtitle,
-            no_labels = t.lf_exp_no_labels,
+            title = t.exp_title,
+            subtitle = t.exp_subtitle,
+            no_labels = t.exp_no_labels,
         );
         return Html(render_page(
-            &format!("LeanFin — {}", t.lf_expenses),
+            &format!("LeanFin — {}", t.expenses),
             &leanfin_nav(base, "expenses", lang),
             &body,
             &state.config,
@@ -170,15 +170,15 @@ async fn page(
             }};
         }})();
         </script>"##,
-        title = t.lf_exp_title,
-        subtitle = t.lf_exp_subtitle,
-        select_labels = t.lf_exp_select_labels,
-        transactions = t.lf_exp_transactions,
-        select_labels_js = t.lf_exp_select_labels,
+        title = t.exp_title,
+        subtitle = t.exp_subtitle,
+        select_labels = t.exp_select_labels,
+        transactions = t.exp_transactions,
+        select_labels_js = t.exp_select_labels,
     );
 
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_expenses),
+        &format!("LeanFin — {}", t.expenses),
         &leanfin_nav(base, "expenses", lang),
         &body,
         &state.config,
@@ -214,7 +214,7 @@ async fn chart_data(
     if label_ids.is_empty() {
         return Html(format!(
             "<div class=\"empty-state\"><p>{}</p></div>",
-            t.lf_exp_no_selected
+            t.exp_no_selected
         ));
     }
 
@@ -225,7 +225,7 @@ async fn chart_data(
     if series.is_empty() {
         return Html(format!(
             "<div class=\"empty-state\"><p>{}</p></div>",
-            t.lf_exp_no_data
+            t.exp_no_data
         ));
     }
 
