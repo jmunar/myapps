@@ -1,4 +1,14 @@
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
+use axum::Router;
+use sqlx::SqlitePool;
+
+use crate::command::{CommandAction, CommandResult};
 use crate::config::Config;
+use crate::routes::AppState;
 
 /// Metadata for an application in the launcher.
 pub struct AppInfo {
@@ -9,45 +19,79 @@ pub struct AppInfo {
     pub path: &'static str,
 }
 
-/// Returns apps enabled for the current deployment.
-/// If `DEPLOY_APPS` is set, only matching apps are returned.
-pub fn deployed_apps(config: &Config) -> Vec<AppInfo> {
-    all_apps()
-        .into_iter()
-        .filter(|app| config.is_app_deployed(app.key))
-        .collect()
+/// Trait that every sub-application implements.
+pub trait App: Send + Sync {
+    /// Static metadata (key, name, icon, launcher path).
+    fn info(&self) -> AppInfo;
+
+    /// Translated app description for the launcher.
+    fn description(&self, lang: crate::i18n::Lang) -> &'static str;
+
+    /// Axum router, nested under `info().path`.
+    fn router(&self) -> Router<AppState>;
+
+    /// Command-bar actions this app exposes.
+    fn commands(&self) -> Vec<CommandAction> {
+        vec![]
+    }
+
+    /// Execute a command-bar action.
+    fn dispatch<'a>(
+        &'a self,
+        _pool: &'a SqlitePool,
+        _user_id: i64,
+        _action: &'a str,
+        _params: &'a HashMap<String, serde_json::Value>,
+        _base_path: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<CommandResult, String>> + Send + 'a>> {
+        Box::pin(async { Err("not implemented".into()) })
+    }
+
+    /// Dynamic context for the LLM command prompt.
+    fn command_context<'a>(
+        &'a self,
+        _pool: &'a SqlitePool,
+        _user_id: i64,
+    ) -> Pin<Box<dyn Future<Output = HashMap<String, String>> + Send + 'a>> {
+        Box::pin(async { HashMap::new() })
+    }
+
+    /// Seed demo data for a new user. Returns `None` if the app has no seed.
+    fn seed<'a>(
+        &'a self,
+        _pool: &'a SqlitePool,
+        _user_id: i64,
+    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>> {
+        None
+    }
+
+    /// Scheduled task invoked by `myapps cron` (e.g. daily via system cron).
+    fn cron<'a>(
+        &'a self,
+        _pool: &'a SqlitePool,
+        _config: &'a Config,
+    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>> {
+        None
+    }
+
+    /// Hook called on `serve` to start background workers.
+    fn on_serve(&self, _pool: SqlitePool, _config: Arc<Config>) {}
 }
 
-/// Returns all available applications.
-pub fn all_apps() -> Vec<AppInfo> {
+/// All registered app instances.
+pub fn all_app_instances() -> Vec<Box<dyn App>> {
     vec![
-        AppInfo {
-            key: "leanfin",
-            name: "LeanFin",
-            description: "Personal expense tracker",
-            icon: "$",
-            path: "/leanfin",
-        },
-        AppInfo {
-            key: "mindflow",
-            name: "MindFlow",
-            description: "Thought capture &amp; mind map",
-            icon: "\u{1F9E0}",
-            path: "/mindflow",
-        },
-        AppInfo {
-            key: "voice_to_text",
-            name: "VoiceToText",
-            description: "Audio transcription with Whisper",
-            icon: "\u{1F3A4}",
-            path: "/voice",
-        },
-        AppInfo {
-            key: "classroom_input",
-            name: "ClassroomInput",
-            description: "Record marks &amp; notes for classrooms",
-            icon: "\u{270E}",
-            path: "/classroom",
-        },
+        Box::new(super::leanfin::LeanFinApp),
+        Box::new(super::mindflow::MindFlowApp),
+        Box::new(super::voice_to_text::VoiceToTextApp),
+        Box::new(super::classroom_input::ClassroomInputApp),
     ]
+}
+
+/// App instances filtered to those enabled by `DEPLOY_APPS`.
+pub fn deployed_app_instances(config: &Config) -> Vec<Box<dyn App>> {
+    all_app_instances()
+        .into_iter()
+        .filter(|app| config.is_app_deployed(app.info().key))
+        .collect()
 }

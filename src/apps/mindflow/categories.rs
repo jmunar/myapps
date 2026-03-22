@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -40,7 +40,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let categories: Vec<CategoryRow> = sqlx::query_as(
         r#"SELECT c.id, c.name, c.color, c.icon, c.parent_id, c.archived,
@@ -66,7 +66,7 @@ async fn list(
         let archived_badge = if c.archived != 0 {
             format!(
                 r#"<span class="badge badge-muted">{}</span>"#,
-                t.mf_thought_archived_badge
+                t.thought_archived_badge
             )
         } else {
             String::new()
@@ -77,7 +77,7 @@ async fn list(
                 r#"<form method="POST" action="{base}/mindflow/categories/{id}/unarchive" style="display:inline">
                     <button class="btn-icon">{}</button>
                 </form>"#,
-                t.mf_cat_unarchive,
+                t.cat_unarchive,
                 id = c.id,
             )
         } else {
@@ -85,7 +85,7 @@ async fn list(
                 r#"<form method="POST" action="{base}/mindflow/categories/{id}/archive" style="display:inline">
                     <button class="btn-icon">{}</button>
                 </form>"#,
-                t.mf_cat_archive,
+                t.cat_archive,
                 id = c.id,
             )
         };
@@ -97,8 +97,8 @@ async fn list(
                     <button class="btn-icon btn-icon-danger">{delete}</button>
                 </form>"#,
                 id = c.id,
-                delete_confirm = t.mf_cat_delete_confirm,
-                delete = t.mf_cat_delete,
+                delete_confirm = t.cat_delete_confirm,
+                delete = t.cat_delete,
             )
         } else {
             String::new()
@@ -128,29 +128,29 @@ async fn list(
             name = c.name,
             color = c.color,
             count = c.thought_count,
-            thoughts = t.mf_cat_thoughts,
-            edit = t.mf_cat_edit,
-            icon_placeholder = t.mf_cat_icon_placeholder,
-            save = t.mf_cat_save,
+            thoughts = t.cat_thoughts,
+            edit = t.cat_edit,
+            icon_placeholder = t.cat_icon_placeholder,
+            save = t.cat_save,
         ));
     }
 
     if items.is_empty() {
         items = format!(
             r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.mf_cat_no_categories
+            t.cat_no_categories
         );
     }
 
-    let cat_title = t.mf_cat_title;
-    let cat_subtitle = t.mf_cat_subtitle;
-    let your_categories = t.mf_cat_your_categories;
-    let create_category = t.mf_cat_create;
-    let cat_name = t.mf_cat_name;
-    let cat_color = t.mf_cat_color;
-    let cat_icon = t.mf_cat_icon;
-    let cat_icon_placeholder = t.mf_cat_icon_placeholder;
-    let cat_create_btn = t.mf_cat_create_btn;
+    let cat_title = t.cat_title;
+    let cat_subtitle = t.cat_subtitle;
+    let your_categories = t.cat_your_categories;
+    let create_category = t.cat_create;
+    let cat_name = t.cat_name;
+    let cat_color = t.cat_color;
+    let cat_icon = t.cat_icon;
+    let cat_icon_placeholder = t.cat_icon_placeholder;
+    let cat_create_btn = t.cat_create_btn;
 
     let body = format!(
         r##"<div class="page-header">
@@ -190,7 +190,7 @@ async fn list(
     );
 
     Html(render_page(
-        &format!("MindFlow \u{2014} {}", t.mf_categories),
+        &format!("MindFlow \u{2014} {}", t.categories),
         &mindflow_nav(base, "categories", lang),
         &body,
         &state.config,

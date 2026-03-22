@@ -206,48 +206,14 @@ async fn execute(
     };
 
     let base = &state.config.base_path;
-    let result = match app {
-        "mindflow" => {
-            crate::apps::mindflow::ops::dispatch(
-                &state.pool,
-                user_id.0,
-                action_name,
-                &intent.params,
-                base,
-            )
-            .await
+    let apps = crate::apps::registry::deployed_app_instances(&state.config);
+    let result = match apps.iter().find(|a| a.info().key == app) {
+        Some(target) => {
+            target
+                .dispatch(&state.pool, user_id.0, action_name, &intent.params, base)
+                .await
         }
-        "leanfin" => {
-            crate::apps::leanfin::ops::dispatch(
-                &state.pool,
-                user_id.0,
-                action_name,
-                &intent.params,
-                base,
-            )
-            .await
-        }
-        "voice_to_text" => {
-            crate::apps::voice_to_text::ops::dispatch(
-                &state.pool,
-                user_id.0,
-                action_name,
-                &intent.params,
-                base,
-            )
-            .await
-        }
-        "classroom_input" => {
-            crate::apps::classroom_input::ops::dispatch(
-                &state.pool,
-                user_id.0,
-                action_name,
-                &intent.params,
-                base,
-            )
-            .await
-        }
-        _ => Err(format!("Unknown app: {app}")),
+        None => Err(format!("Unknown app: {app}")),
     };
 
     match result {
@@ -308,16 +274,12 @@ async fn transcribe(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Convert + transcribe
-    let wav_path = crate::apps::voice_to_text::services::transcriber::convert_to_wav(&path)
+    let wav_path = crate::services::whisper::convert_to_wav(&path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let text = crate::apps::voice_to_text::services::transcriber::transcribe(
-        &state.config,
-        &wav_path,
-        model,
-    )
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let text = crate::services::whisper::transcribe(&state.config, &wav_path, model)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Cleanup temp files
     let _ = tokio::fs::remove_file(&path).await;

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::classroom_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -41,16 +41,16 @@ fn parse_columns(json: &str) -> Vec<ColumnDef> {
 }
 
 fn render_column_list(cols: &[ColumnDef], lang: Lang) -> String {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     if cols.is_empty() {
-        return format!("<em>{}</em>", t.ci_ft_no_columns);
+        return format!("<em>{}</em>", t.ft_no_columns);
     }
     let mut out = String::new();
     for c in cols {
         let type_label = match c.col_type.as_str() {
-            "number" => t.ci_ft_col_number,
-            "bool" => t.ci_ft_col_bool,
-            _ => t.ci_ft_col_text,
+            "number" => t.ft_col_number,
+            "bool" => t.ft_col_bool,
+            _ => t.ft_col_text,
         };
         out.push_str(&format!(
             r#"<span class="label-badge" style="--label-color:#3182CE">{name} <small>({type_label})</small></span> "#,
@@ -66,7 +66,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
         "SELECT id, name, columns_json FROM classroom_form_types WHERE user_id = ? ORDER BY name ASC",
@@ -76,9 +76,9 @@ async fn list(
     .await
     .unwrap_or_default();
 
-    let edit_label = t.ci_ft_edit;
-    let delete_label = t.ci_inp_delete;
-    let delete_confirm = t.ci_ft_delete_confirm;
+    let edit_label = t.ft_edit;
+    let delete_label = t.inp_delete;
+    let delete_confirm = t.ft_delete_confirm;
 
     let mut items = String::new();
     for ft in &form_types {
@@ -105,10 +105,7 @@ async fn list(
     }
 
     if items.is_empty() {
-        items = format!(
-            r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.ci_ft_no_types
-        );
+        items = format!(r#"<div class="empty-state"><p>{}</p></div>"#, t.ft_no_types);
     }
 
     let body = format!(
@@ -163,22 +160,22 @@ async fn list(
             container.appendChild(row);
         }}
         </script>"##,
-        title = t.ci_ft_title,
-        subtitle = t.ci_ft_subtitle,
-        your_types = t.ci_ft_your_types,
-        create_heading = t.ci_ft_create,
-        name_lbl = t.ci_ft_name,
-        columns_lbl = t.ci_ft_columns,
-        col_name_ph = t.ci_ft_col_name,
-        col_text = t.ci_ft_col_text,
-        col_number = t.ci_ft_col_number,
-        col_bool = t.ci_ft_col_bool,
-        add_column = t.ci_ft_add_column,
-        create_btn = t.ci_ft_create_btn,
+        title = t.ft_title,
+        subtitle = t.ft_subtitle,
+        your_types = t.ft_your_types,
+        create_heading = t.ft_create,
+        name_lbl = t.ft_name,
+        columns_lbl = t.ft_columns,
+        col_name_ph = t.ft_col_name,
+        col_text = t.ft_col_text,
+        col_number = t.ft_col_number,
+        col_bool = t.ft_col_bool,
+        add_column = t.ft_add_column,
+        create_btn = t.ft_create_btn,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.ci_form_types),
+        &format!("Classroom — {}", t.form_types),
         &classroom_nav(base, "form_types", lang),
         &body,
         &state.config,
@@ -230,7 +227,7 @@ async fn edit_page(
     Path(id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let ft: Option<FormTypeRow> = sqlx::query_as(
         "SELECT id, name, columns_json FROM classroom_form_types WHERE id = ? AND user_id = ?",
@@ -247,7 +244,7 @@ async fn edit_page(
             &classroom_nav(base, "form_types", lang),
             &format!(
                 r#"<div class="empty-state"><p>{}</p></div>"#,
-                t.ci_ft_not_found
+                t.ft_not_found
             ),
             &state.config,
             lang,
@@ -255,10 +252,10 @@ async fn edit_page(
     };
 
     let cols = parse_columns(&ft.columns_json);
-    let col_text = t.ci_ft_col_text;
-    let col_number = t.ci_ft_col_number;
-    let col_bool = t.ci_ft_col_bool;
-    let col_name_ph = t.ci_ft_col_name;
+    let col_text = t.ft_col_text;
+    let col_number = t.ft_col_number;
+    let col_bool = t.ft_col_bool;
+    let col_name_ph = t.ft_col_name;
 
     let mut col_rows = String::new();
     for c in &cols {
@@ -341,16 +338,16 @@ async fn edit_page(
         </script>"##,
         id = ft.id,
         name = ft.name,
-        edit_title = t.ci_ft_edit_title,
-        name_lbl = t.ci_ft_name,
-        columns_lbl = t.ci_ft_columns,
-        add_column = t.ci_ft_add_column,
-        save_btn = t.ci_ft_save,
-        cancel_btn = t.ci_ft_cancel,
+        edit_title = t.ft_edit_title,
+        name_lbl = t.ft_name,
+        columns_lbl = t.ft_columns,
+        add_column = t.ft_add_column,
+        save_btn = t.ft_save,
+        cancel_btn = t.ft_cancel,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.ci_ft_edit_title),
+        &format!("Classroom — {}", t.ft_edit_title),
         &classroom_nav(base, "form_types", lang),
         &body,
         &state.config,

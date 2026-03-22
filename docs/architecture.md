@@ -24,7 +24,7 @@ A single binary with subcommands:
 
 ```
 myapps serve                # Start the HTTP server
-myapps sync                 # Fetch transactions from all linked accounts (cron)
+myapps cron                 # Run scheduled tasks for all deployed apps (e.g. bank sync)
 myapps create-user          # Create a user from the command line
 myapps invite               # Generate a single-use invite link (48h)
 myapps generate-vapid-keys  # Generate VAPID key pair for push notifications
@@ -57,7 +57,7 @@ myapps/
 │   ├── main.rs              # CLI entrypoint (clap subcommands)
 │   ├── config.rs            # Configuration (env vars)
 │   ├── db.rs                # Database pool and migrations
-│   ├── i18n/               # Internationalization (compile-time struct-based)
+│   ├── i18n/               # Shared translations (auth, launcher, command bar)
 │   │   ├── mod.rs           # Lang enum, Translations struct, t() dispatcher
 │   │   ├── en.rs            # English translations (const EN)
 │   │   └── es.rs            # Spanish translations (const ES)
@@ -76,11 +76,13 @@ myapps/
 │   │   ├── routes.rs        # POST /command/interpret + /execute + /transcribe
 │   │   └── llm.rs           # llama.cpp HTTP client (chat completions)
 │   ├── services/            # Shared services
-│   │   └── notify.rs        # Web Push notifications (VAPID)
+│   │   ├── notify.rs        # Web Push notifications (VAPID)
+│   │   └── whisper.rs       # Whisper transcription (ffmpeg + whisper-cli)
 │   └── apps/                # Sub-applications
-│       ├── registry.rs      # App metadata registry (AppInfo, all_apps(), deployed_apps())
+│       ├── registry.rs      # App trait + registry (AppInfo, App trait, deployed_app_instances())
 │       ├── leanfin/         # LeanFin expense tracker
-│           ├── mod.rs       # LeanFin router
+│           ├── mod.rs       # LeanFin router + App trait impl
+│           ├── i18n.rs      # LeanFin translations (EN/ES)
 │           ├── ops.rs       # Shared action functions (command bar + handlers)
 │           ├── dashboard.rs # Main transactions page
 │           ├── transactions.rs # Transaction list + allocation editor
@@ -99,7 +101,8 @@ myapps/
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
 │       ├── mindflow/        # MindFlow thought capture + mind map
-│       │   ├── mod.rs       # MindFlow router + nav
+│       │   ├── mod.rs       # MindFlow router + nav + App trait impl
+│       │   ├── i18n.rs      # MindFlow translations (EN/ES)
 │       │   ├── ops.rs       # Shared action functions (command bar + handlers)
 │       │   ├── mind_map.rs  # Mind map page (D3.js) + map data JSON endpoint
 │       │   ├── categories.rs # Category CRUD
@@ -109,15 +112,16 @@ myapps/
 │       │   └── services/
 │       │       └── seed.rs  # Demo data seeding
 │       ├── voice_to_text/   # VoiceToText audio transcription
-│       │   ├── mod.rs       # VoiceToText router
+│       │   ├── mod.rs       # VoiceToText router + App trait impl
+│       │   ├── i18n.rs      # VoiceToText translations (EN/ES)
 │       │   ├── ops.rs       # Shared action functions (command bar + handlers)
 │       │   ├── dashboard.rs # Job list page + nav helper
 │       │   ├── jobs.rs      # Upload form, recording, job detail, HTMX partials
 │       │   └── services/
-│       │       ├── transcriber.rs  # ffmpeg conversion + whisper-cli subprocess
 │       │       └── worker.rs       # Background job worker (polls pending jobs)
 │       └── classroom_input/ # ClassroomInput marks & notes recording
-│           ├── mod.rs       # ClassroomInput router + nav
+│           ├── mod.rs       # ClassroomInput router + nav + App trait impl
+│           ├── i18n.rs      # ClassroomInput translations (EN/ES)
 │           ├── ops.rs       # Shared action functions (command bar + handlers)
 │           ├── classrooms.rs # Classroom CRUD (label + pupil list)
 │           ├── form_types.rs # Form type CRUD (column definitions)
@@ -565,7 +569,7 @@ signs its own JWTs using the user's private RSA key:
 ### Sync Job Flow (cron)
 
 ```
-myapps sync
+myapps cron
   │
   ├─ Group all active bank accounts by user_id
   │

@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::models::Transaction;
 use crate::routes::AppState;
 
@@ -130,7 +130,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
     Query(filter): Query<FilterParams>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let base = &state.config.base_path;
     let page = filter.page.unwrap_or(1).max(1);
     let offset = (page - 1) * PAGE_SIZE;
@@ -225,7 +225,7 @@ async fn list(
             r#"<div class="empty-state">
             <p>{}</p>
         </div>"#,
-            t.lf_txn_no_transactions
+            t.txn_no_transactions
         ));
     }
 
@@ -287,7 +287,7 @@ async fn list(
                     hx-target="#txn-table"
                     hx-include="#txn-filters"
                     hx-vals='{{"page":{prev}}}'>{}</button>"##,
-            t.lf_txn_prev,
+            t.txn_prev,
             prev = page - 1,
         ));
     }
@@ -298,7 +298,7 @@ async fn list(
                     hx-target="#txn-table"
                     hx-include="#txn-filters"
                     hx-vals='{{"page":{next}}}'>{}</button>"##,
-            t.lf_txn_next,
+            t.txn_next,
             next = page + 1,
         ));
     }
@@ -317,12 +317,12 @@ async fn list(
             <tbody>{rows}</tbody>
         </table>
         {pagination}"#,
-        col_date = t.lf_txn_col_date,
-        col_counterparty = t.lf_txn_col_counterparty,
-        col_description = t.lf_txn_col_description,
-        col_labels = t.lf_txn_col_labels,
-        col_amount = t.lf_txn_col_amount,
-        col_balance = t.lf_txn_col_balance,
+        col_date = t.txn_col_date,
+        col_counterparty = t.txn_col_counterparty,
+        col_description = t.txn_col_description,
+        col_labels = t.txn_col_labels,
+        col_amount = t.txn_col_amount,
+        col_balance = t.txn_col_balance,
     ))
 }
 
@@ -334,7 +334,7 @@ async fn alloc_editor(
     Extension(lang): Extension<Lang>,
     Path(txn_id): Path<i64>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let base = &state.config.base_path;
 
     // Get transaction amount
@@ -405,7 +405,7 @@ async fn alloc_editor(
     // Label picker options
     let mut options = format!(
         r#"<option value="" disabled selected>{}</option>"#,
-        t.lf_alloc_choose_label
+        t.alloc_choose_label
     );
     for l in &labels {
         // Skip labels already allocated
@@ -451,11 +451,11 @@ async fn alloc_editor(
                 </div>
             </td>
         </tr>"##,
-        alloc_title = t.lf_alloc_title,
-        alloc_remaining = t.lf_alloc_remaining,
-        alloc_amount = t.lf_alloc_amount,
-        alloc_add = t.lf_alloc_add,
-        alloc_done = t.lf_alloc_done,
+        alloc_title = t.alloc_title,
+        alloc_remaining = t.alloc_remaining,
+        alloc_amount = t.alloc_amount,
+        alloc_add = t.alloc_add,
+        alloc_done = t.alloc_done,
     ))
 }
 

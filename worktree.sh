@@ -155,6 +155,12 @@ cmd_remove() {
         fi
     fi
 
+    # Copy .env back to main repo
+    if [ -f "$worktree_dir/.env" ]; then
+        cp "$worktree_dir/.env" "$REPO_DIR/.env"
+        echo "Copied .env back to main repo"
+    fi
+
     # Copy deploy/*.env files back to main repo
     for f in "$worktree_dir"/deploy/*.env; do
         [ -f "$f" ] || continue
@@ -162,7 +168,7 @@ cmd_remove() {
     done
     echo "Copied deploy/*.env back to main repo"
 
-    git -C "$REPO_DIR" worktree remove "$worktree_dir"
+    git -C "$REPO_DIR" worktree remove --force "$worktree_dir"
     echo "Removed worktree: $worktree_dir"
 
     # Delete the local branch only if the remote branch is already gone

@@ -4,7 +4,7 @@ use serde::Deserialize;
 use super::dashboard::leanfin_nav;
 use super::services::balance;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -29,7 +29,7 @@ async fn page(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
         "SELECT id, bank_name, iban, account_type, account_name FROM leanfin_accounts WHERE user_id = ? AND archived = 0 ORDER BY bank_name",
@@ -48,12 +48,12 @@ async fn page(
         <div class="card">
             <div class="empty-state"><p>{no_accounts}</p></div>
         </div>"#,
-            title = t.lf_bal_title,
-            subtitle = t.lf_bal_subtitle,
-            no_accounts = t.lf_bal_no_accounts,
+            title = t.bal_title,
+            subtitle = t.bal_subtitle,
+            no_accounts = t.bal_no_accounts,
         );
         return Html(render_page(
-            &format!("LeanFin — {}", t.lf_balance),
+            &format!("LeanFin — {}", t.balance),
             &leanfin_nav(base, "balance", lang),
             &body,
             &state.config,
@@ -61,7 +61,7 @@ async fn page(
         ));
     }
 
-    let mut account_options = format!(r#"<option value="">{}</option>"#, t.lf_txn_all_accounts);
+    let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
     for a in &accounts {
         let display = if a.account_type == "manual" {
             a.account_name
@@ -138,14 +138,14 @@ async fn page(
             }};
         }})();
         </script>"##,
-        title = t.lf_bal_title,
-        subtitle = t.lf_bal_subtitle,
-        loading = t.lf_bal_loading,
-        transactions = t.lf_exp_transactions,
+        title = t.bal_title,
+        subtitle = t.bal_subtitle,
+        loading = t.bal_loading,
+        transactions = t.exp_transactions,
     );
 
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_balance),
+        &format!("LeanFin — {}", t.balance),
         &leanfin_nav(base, "balance", lang),
         &body,
         &state.config,
@@ -184,7 +184,7 @@ async fn data(
     Extension(lang): Extension<Lang>,
     axum::extract::Query(params): axum::extract::Query<DataQuery>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let series = if let Some(account_id) = params.account_id {
         // Verify account belongs to user
@@ -200,7 +200,7 @@ async fn data(
         if !owns {
             return Html(format!(
                 "<div class=\"empty-state\"><p>{}</p></div>",
-                t.lf_bal_account_not_found
+                t.bal_account_not_found
             ));
         }
 
@@ -216,7 +216,7 @@ async fn data(
     if series.is_empty() {
         return Html(format!(
             "<div class=\"empty-state\"><p>{}</p></div>",
-            t.lf_bal_no_data
+            t.bal_no_data
         ));
     }
 

@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::dashboard::leanfin_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -43,7 +43,7 @@ async fn list_labels(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let labels: Vec<LabelRow> = sqlx::query_as(
         r#"SELECT l.id, l.name, l.color,
@@ -58,11 +58,11 @@ async fn list_labels(
     .await
     .unwrap_or_default();
 
-    let lbl_rules = t.lf_lbl_rules;
-    let lbl_edit = t.lf_lbl_edit;
-    let lbl_delete = t.lf_lbl_delete;
-    let lbl_delete_confirm = t.lf_lbl_delete_confirm;
-    let lbl_save = t.lf_lbl_save;
+    let lbl_rules = t.lbl_rules;
+    let lbl_edit = t.lbl_edit;
+    let lbl_delete = t.lbl_delete;
+    let lbl_delete_confirm = t.lbl_delete_confirm;
+    let lbl_save = t.lbl_save;
 
     let mut items = String::new();
     for l in &labels {
@@ -114,7 +114,7 @@ async fn list_labels(
     if items.is_empty() {
         items = format!(
             r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.lf_lbl_no_labels
+            t.lbl_no_labels
         );
     }
 
@@ -154,17 +154,17 @@ async fn list_labels(
                 </form>
             </div>
         </div>"#,
-        title = t.lf_lbl_title,
-        subtitle = t.lf_lbl_subtitle,
-        your_labels = t.lf_lbl_your_labels,
-        create = t.lf_lbl_create,
-        lbl_name = t.lf_lbl_name,
-        lbl_color = t.lf_lbl_color,
-        create_btn = t.lf_lbl_create_btn,
+        title = t.lbl_title,
+        subtitle = t.lbl_subtitle,
+        your_labels = t.lbl_your_labels,
+        create = t.lbl_create,
+        lbl_name = t.lbl_name,
+        lbl_color = t.lbl_color,
+        create_btn = t.lbl_create_btn,
     );
 
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_labels),
+        &format!("LeanFin — {}", t.labels),
         &leanfin_nav(base, "labels", lang),
         &body,
         &state.config,
@@ -253,10 +253,10 @@ struct RuleRow {
 }
 
 fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) -> String {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
-    let lbl_delete = t.lf_lbl_delete;
-    let lbl_delete_rule_confirm = t.lf_lbl_delete_rule_confirm;
+    let lbl_delete = t.lbl_delete;
+    let lbl_delete_rule_confirm = t.lbl_delete_rule_confirm;
 
     let mut rows = String::new();
     for r in rules {
@@ -282,7 +282,7 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) 
             priority = r.priority,
             delete_url = delete_url,
             label_id = label_id,
-            contains = t.lf_lbl_contains,
+            contains = t.lbl_contains,
             lbl_delete_rule_confirm = lbl_delete_rule_confirm,
             lbl_delete = lbl_delete,
         ));
@@ -291,7 +291,7 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) 
     if rows.is_empty() {
         rows = format!(
             r##"<p class="text-secondary text-sm" style="padding:0.25rem 0">{}</p>"##,
-            t.lf_lbl_no_rules
+            t.lbl_no_rules
         );
     }
 
@@ -320,12 +320,12 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) 
         rows = rows,
         create_url = create_url,
         label_id = label_id,
-        auto_rules = t.lf_lbl_auto_rules,
-        counterparty = t.lf_lbl_counterparty,
-        description = t.lf_lbl_description,
-        contains = t.lf_lbl_contains,
-        priority = t.lf_lbl_priority,
-        add_rule = t.lf_lbl_add_rule,
+        auto_rules = t.lbl_auto_rules,
+        counterparty = t.lbl_counterparty,
+        description = t.lbl_description,
+        contains = t.lbl_contains,
+        priority = t.lbl_priority,
+        add_rule = t.lbl_add_rule,
     )
 }
 

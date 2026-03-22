@@ -12,8 +12,8 @@ struct Cli {
 enum Command {
     /// Start the HTTP server
     Serve,
-    /// Fetch transactions from all linked bank accounts
-    Sync,
+    /// Run scheduled tasks for all deployed apps (e.g. daily via system cron)
+    Cron,
     /// Create a new user
     CreateUser {
         #[arg(long)]
@@ -65,7 +65,17 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Serve => routes::serve(pool, config).await?,
-        Command::Sync => apps::leanfin::services::sync::run(&pool, &config).await?,
+        Command::Cron => {
+            for app in apps::registry::deployed_app_instances(&config) {
+                if let Some(fut) = app.cron(&pool, &config) {
+                    let key = app.info().key;
+                    tracing::info!("Running cron for {key}");
+                    if let Err(e) = fut.await {
+                        tracing::error!("Cron failed for {key}: {e}");
+                    }
+                }
+            }
+        }
         Command::CreateUser { username, password } => {
             auth::create_user(&pool, &username, &password).await?;
             tracing::info!("User '{username}' created");
@@ -105,9 +115,11 @@ async fn main() -> anyhow::Result<()> {
                 .map(|r| r.0)
                 .ok_or_else(|| anyhow::anyhow!("User '{user}' not found"))?;
 
-            apps::leanfin::services::seed::run(&pool, user_id).await?;
-            apps::mindflow::services::seed::run(&pool, user_id).await?;
-            apps::classroom_input::services::seed::run(&pool, user_id).await?;
+            for app in apps::registry::deployed_app_instances(&config) {
+                if let Some(fut) = app.seed(&pool, user_id) {
+                    fut.await?;
+                }
+            }
             tracing::info!("Seed complete for user '{user}'");
         }
         Command::CleanupUsers { days } => {

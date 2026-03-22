@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -38,7 +38,7 @@ async fn capture(
     Extension(lang): Extension<Lang>,
     Form(form): Form<CaptureForm>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let category_id: Option<i64> = form.category_id.as_deref().and_then(|s| s.parse().ok());
     let parent_thought_id: Option<i64> = form
@@ -58,7 +58,7 @@ async fn capture(
 
     Html(format!(
         r#"<span class="text-sm text-secondary">{}</span>"#,
-        t.mf_map_captured
+        t.map_captured
     ))
 }
 
@@ -117,7 +117,7 @@ async fn detail(
     Path(id): Path<i64>,
 ) -> Result<Html<String>, impl IntoResponse> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let thought: Option<ThoughtRow> = sqlx::query_as(
         r#"SELECT t.id, t.content, t.status, t.category_id,
@@ -189,14 +189,14 @@ async fn detail(
         }
         _ => format!(
             r#"<span class="label-badge" style="--label-color:#9E9E9E">{}</span>"#,
-            t.mf_thought_inbox_badge
+            t.thought_inbox_badge
         ),
     };
 
     let status_badge = if th.status == "archived" {
         format!(
             r#"<span class="badge badge-muted">{}</span>"#,
-            t.mf_thought_archived_badge
+            t.thought_archived_badge
         )
     } else {
         String::new()
@@ -210,7 +210,7 @@ async fn detail(
         } else {
             ""
         },
-        t.mf_thought_inbox_badge,
+        t.thought_inbox_badge,
     );
     for c in &categories {
         let selected = if th.category_id == Some(c.id) {
@@ -278,32 +278,32 @@ async fn detail(
             r#"<form method="POST" action="{base}/mindflow/thoughts/{id}/archive" style="display:inline">
                 <button class="btn btn-secondary btn-sm">{}</button>
             </form>"#,
-            t.mf_thought_archive,
+            t.thought_archive,
         )
     } else {
         format!(
             r#"<form method="POST" action="{base}/mindflow/thoughts/{id}/archive" style="display:inline">
                 <button class="btn btn-secondary btn-sm">{}</button>
             </form>"#,
-            t.mf_thought_unarchive,
+            t.thought_unarchive,
         )
     };
 
     // Build nested tree HTML from flat descendants list
     let children_html = build_tree_html(&descendants, id, base);
 
-    let thought_title = t.mf_thought_title;
-    let move_btn = t.mf_thought_move;
-    let comments_heading = t.mf_thought_comments;
-    let add_comment_placeholder = t.mf_thought_add_comment;
-    let add_btn = t.mf_thought_add_btn;
-    let actions_heading = t.mf_thought_actions;
-    let new_action_placeholder = t.mf_thought_new_action;
-    let low = t.mf_thought_low;
-    let medium = t.mf_thought_medium;
-    let high = t.mf_thought_high;
-    let sub_thoughts_heading = t.mf_thought_sub_thoughts;
-    let add_sub_placeholder = t.mf_thought_add_sub;
+    let thought_title = t.thought_title;
+    let move_btn = t.thought_move;
+    let comments_heading = t.thought_comments;
+    let add_comment_placeholder = t.thought_add_comment;
+    let add_btn = t.thought_add_btn;
+    let actions_heading = t.thought_actions;
+    let new_action_placeholder = t.thought_new_action;
+    let low = t.thought_low;
+    let medium = t.thought_medium;
+    let high = t.thought_high;
+    let sub_thoughts_heading = t.thought_sub_thoughts;
+    let add_sub_placeholder = t.thought_add_sub;
 
     let body = format!(
         r##"<div class="page-header">
@@ -377,7 +377,7 @@ async fn detail(
     );
 
     Ok(Html(render_page(
-        &format!("MindFlow \u{2014} {}", t.mf_thought_title),
+        &format!("MindFlow \u{2014} {}", t.thought_title),
         &mindflow_nav(base, "", lang),
         &body,
         &state.config,
@@ -430,7 +430,7 @@ async fn add_comment(
     Form(form): Form<CommentForm>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     // Verify ownership
     let owns: bool = sqlx::query_scalar(
@@ -480,7 +480,7 @@ async fn add_comment(
             <input type="text" name="content" placeholder="{}" required style="flex:1">
             <button type="submit" class="btn btn-primary btn-sm">{}</button>
         </form>"##,
-        t.mf_thought_add_comment, t.mf_thought_add_btn,
+        t.thought_add_comment, t.thought_add_btn,
     ));
 
     Html(html)

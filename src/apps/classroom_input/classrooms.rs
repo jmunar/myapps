@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::classroom_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -33,7 +33,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let classrooms: Vec<ClassroomRow> = sqlx::query_as(
         "SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ? ORDER BY label ASC",
@@ -43,9 +43,9 @@ async fn list(
     .await
     .unwrap_or_default();
 
-    let delete_label = t.ci_inp_delete;
-    let delete_confirm = t.ci_cls_delete_confirm;
-    let pupils_count_label = t.ci_cls_pupils_count;
+    let delete_label = t.inp_delete;
+    let delete_confirm = t.cls_delete_confirm;
+    let pupils_count_label = t.cls_pupils_count;
 
     let mut items = String::new();
     for c in &classrooms {
@@ -81,7 +81,7 @@ async fn list(
     if items.is_empty() {
         items = format!(
             r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.ci_cls_no_classrooms
+            t.cls_no_classrooms
         );
     }
 
@@ -115,18 +115,18 @@ async fn list(
                 </form>
             </div>
         </div>"##,
-        title = t.ci_cls_title,
-        subtitle = t.ci_cls_subtitle,
-        your_classrooms = t.ci_cls_your_classrooms,
-        add_classroom = t.ci_cls_add,
-        label_lbl = t.ci_cls_label,
-        pupils_lbl = t.ci_cls_pupils,
-        placeholder = t.ci_cls_pupils_hint,
-        create_btn = t.ci_cls_create_btn,
+        title = t.cls_title,
+        subtitle = t.cls_subtitle,
+        your_classrooms = t.cls_your_classrooms,
+        add_classroom = t.cls_add,
+        label_lbl = t.cls_label,
+        pupils_lbl = t.cls_pupils,
+        placeholder = t.cls_pupils_hint,
+        create_btn = t.cls_create_btn,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.ci_classrooms),
+        &format!("Classroom — {}", t.classrooms),
         &classroom_nav(base, "classrooms", lang),
         &body,
         &state.config,

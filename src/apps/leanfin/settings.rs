@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 use super::dashboard::leanfin_nav;
 use crate::auth::UserId;
 use crate::config::Config;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -119,7 +119,7 @@ async fn settings_form(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let current_app_id: Option<String> = sqlx::query_scalar(
         "SELECT enable_banking_app_id FROM leanfin_user_settings WHERE user_id = ?",
@@ -134,11 +134,11 @@ async fn settings_form(
 
     let app_id_value = current_app_id.as_deref().unwrap_or("");
     let key_status = if has_key {
-        format!(r#"<span class="status-ok">{}</span>"#, t.lf_set_configured)
+        format!(r#"<span class="status-ok">{}</span>"#, t.set_configured)
     } else {
         format!(
             r#"<span class="status-missing">{}</span>"#,
-            t.lf_set_not_configured
+            t.set_not_configured
         )
     };
 
@@ -146,7 +146,7 @@ async fn settings_form(
     let encryption_warning = if !encryption_ok {
         format!(
             r#"<div class="alert alert-error">{}</div>"#,
-            t.lf_set_encryption_warning
+            t.set_encryption_warning
         )
     } else {
         String::new()
@@ -175,17 +175,17 @@ async fn settings_form(
                 </form>
             </div>
         </div>"#,
-        title = t.lf_set_title,
-        subtitle = t.lf_set_subtitle,
-        app_id_label = t.lf_set_app_id,
-        private_key = t.lf_set_private_key,
-        key_hint = t.lf_set_key_hint,
-        cancel = t.lf_set_cancel,
-        save = t.lf_set_save,
+        title = t.set_title,
+        subtitle = t.set_subtitle,
+        app_id_label = t.set_app_id,
+        private_key = t.set_private_key,
+        key_hint = t.set_key_hint,
+        cancel = t.set_cancel,
+        save = t.set_save,
     );
 
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_settings),
+        &format!("LeanFin — {}", t.settings),
         &leanfin_nav(base, "settings", lang),
         &body,
         &state.config,
@@ -202,7 +202,7 @@ async fn settings_submit(
     use axum::response::IntoResponse;
 
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
     let encryption_key = match state.config.encryption_key.as_deref() {
         Some(k) => k,
         None => {
@@ -244,12 +244,12 @@ async fn settings_submit(
                         <a href="{base}/leanfin/settings" class="btn btn-secondary">{back}</a>
                     </div>
                 </div>"#,
-            title = t.lf_set_title,
-            invalid_key = t.lf_set_invalid_key,
-            back = t.lf_set_back,
+            title = t.set_title,
+            invalid_key = t.set_invalid_key,
+            back = t.set_back,
         );
         return Html(render_page(
-            &format!("LeanFin — {}", t.lf_settings),
+            &format!("LeanFin — {}", t.settings),
             &leanfin_nav(base, "settings", lang),
             &body,
             &state.config,

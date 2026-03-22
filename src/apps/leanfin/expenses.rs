@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashMap};
 use super::dashboard::leanfin_nav;
 use super::services::expenses;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -28,7 +28,7 @@ async fn page(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let labels: Vec<LabelOption> = sqlx::query_as(
         "SELECT id, name, color FROM leanfin_labels WHERE user_id = ? ORDER BY name",
@@ -47,12 +47,12 @@ async fn page(
         <div class="card">
             <div class="empty-state"><p>{no_labels}</p></div>
         </div>"#,
-            title = t.lf_exp_title,
-            subtitle = t.lf_exp_subtitle,
-            no_labels = t.lf_exp_no_labels,
+            title = t.exp_title,
+            subtitle = t.exp_subtitle,
+            no_labels = t.exp_no_labels,
         );
         return Html(render_page(
-            &format!("LeanFin — {}", t.lf_expenses),
+            &format!("LeanFin — {}", t.expenses),
             &leanfin_nav(base, "expenses", lang),
             &body,
             &state.config,
@@ -170,15 +170,15 @@ async fn page(
             }};
         }})();
         </script>"##,
-        title = t.lf_exp_title,
-        subtitle = t.lf_exp_subtitle,
-        select_labels = t.lf_exp_select_labels,
-        transactions = t.lf_exp_transactions,
-        select_labels_js = t.lf_exp_select_labels,
+        title = t.exp_title,
+        subtitle = t.exp_subtitle,
+        select_labels = t.exp_select_labels,
+        transactions = t.exp_transactions,
+        select_labels_js = t.exp_select_labels,
     );
 
     Html(render_page(
-        &format!("LeanFin — {}", t.lf_expenses),
+        &format!("LeanFin — {}", t.expenses),
         &leanfin_nav(base, "expenses", lang),
         &body,
         &state.config,
@@ -203,7 +203,7 @@ async fn chart_data(
     Extension(lang): Extension<Lang>,
     axum::extract::Query(params): axum::extract::Query<ChartQuery>,
 ) -> Html<String> {
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let label_ids: Vec<i64> = params
         .label_ids
@@ -214,7 +214,7 @@ async fn chart_data(
     if label_ids.is_empty() {
         return Html(format!(
             "<div class=\"empty-state\"><p>{}</p></div>",
-            t.lf_exp_no_selected
+            t.exp_no_selected
         ));
     }
 
@@ -225,7 +225,7 @@ async fn chart_data(
     if series.is_empty() {
         return Html(format!(
             "<div class=\"empty-state\"><p>{}</p></div>",
-            t.lf_exp_no_data
+            t.exp_no_data
         ));
     }
 

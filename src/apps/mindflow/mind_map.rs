@@ -3,7 +3,7 @@ use serde::Serialize;
 
 use super::mindflow_nav;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -29,7 +29,7 @@ async fn page(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let categories: Vec<CategoryOption> = sqlx::query_as(
         "SELECT id, name, color FROM mindflow_categories WHERE user_id = ? AND archived = 0 ORDER BY name",
@@ -39,10 +39,7 @@ async fn page(
     .await
     .unwrap_or_default();
 
-    let mut cat_options = format!(
-        r#"<option value="">{}</option>"#,
-        t.mf_map_inbox_uncategorized
-    );
+    let mut cat_options = format!(r#"<option value="">{}</option>"#, t.map_inbox_uncategorized);
     for c in &categories {
         cat_options.push_str(&format!(r#"<option value="{}">{}</option>"#, c.id, c.name,));
     }
@@ -66,7 +63,7 @@ async fn page(
     let inbox_badge = if inbox_count > 0 {
         format!(
             r#"<span class="badge badge-warning">{inbox_count} {}</span>"#,
-            t.mf_map_in_inbox
+            t.map_in_inbox
         )
     } else {
         String::new()
@@ -75,17 +72,17 @@ async fn page(
     let actions_badge = if pending_actions > 0 {
         format!(
             r#"<span class="badge badge-info">{pending_actions} {}</span>"#,
-            t.mf_map_pending
+            t.map_pending
         )
     } else {
         String::new()
     };
 
-    let map_title = t.mf_map_title;
-    let map_subtitle = t.mf_map_subtitle;
-    let capture_placeholder = t.mf_map_capture_placeholder;
-    let capture_btn = t.mf_map_capture;
-    let first_thought = t.mf_map_first_thought;
+    let map_title = t.map_title;
+    let map_subtitle = t.map_subtitle;
+    let capture_placeholder = t.map_capture_placeholder;
+    let capture_btn = t.map_capture;
+    let first_thought = t.map_first_thought;
 
     let body = format!(
         r##"<div class="page-header">
@@ -331,7 +328,7 @@ async fn page(
     );
 
     Html(render_page(
-        &format!("MindFlow \u{2014} {}", t.mf_mind_map),
+        &format!("MindFlow \u{2014} {}", t.mind_map),
         &mindflow_nav(base, "map", lang),
         &body,
         &state.config,

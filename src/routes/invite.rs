@@ -96,21 +96,13 @@ async fn invite_submit(
 
     // Auto-seed deployed apps for new user if configured
     if state.config.seed {
-        if state.config.is_app_deployed("leanfin")
-            && let Err(e) = crate::apps::leanfin::services::seed::run(&state.pool, user_id).await
-        {
-            tracing::error!("Failed to seed leanfin for user {user_id}: {e}");
-        }
-        if state.config.is_app_deployed("mindflow")
-            && let Err(e) = crate::apps::mindflow::services::seed::run(&state.pool, user_id).await
-        {
-            tracing::error!("Failed to seed mindflow for user {user_id}: {e}");
-        }
-        if state.config.is_app_deployed("classroom_input")
-            && let Err(e) =
-                crate::apps::classroom_input::services::seed::run(&state.pool, user_id).await
-        {
-            tracing::error!("Failed to seed classroom for user {user_id}: {e}");
+        for app in crate::apps::registry::deployed_app_instances(&state.config) {
+            if let Some(fut) = app.seed(&state.pool, user_id)
+                && let Err(e) = fut.await
+            {
+                let key = app.info().key;
+                tracing::error!("Failed to seed {key} for user {user_id}: {e}");
+            }
         }
     }
 

@@ -18,7 +18,7 @@ DB, layout/styling, and config.
 ```bash
 # Development (local)
 cargo run -- serve                  # Start HTTP server on 127.0.0.1:3000
-cargo run -- sync                   # Run transaction sync manually
+cargo run -- cron                   # Run scheduled app tasks (e.g. bank sync)
 cargo run -- create-user            # Create a user (admin, direct password)
 cargo run -- invite                 # Generate a single-use invite link (48h)
 cargo run -- seed --user <name>              # Seed all apps for a user
@@ -70,14 +70,21 @@ make run                            # Start dev server
 - MindFlow-specific routes, handlers, and services live under `src/apps/mindflow/`.
 - VoiceToText-specific routes, handlers, and services live under `src/apps/voice_to_text/`.
 - ClassroomInput-specific routes and handlers live under `src/apps/classroom_input/`.
-- Shared infrastructure (auth, config, db, models, layout, i18n, command) stays at the top level.
+- Shared infrastructure (auth, config, db, models, layout, i18n, command,
+  services) stays at the top level. Shared services (whisper transcription,
+  push notifications) live in `src/services/`.
+- Each app implements the `App` trait in `src/apps/registry.rs`. The trait
+  provides hooks for routing, commands, seeding, scheduled tasks (`cron`),
+  and background workers (`on_serve`). Adding a new app means implementing
+  the trait and registering in `all_app_instances()`.
 - The command bar module (`src/command/`) handles LLM-powered natural-language
   command interpretation and execution via a llama.cpp server.
 - Each app exposes an `ops.rs` module with shared action functions callable from
   both HTTP handlers and the command bar dispatcher. New actions go in `ops.rs`.
-- Translations live in `src/i18n/`. Adding a new UI string means adding a field
-  to the `Translations` struct in `mod.rs` and filling it in both `en.rs` and
-  `es.rs`. The compiler enforces completeness.
+- Shared translations (auth, launcher, command bar) live in `src/i18n/`.
+  App-specific translations live in each app's `i18n.rs` module. Both use
+  compile-time struct-based translations; adding a field forces both EN and ES
+  to be updated.
 - All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`, `classroom_classrooms`).
 - When adding or removing environment variables, update all four places:
   `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`

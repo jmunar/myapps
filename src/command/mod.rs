@@ -72,20 +72,10 @@ impl CommandResult {
 
 /// Collect all command actions from deployed apps.
 pub fn collect_commands(config: &Config) -> Vec<CommandAction> {
-    let mut cmds = Vec::new();
-    if config.is_app_deployed("mindflow") {
-        cmds.extend(crate::apps::mindflow::ops::commands());
-    }
-    if config.is_app_deployed("leanfin") {
-        cmds.extend(crate::apps::leanfin::ops::commands());
-    }
-    if config.is_app_deployed("voice_to_text") {
-        cmds.extend(crate::apps::voice_to_text::ops::commands());
-    }
-    if config.is_app_deployed("classroom_input") {
-        cmds.extend(crate::apps::classroom_input::ops::commands());
-    }
-    cmds
+    crate::apps::registry::deployed_app_instances(config)
+        .into_iter()
+        .flat_map(|app| app.commands())
+        .collect()
 }
 
 /// Collect dynamic context for the LLM prompt (e.g. available classrooms).
@@ -96,8 +86,8 @@ pub async fn collect_command_context(
     config: &Config,
 ) -> HashMap<String, String> {
     let mut ctx = HashMap::new();
-    if config.is_app_deployed("classroom_input") {
-        ctx.extend(crate::apps::classroom_input::ops::command_context(pool, user_id).await);
+    for app in crate::apps::registry::deployed_app_instances(config) {
+        ctx.extend(app.command_context(pool, user_id).await);
     }
     ctx
 }

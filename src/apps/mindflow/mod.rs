@@ -1,12 +1,14 @@
 mod actions;
 mod categories;
+pub mod i18n;
 mod inbox;
 mod mind_map;
 pub mod ops;
 pub mod services;
 mod thoughts;
 
-use crate::i18n::{self, Lang};
+use crate::apps::registry::{App, AppInfo};
+use crate::i18n::Lang;
 use crate::layout::NavItem;
 use crate::routes::AppState;
 use axum::Router;
@@ -24,6 +26,7 @@ pub fn router() -> Router<AppState> {
 
 pub fn mindflow_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
+    let ct = crate::i18n::t(lang);
     vec![
         NavItem {
             href: format!("{base}/mindflow"),
@@ -33,33 +36,88 @@ pub fn mindflow_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         },
         NavItem {
             href: format!("{base}/mindflow"),
-            label: t.mf_mind_map.to_string(),
+            label: t.mind_map.to_string(),
             active: active == "map",
             right: false,
         },
         NavItem {
             href: format!("{base}/mindflow/inbox"),
-            label: t.mf_inbox.to_string(),
+            label: t.inbox.to_string(),
             active: active == "inbox",
             right: false,
         },
         NavItem {
             href: format!("{base}/mindflow/actions"),
-            label: t.mf_actions.to_string(),
+            label: t.actions.to_string(),
             active: active == "actions",
             right: false,
         },
         NavItem {
             href: format!("{base}/mindflow/categories"),
-            label: t.mf_categories.to_string(),
+            label: t.categories.to_string(),
             active: active == "categories",
             right: false,
         },
         NavItem {
             href: format!("{base}/logout"),
-            label: t.log_out.to_string(),
+            label: ct.log_out.to_string(),
             active: false,
             right: true,
         },
     ]
+}
+
+pub struct MindFlowApp;
+
+impl App for MindFlowApp {
+    fn info(&self) -> AppInfo {
+        AppInfo {
+            key: "mindflow",
+            name: "MindFlow",
+            description: "Thought capture &amp; mind map",
+            icon: "\u{1F9E0}",
+            path: "/mindflow",
+        }
+    }
+
+    fn description(&self, lang: crate::i18n::Lang) -> &'static str {
+        match lang {
+            crate::i18n::Lang::En => "Thought capture &amp; mind map",
+            crate::i18n::Lang::Es => "Captura de ideas y mapa mental",
+        }
+    }
+
+    fn router(&self) -> Router<AppState> {
+        router()
+    }
+
+    fn commands(&self) -> Vec<crate::command::CommandAction> {
+        ops::commands()
+    }
+
+    fn dispatch<'a>(
+        &'a self,
+        pool: &'a sqlx::SqlitePool,
+        user_id: i64,
+        action: &'a str,
+        params: &'a std::collections::HashMap<String, serde_json::Value>,
+        base_path: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<crate::command::CommandResult, String>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(ops::dispatch(pool, user_id, action, params, base_path))
+    }
+
+    fn seed<'a>(
+        &'a self,
+        pool: &'a sqlx::SqlitePool,
+        user_id: i64,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
+    {
+        Some(Box::pin(services::seed::run(pool, user_id)))
+    }
 }

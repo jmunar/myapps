@@ -4,9 +4,9 @@ use std::time::Instant;
 
 use sqlx::SqlitePool;
 
-use super::transcriber;
 use crate::config::Config;
 use crate::services::notify;
+use crate::services::whisper;
 
 #[derive(sqlx::FromRow)]
 struct PendingJob {
@@ -124,10 +124,10 @@ async fn run_transcription(
     let input = Path::new(audio_path);
 
     // Convert to 16 kHz mono WAV
-    let wav_path = transcriber::convert_to_wav(input).await?;
+    let wav_path = whisper::convert_to_wav(input).await?;
 
     // Run whisper
-    let text = transcriber::transcribe(config, &wav_path, model).await?;
+    let text = whisper::transcribe(config, &wav_path, model).await?;
 
     // Clean up converted file
     let _ = tokio::fs::remove_file(&wav_path).await;

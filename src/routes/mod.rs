@@ -36,17 +36,9 @@ pub fn build_router(pool: SqlitePool, config: Config) -> Router {
         .merge(pwa::push_routes())
         .merge(settings::routes());
 
-    if state.config.is_app_deployed("leanfin") {
-        protected = protected.nest("/leanfin", crate::apps::leanfin::router());
-    }
-    if state.config.is_app_deployed("mindflow") {
-        protected = protected.nest("/mindflow", crate::apps::mindflow::router());
-    }
-    if state.config.is_app_deployed("voice_to_text") {
-        protected = protected.nest("/voice", crate::apps::voice_to_text::router());
-    }
-    if state.config.is_app_deployed("classroom_input") {
-        protected = protected.nest("/classroom", crate::apps::classroom_input::router());
+    for app in crate::apps::registry::deployed_app_instances(&state.config) {
+        let info = app.info();
+        protected = protected.nest(info.path, app.router());
     }
     if state.config.llm_enabled() {
         tracing::info!(
@@ -79,9 +71,8 @@ pub async fn serve(pool: SqlitePool, config: Config) -> anyhow::Result<()> {
     let bind_addr = config.bind_addr.clone();
     let worker_config = Arc::new(config.clone());
 
-    // Start background voice transcription worker (only if voice_to_text is deployed)
-    if config.is_app_deployed("voice_to_text") {
-        crate::apps::voice_to_text::services::worker::spawn(pool.clone(), worker_config);
+    for app in crate::apps::registry::deployed_app_instances(&config) {
+        app.on_serve(pool.clone(), worker_config.clone());
     }
 
     let app = build_router(pool, config);

@@ -9,7 +9,7 @@ use serde::Deserialize;
 use super::classroom_nav;
 use super::form_types::ColumnDef;
 use crate::auth::UserId;
-use crate::i18n::{self, Lang};
+use crate::i18n::Lang;
 use crate::layout::render_page;
 use crate::routes::AppState;
 
@@ -55,7 +55,7 @@ async fn list(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let inputs: Vec<InputRow> = sqlx::query_as(
         "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
@@ -81,8 +81,8 @@ async fn list(
             .await
             .unwrap_or_default();
 
-    let delete_label = t.ci_inp_delete;
-    let delete_confirm = t.ci_inp_delete_confirm;
+    let delete_label = t.inp_delete;
+    let delete_confirm = t.inp_delete_confirm;
 
     let mut rows_html = String::new();
     for inp in &inputs {
@@ -119,10 +119,7 @@ async fn list(
     }
 
     let table_or_empty = if rows_html.is_empty() {
-        format!(
-            r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.ci_inp_empty
-        )
+        format!(r#"<div class="empty-state"><p>{}</p></div>"#, t.inp_empty)
     } else {
         format!(
             r#"<table>
@@ -131,11 +128,11 @@ async fn list(
                 </tr></thead>
                 <tbody>{rows_html}</tbody>
             </table>"#,
-            col_name = t.ci_inp_col_name,
-            col_classroom = t.ci_inp_col_classroom,
-            col_form_type = t.ci_inp_col_form_type,
-            col_rows = t.ci_inp_col_rows,
-            col_date = t.ci_inp_col_date,
+            col_name = t.inp_col_name,
+            col_classroom = t.inp_col_classroom,
+            col_form_type = t.inp_col_form_type,
+            col_rows = t.inp_col_rows,
+            col_date = t.inp_col_date,
         )
     };
 
@@ -153,13 +150,13 @@ async fn list(
         <div class="card">
             {table_or_empty}
         </div>"##,
-        title = t.ci_inp_title,
-        subtitle = t.ci_inp_subtitle,
-        new_btn = t.ci_inp_new_btn,
+        title = t.inp_title,
+        subtitle = t.inp_subtitle,
+        new_btn = t.inp_new_btn,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.ci_inputs),
+        &format!("Classroom — {}", t.inputs),
         &classroom_nav(base, "inputs", lang),
         &body,
         &state.config,
@@ -173,7 +170,7 @@ async fn new_input_page(
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let classrooms: Vec<ClassroomRow> = sqlx::query_as(
         "SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ? ORDER BY label ASC",
@@ -193,19 +190,19 @@ async fn new_input_page(
 
     if classrooms.is_empty() || form_types.is_empty() {
         let msg = if classrooms.is_empty() && form_types.is_empty() {
-            t.ci_inp_need_both.to_string()
+            t.inp_need_both.to_string()
         } else if classrooms.is_empty() {
-            t.ci_inp_need_classroom.to_string()
+            t.inp_need_classroom.to_string()
         } else {
-            t.ci_inp_need_form_type.to_string()
+            t.inp_need_form_type.to_string()
         };
         let body = format!(
             r#"<div class="page-header"><h1>{title}</h1></div>
             <div class="card" style="max-width:36rem"><div class="card-body"><p>{msg}</p></div></div>"#,
-            title = t.ci_inp_new_title,
+            title = t.inp_new_title,
         );
         return Html(render_page(
-            &format!("Classroom — {}", t.ci_inp_new_title),
+            &format!("Classroom — {}", t.inp_new_title),
             &classroom_nav(base, "inputs", lang),
             &body,
             &state.config,
@@ -244,9 +241,9 @@ async fn new_input_page(
         ft_opts.push_str(&format!(r#"<option value="{}">{}</option>"#, f.id, f.name));
     }
 
-    let pupil_label = t.ci_inp_pupil;
-    let select_hint = t.ci_inp_select_hint;
-    let col_bool = t.ci_ft_col_bool;
+    let pupil_label = t.inp_pupil;
+    let select_hint = t.inp_select_hint;
+    let col_bool = t.ft_col_bool;
 
     let body = format!(
         r##"<div class="page-header">
@@ -425,16 +422,16 @@ async fn new_input_page(
             }}
         }})();
         </script>"##,
-        new_title = t.ci_inp_new_title,
-        new_subtitle = t.ci_inp_new_subtitle,
-        classroom_lbl = t.ci_inp_classroom,
-        form_type_lbl = t.ci_inp_form_type,
-        name_lbl = t.ci_inp_name,
-        save_btn = t.ci_inp_save,
+        new_title = t.inp_new_title,
+        new_subtitle = t.inp_new_subtitle,
+        classroom_lbl = t.inp_classroom,
+        form_type_lbl = t.inp_form_type,
+        name_lbl = t.inp_name,
+        save_btn = t.inp_save,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.ci_inp_new_title),
+        &format!("Classroom — {}", t.inp_new_title),
         &classroom_nav(base, "inputs", lang),
         &body,
         &state.config,
@@ -476,7 +473,7 @@ async fn view(
     Path(id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-    let t = i18n::t(lang);
+    let t = super::i18n::t(lang);
 
     let inp: Option<InputRow> = sqlx::query_as(
         "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
@@ -494,7 +491,7 @@ async fn view(
             &classroom_nav(base, "inputs", lang),
             &format!(
                 r#"<div class="empty-state"><p>{}</p></div>"#,
-                t.ci_inp_not_found
+                t.inp_not_found
             ),
             &state.config,
             lang,
@@ -558,7 +555,7 @@ async fn view(
         name = inp.name,
         cls_label = cls_label.as_deref().unwrap_or("?"),
         ft_name = ft_name.as_deref().unwrap_or("?"),
-        back = t.ci_inp_back,
+        back = t.inp_back,
     );
 
     Html(render_page(
