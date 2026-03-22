@@ -64,7 +64,10 @@ make run                            # Start dev server
 ## Project Conventions
 
 - SQL queries use runtime-checked sqlx (no compile-time macros).
-- Migrations live in `migrations/` and run automatically on startup.
+- Core migrations (auth, sessions, settings) live in `migrations/`.
+  App-specific migrations live in each app's `migrations/` directory
+  (e.g. `src/apps/leanfin/migrations/`). All are merged by timestamp
+  and run automatically on startup via `db::migrator()`.
 - Environment variables are loaded from `.env` in development (via dotenvy).
 - No secrets in the repo. See `.env.example` for required variables.
 - Keep memory footprint minimal — avoid unnecessary allocations and large
@@ -77,9 +80,9 @@ make run                            # Start dev server
   services) stays at the top level. Shared services (whisper transcription,
   push notifications) live in `src/services/`.
 - Each app implements the `App` trait in `src/apps/registry.rs`. The trait
-  provides hooks for routing, commands, seeding, scheduled tasks (`cron`),
-  and background workers (`on_serve`). Adding a new app means implementing
-  the trait and registering in `all_app_instances()`.
+  provides hooks for migrations, routing, commands, seeding, scheduled tasks
+  (`cron`), and background workers (`on_serve`). Adding a new app means
+  implementing the trait and registering in `all_app_instances()`.
 - The command bar module (`src/command/`) handles LLM-powered natural-language
   command interpretation and execution via a llama.cpp server.
 - Each app exposes an `ops.rs` module with shared action functions callable from

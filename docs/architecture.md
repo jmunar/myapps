@@ -42,7 +42,7 @@ All subcommands share the same configuration and database.
 ```
 myapps/
 ├── docs/                    # Documentation
-├── migrations/              # SQLite migrations (sqlx)
+├── migrations/              # Core SQLite migrations (auth, sessions, settings)
 ├── tests/                   # Integration tests (axum-test)
 │   ├── harness/mod.rs       # Test harness: in-memory DB, login helpers
 │   ├── auth_tests.rs        # Platform auth flow tests
@@ -84,6 +84,7 @@ myapps/
 │   └── apps/                # Sub-applications
 │       ├── registry.rs      # App trait + registry (AppInfo, App trait, deployed_app_instances())
 │       ├── leanfin/         # LeanFin expense tracker
+│           ├── migrations/  # LeanFin database migrations
 │           ├── mod.rs       # LeanFin router + App trait impl
 │           ├── i18n.rs      # LeanFin translations (EN/ES)
 │           ├── ops.rs       # Shared action functions (command bar + handlers)
@@ -104,6 +105,7 @@ myapps/
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
 │       ├── mindflow/        # MindFlow thought capture + mind map
+│       │   ├── migrations/  # MindFlow database migrations
 │       │   ├── mod.rs       # MindFlow router + nav + App trait impl
 │       │   ├── i18n.rs      # MindFlow translations (EN/ES)
 │       │   ├── ops.rs       # Shared action functions (command bar + handlers)
@@ -115,6 +117,7 @@ myapps/
 │       │   └── services/
 │       │       └── seed.rs  # Demo data seeding
 │       ├── voice_to_text/   # VoiceToText audio transcription
+│       │   ├── migrations/  # VoiceToText database migrations
 │       │   ├── mod.rs       # VoiceToText router + App trait impl
 │       │   ├── i18n.rs      # VoiceToText translations (EN/ES)
 │       │   ├── ops.rs       # Shared action functions (command bar + handlers)
@@ -123,6 +126,7 @@ myapps/
 │       │   └── services/
 │       │       └── worker.rs       # Background job worker (polls pending jobs)
 │       └── classroom_input/ # ClassroomInput marks & notes recording
+│           ├── migrations/  # ClassroomInput database migrations
 │           ├── mod.rs       # ClassroomInput router + nav + App trait impl
 │           ├── i18n.rs      # ClassroomInput translations (EN/ES)
 │           ├── ops.rs       # Shared action functions (command bar + handlers)
