@@ -49,6 +49,8 @@ pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> Tes
         whisper_models_dir: "models".into(),
         deploy_apps,
         llama_server_url: String::new(),
+        seed: false,
+        cleanup_inactive_days: 0,
         static_version: String::new(),
     };
 
@@ -79,17 +81,20 @@ impl TestApp {
             .await;
     }
 
-    /// Seed full LeanFin demo data and log in as the demo user.
+    /// Seed full LeanFin demo data and log in as the seed user.
     pub async fn seed_and_login(&self) {
-        myapps::apps::leanfin::services::seed::run(&self.pool, false)
+        let user_id = myapps::auth::create_user(&self.pool, "seeduser", "seeduser")
+            .await
+            .unwrap();
+        myapps::apps::leanfin::services::seed::run(&self.pool, user_id)
             .await
             .unwrap();
 
         self.server
             .post("/login")
             .form(&serde_json::json!({
-                "username": "demo",
-                "password": "demo",
+                "username": "seeduser",
+                "password": "seeduser",
             }))
             .expect_failure() // login redirects with 303
             .await;

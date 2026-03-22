@@ -93,15 +93,12 @@ restart() {
     ssh_server "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME"
 }
 
-seed() {
-    if [[ -z "${DEPLOY_SEED_APPS:-}" ]] || [[ "${SEED_REBUILD:-false}" != "true" ]]; then
+cleanup() {
+    if [[ "${DEPLOY_USER_CLEANUP_DAYS:-0}" == "0" ]]; then
         return
     fi
-    echo "▸ Seeding apps: $DEPLOY_SEED_APPS..."
-    for app in $DEPLOY_SEED_APPS; do
-        echo "  ▸ Seeding $app (--reset)..."
-        ssh_server "sudo -u myapps $DEPLOY_REMOTE_DIR/myapps seed --app $app --reset"
-    done
+    echo "▸ Cleaning up inactive users (>${DEPLOY_USER_CLEANUP_DAYS} days)..."
+    ssh_server "sudo -u myapps $DEPLOY_REMOTE_DIR/myapps cleanup-users --days $DEPLOY_USER_CLEANUP_DAYS"
 }
 
 setup() {
@@ -162,6 +159,8 @@ WHISPER_MODELS_DIR=/opt/whisper.cpp/models
 LLAMA_SERVER_URL=
 BIND_ADDR=127.0.0.1:$DEPLOY_PORT
 DEPLOY_APPS=${DEPLOY_APPS:-}
+SEED=${DEPLOY_SEED:-false}
+CLEANUP_INACTIVE_DAYS=${DEPLOY_USER_CLEANUP_DAYS:-0}
 ENV
     sudo chown myapps:myapps $DEPLOY_REMOTE_DIR/.env
     sudo chmod 600 $DEPLOY_REMOTE_DIR/.env
@@ -246,7 +245,7 @@ SETUP
 # ── Command dispatch ───────────────────────────────────────────────
 case "${COMMAND}" in
     build)   build ;;
-    deploy)  build && install && restart && seed ;;
+    deploy)  build && install && restart && cleanup ;;
     setup)   setup ;;
     restart) restart ;;
     logs)    ssh_server "sudo journalctl -u $DEPLOY_SERVICE_NAME -f --no-pager" ;;

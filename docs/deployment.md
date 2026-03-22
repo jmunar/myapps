@@ -233,6 +233,8 @@ WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 LLAMA_SERVER_URL=                                         # llama.cpp server URL (optional)
 BIND_ADDR=127.0.0.1:3000
 DEPLOY_APPS=                                              # Comma-separated app keys (blank = all)
+SEED=false                                                # Auto-seed on invite registration (true/false)
+CLEANUP_INACTIVE_DAYS=0                                   # Delete inactive users after N days (0 = off)
 ```
 
 `LLAMA_SERVER_URL` enables the command bar (natural language command entry).
@@ -530,7 +532,8 @@ The CD workflow requires two GitHub **Environments** (`staging` and
 | `DEPLOY_PORT`             | `3001`                      | `3000`                     |
 | `DEPLOY_CRON_ENABLED`     | `false`                     | `true`                     |
 | `DEPLOY_ICON`             | `icon-stage.svg`            | `icon.svg`                 |
-| `DEPLOY_SEED_APPS`        | `leanfin mindflow classroom`| (empty)                    |
+| `DEPLOY_SEED`             | `true`                      | `false`                    |
+| `DEPLOY_USER_CLEANUP_DAYS`| `7`                         | `0`                        |
 
 These match the values in `deploy/*.env.example`.
 
@@ -598,13 +601,18 @@ ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps invite'
 # Or: ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps create-user --username yourname --password yourpass'
 ```
 
-### Deploying with seed data
+### Auto-seeding and user cleanup
 
-When `SEED_REBUILD=true` is set, the deploy command wipes and re-seeds all apps
-listed in `DEPLOY_SEED_APPS` after restarting the service:
+When `SEED=true` is set in the server's `.env`, new users who register via an
+invite link will automatically get demo data seeded for all deployed apps.
+
+When `CLEANUP_INACTIVE_DAYS` is set (e.g. `7`), the `cleanup-users` command
+deletes users who haven't accessed the app for that many days. This runs
+automatically on each deploy when `DEPLOY_USER_CLEANUP_DAYS` is set in the deploy
+config. You can also run it manually:
 
 ```bash
-SEED_REBUILD=true ./deploy.sh stage deploy
+ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps cleanup-users --days 7'
 ```
 
 ### Directory structure (staging)

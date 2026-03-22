@@ -94,6 +94,26 @@ async fn invite_submit(
     // Mark invite as used
     let _ = crate::auth::mark_invite_used(&state.pool, &token).await;
 
+    // Auto-seed deployed apps for new user if configured
+    if state.config.seed {
+        if state.config.is_app_deployed("leanfin")
+            && let Err(e) = crate::apps::leanfin::services::seed::run(&state.pool, user_id).await
+        {
+            tracing::error!("Failed to seed leanfin for user {user_id}: {e}");
+        }
+        if state.config.is_app_deployed("mindflow")
+            && let Err(e) = crate::apps::mindflow::services::seed::run(&state.pool, user_id).await
+        {
+            tracing::error!("Failed to seed mindflow for user {user_id}: {e}");
+        }
+        if state.config.is_app_deployed("classroom_input")
+            && let Err(e) =
+                crate::apps::classroom_input::services::seed::run(&state.pool, user_id).await
+        {
+            tracing::error!("Failed to seed classroom for user {user_id}: {e}");
+        }
+    }
+
     // Create session and log them in
     match crate::auth::create_session(&state.pool, user_id).await {
         Ok(session_token) => {

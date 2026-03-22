@@ -1,34 +1,17 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
 
-use crate::auth;
-
-pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
-    if reset {
-        // Delete the demo user; ON DELETE CASCADE wipes all related data
-        let result = sqlx::query("DELETE FROM users WHERE username = 'demo'")
-            .execute(pool)
-            .await?;
-        if result.rows_affected() > 0 {
-            tracing::info!("Wiped demo user and all associated data");
-        }
-    }
-
-    // Create demo user (password: "demo")
-    let user_id = match auth::create_user(pool, "demo", "demo").await {
-        Ok(id) => {
-            tracing::info!("Created demo user (username: demo, password: demo)");
-            id
-        }
-        Err(_) => {
-            // User already exists, fetch id
-            let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'demo'")
-                .fetch_one(pool)
-                .await?;
-            tracing::info!("Demo user already exists");
-            row.0
-        }
-    };
+pub async fn run(pool: &SqlitePool, user_id: i64) -> Result<()> {
+    // Wipe all LeanFin data for this user (cascade handles transactions, snapshots, etc.)
+    sqlx::query("DELETE FROM leanfin_accounts WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM leanfin_labels WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    tracing::info!("Cleared existing LeanFin data for user {user_id}");
 
     // Create two bank accounts
     let acct1 = insert_bank_account(
@@ -382,7 +365,6 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     .await?;
 
     tracing::info!("Seeded {count} transactions, {alloc_count} allocations, daily balances");
-    tracing::info!("Ready! Run `cargo run -- serve` and login with demo / demo");
     Ok(())
 }
 
@@ -397,19 +379,14 @@ async fn insert_bank_account(
     account_uid: &str,
     expires: &str,
 ) -> Result<i64> {
-    // Use INSERT OR IGNORE + fetch to be idempotent
-    sqlx::query(
-        "INSERT OR IGNORE INTO leanfin_accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank')"
+    let result = sqlx::query(
+        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank')"
     )
     .bind(user_id).bind(bank_name).bind(country).bind(iban)
     .bind(session_id).bind(account_uid).bind(expires)
     .execute(pool).await?;
 
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts WHERE account_uid = ?")
-        .bind(account_uid)
-        .fetch_one(pool)
-        .await?;
-    Ok(id)
+    Ok(result.last_insert_rowid())
 }
 
 async fn insert_manual_account(
@@ -420,17 +397,13 @@ async fn insert_manual_account(
     currency: &str,
 ) -> Result<i64> {
     let uid = format!("manual_{name}");
-    sqlx::query(
-        "INSERT OR IGNORE INTO leanfin_accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_currency) VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?)"
+    let result = sqlx::query(
+        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_currency) VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?)"
     )
     .bind(user_id).bind(name).bind(&uid).bind(name).bind(category).bind(currency)
     .execute(pool).await?;
 
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts WHERE account_uid = ?")
-        .bind(&uid)
-        .fetch_one(pool)
-        .await?;
-    Ok(id)
+    Ok(result.last_insert_rowid())
 }
 
 async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
@@ -448,7 +421,7 @@ async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
     ];
 
     for (name, color) in labels {
-        sqlx::query("INSERT OR IGNORE INTO leanfin_labels (user_id, name, color) VALUES (?, ?, ?)")
+        sqlx::query("INSERT INTO leanfin_labels (user_id, name, color) VALUES (?, ?, ?)")
             .bind(user_id)
             .bind(name)
             .bind(color)
@@ -478,7 +451,7 @@ async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
 
     for (label_name, field, pattern) in rules {
         sqlx::query(
-            "INSERT OR IGNORE INTO leanfin_label_rules (label_id, field, pattern) \
+            "INSERT INTO leanfin_label_rules (label_id, field, pattern) \
              SELECT id, ?, ? FROM leanfin_labels WHERE user_id = ? AND name = ?",
         )
         .bind(field)
@@ -520,16 +493,6 @@ async fn seed_allocations(pool: &SqlitePool, user_id: i64) -> Result<u64> {
     let mut count: u64 = 0;
 
     for (txn_id, desc, amount, counterparty) in &txns {
-        // Skip if already has allocations
-        let existing: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM leanfin_allocations WHERE transaction_id = ?")
-                .bind(txn_id)
-                .fetch_one(pool)
-                .await?;
-        if existing.0 > 0 {
-            continue;
-        }
-
         let cp = counterparty.as_deref().unwrap_or("");
         let desc_lower = desc.to_lowercase();
         let abs_amount = amount.abs();
@@ -674,7 +637,7 @@ async fn seed_bank_txns_with_snapshots(
             if *txd == sd {
                 let eid = format!("{prefix}_{i:03}");
                 let result = sqlx::query(
-                    "INSERT OR IGNORE INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, counterparty, snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, counterparty, snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(account_id).bind(&eid).bind(&date_str)
                 .bind(amount).bind(currency).bind(desc).bind(cp)
@@ -707,7 +670,7 @@ async fn seed_manual_balances(
     for (date, value) in values {
         let timestamp = format!("{date}T23:59:59Z");
         sqlx::query(
-            r#"INSERT OR IGNORE INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
+            r#"INSERT INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
                VALUES (?, ?, ?, ?, 'MANUAL')"#,
         )
         .bind(account_id)

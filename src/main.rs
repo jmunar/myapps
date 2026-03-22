@@ -25,14 +25,17 @@ enum Command {
     Invite,
     /// Generate VAPID key pair for Web Push notifications
     GenerateVapidKeys,
-    /// Populate database with demo data for local development
+    /// Populate database with seed data for a given user
     Seed {
-        /// Which app to seed (leanfin, mindflow, classroom)
-        #[arg(long, default_value = "leanfin")]
-        app: String,
-        /// Wipe existing demo data before re-seeding
+        /// Username to seed data for (must already exist)
         #[arg(long)]
-        reset: bool,
+        user: String,
+    },
+    /// Delete users who have been inactive for the given number of days
+    CleanupUsers {
+        /// Number of days of inactivity before a user is deleted
+        #[arg(long, default_value = "7")]
+        days: i64,
     },
 }
 
@@ -93,12 +96,24 @@ async fn main() -> anyhow::Result<()> {
             println!("VAPID_PUBLIC_KEY={public_b64}");
             println!("VAPID_SUBJECT=mailto:you@example.com");
         }
-        Command::Seed { app, reset } => match app.as_str() {
-            "leanfin" => apps::leanfin::services::seed::run(&pool, reset).await?,
-            "mindflow" => apps::mindflow::services::seed::run(&pool, reset).await?,
-            "classroom" => apps::classroom_input::services::seed::run(&pool, reset).await?,
-            other => anyhow::bail!("Unknown app: {other}. Available: leanfin, mindflow, classroom"),
-        },
+        Command::Seed { user } => {
+            let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+                .bind(&user)
+                .fetch_optional(&pool)
+                .await?;
+            let user_id = row
+                .map(|r| r.0)
+                .ok_or_else(|| anyhow::anyhow!("User '{user}' not found"))?;
+
+            apps::leanfin::services::seed::run(&pool, user_id).await?;
+            apps::mindflow::services::seed::run(&pool, user_id).await?;
+            apps::classroom_input::services::seed::run(&pool, user_id).await?;
+            tracing::info!("Seed complete for user '{user}'");
+        }
+        Command::CleanupUsers { days } => {
+            let count = auth::cleanup_inactive_users(&pool, days).await?;
+            tracing::info!("Deleted {count} inactive users (>{days} days)");
+        }
     }
 
     Ok(())

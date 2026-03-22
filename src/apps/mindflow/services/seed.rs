@@ -1,31 +1,21 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
 
-use crate::auth;
-
-pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
-    if reset {
-        let result = sqlx::query("DELETE FROM users WHERE username = 'demo'")
-            .execute(pool)
-            .await?;
-        if result.rows_affected() > 0 {
-            tracing::info!("Wiped demo user and all associated data");
-        }
-    }
-
-    let user_id = match auth::create_user(pool, "demo", "demo").await {
-        Ok(id) => {
-            tracing::info!("Created demo user (username: demo, password: demo)");
-            id
-        }
-        Err(_) => {
-            let row: (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'demo'")
-                .fetch_one(pool)
-                .await?;
-            tracing::info!("Demo user already exists");
-            row.0
-        }
-    };
+pub async fn run(pool: &SqlitePool, user_id: i64) -> Result<()> {
+    // Wipe all MindFlow data for this user (cascade handles sub-thoughts, comments, actions)
+    sqlx::query("DELETE FROM mindflow_categories WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM mindflow_thoughts WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM mindflow_actions WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    tracing::info!("Cleared existing MindFlow data for user {user_id}");
 
     // Categories
     let categories = &[
@@ -39,7 +29,7 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
 
     for (i, (name, color, icon)) in categories.iter().enumerate() {
         sqlx::query(
-            "INSERT OR IGNORE INTO mindflow_categories (user_id, name, color, icon, position) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO mindflow_categories (user_id, name, color, icon, position) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(user_id)
         .bind(name)
@@ -89,7 +79,7 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     let mut thought_count = 0;
     for (content, cat_id) in thoughts {
         let result = sqlx::query(
-            "INSERT OR IGNORE INTO mindflow_thoughts (user_id, category_id, content) VALUES (?, ?, ?)",
+            "INSERT INTO mindflow_thoughts (user_id, category_id, content) VALUES (?, ?, ?)",
         )
         .bind(user_id)
         .bind(*cat_id)
@@ -116,7 +106,7 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
             "Draft migration guide for consumers",
         ] {
             sqlx::query(
-                "INSERT OR IGNORE INTO mindflow_thoughts (user_id, category_id, parent_thought_id, content) VALUES (?, ?, ?, ?)",
+                "INSERT INTO mindflow_thoughts (user_id, category_id, parent_thought_id, content) VALUES (?, ?, ?, ?)",
             )
             .bind(user_id)
             .bind(cat_id)
@@ -140,7 +130,7 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
             "Buy glass containers for portion storage",
         ] {
             sqlx::query(
-                "INSERT OR IGNORE INTO mindflow_thoughts (user_id, category_id, parent_thought_id, content) VALUES (?, ?, ?, ?)",
+                "INSERT INTO mindflow_thoughts (user_id, category_id, parent_thought_id, content) VALUES (?, ?, ?, ?)",
             )
             .bind(user_id)
             .bind(cat_id)
@@ -160,12 +150,12 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     .await?;
 
     if let Some((tid,)) = first_thought {
-        sqlx::query("INSERT OR IGNORE INTO mindflow_comments (thought_id, content) VALUES (?, ?)")
+        sqlx::query("INSERT INTO mindflow_comments (thought_id, content) VALUES (?, ?)")
             .bind(tid)
             .bind("Need to update the timeline before the review")
             .execute(pool)
             .await?;
-        sqlx::query("INSERT OR IGNORE INTO mindflow_comments (thought_id, content) VALUES (?, ?)")
+        sqlx::query("INSERT INTO mindflow_comments (thought_id, content) VALUES (?, ?)")
             .bind(tid)
             .bind("Check with DevOps about deployment schedule")
             .execute(pool)
@@ -173,10 +163,6 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
     }
 
     // Actions
-    let action_thoughts: Vec<(i64, &str)> = vec![];
-    let mut action_count = 0u64;
-
-    // Create actions from specific thoughts
     let actionable: Vec<(i64, String)> =
         sqlx::query_as("SELECT id, content FROM mindflow_thoughts WHERE user_id = ? LIMIT 5")
             .bind(user_id)
@@ -194,10 +180,11 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         ("Buy birthday present for Alex", "high", Some("2026-03-16")),
     ];
 
+    let mut action_count = 0u64;
     for (i, (title, priority, due_date)) in action_defs.iter().enumerate() {
         if let Some((thought_id, _)) = actionable.get(i) {
             let result = sqlx::query(
-                "INSERT OR IGNORE INTO mindflow_actions (thought_id, user_id, title, priority, due_date) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO mindflow_actions (thought_id, user_id, title, priority, due_date) VALUES (?, ?, ?, ?, ?)",
             )
             .bind(thought_id)
             .bind(user_id)
@@ -210,9 +197,8 @@ pub async fn run(pool: &SqlitePool, reset: bool) -> Result<()> {
         }
     }
 
-    drop(action_thoughts);
     tracing::info!("Seeded {action_count} actions");
-    tracing::info!("MindFlow seed complete. Run `cargo run -- serve` and login with demo / demo");
+    tracing::info!("MindFlow seed complete");
 
     Ok(())
 }
