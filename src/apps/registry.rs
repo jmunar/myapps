@@ -78,6 +78,43 @@ pub trait App: Send + Sync {
     fn on_serve(&self, _pool: SqlitePool, _config: Arc<Config>) {}
 }
 
+/// Delete all data owned by `app` for a single user.
+///
+/// Discovers tables whose name starts with the app key followed by `_` and that
+/// have a `user_id` column, then deletes all rows for the given user. Existing
+/// `ON DELETE CASCADE` foreign keys handle child rows automatically.
+pub async fn delete_user_app_data(
+    pool: &SqlitePool,
+    app: &dyn App,
+    user_id: i64,
+) -> anyhow::Result<()> {
+    let key = app.info().key;
+    let prefix = format!("{key}_%");
+    let tables: Vec<(String,)> =
+        sqlx::query_as("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ?")
+            .bind(&prefix)
+            .fetch_all(pool)
+            .await?;
+
+    for (table,) in &tables {
+        let has_user_id = sqlx::query_scalar::<_, String>(&format!(
+            "SELECT name FROM pragma_table_info('{table}') WHERE name = 'user_id'"
+        ))
+        .fetch_optional(pool)
+        .await?
+        .is_some();
+
+        if has_user_id {
+            sqlx::query(&format!("DELETE FROM {table} WHERE user_id = ?"))
+                .bind(user_id)
+                .execute(pool)
+                .await?;
+        }
+    }
+    tracing::info!("Cleared all {key} data for user {user_id}");
+    Ok(())
+}
+
 /// All registered app instances.
 pub fn all_app_instances() -> Vec<Box<dyn App>> {
     vec![
@@ -86,6 +123,28 @@ pub fn all_app_instances() -> Vec<Box<dyn App>> {
         Box::new(super::voice_to_text::VoiceToTextApp),
         Box::new(super::classroom_input::ClassroomInputApp),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_app_key_is_prefix_of_another() {
+        let apps = all_app_instances();
+        let keys: Vec<&str> = apps.iter().map(|a| a.info().key).collect();
+        for (i, a) in keys.iter().enumerate() {
+            for (j, b) in keys.iter().enumerate() {
+                if i != j {
+                    let prefix = format!("{a}_");
+                    assert!(
+                        !b.starts_with(&prefix),
+                        "app key {b:?} starts with {a:?}_ — this breaks delete_user_app_data"
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// App instances filtered to those enabled by `DEPLOY_APPS`.

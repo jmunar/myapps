@@ -15,7 +15,7 @@ pub async fn list_recent_jobs(
     limit: i64,
 ) -> Result<Vec<JobSummary>, sqlx::Error> {
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT original_filename, status FROM voice_jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        "SELECT original_filename, status FROM voice_to_text_jobs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
     )
     .bind(user_id)
     .bind(limit)

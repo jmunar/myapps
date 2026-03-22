@@ -1,17 +1,14 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
 
-pub async fn run(pool: &SqlitePool, user_id: i64) -> Result<()> {
-    // Wipe all LeanFin data for this user (cascade handles transactions, snapshots, etc.)
-    sqlx::query("DELETE FROM leanfin_accounts WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    sqlx::query("DELETE FROM leanfin_labels WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    tracing::info!("Cleared existing LeanFin data for user {user_id}");
+use crate::apps::registry::delete_user_app_data;
+
+pub async fn run(
+    pool: &SqlitePool,
+    user_id: i64,
+    app: &dyn crate::apps::registry::App,
+) -> Result<()> {
+    delete_user_app_data(pool, app, user_id).await?;
 
     // Create two bank accounts
     let acct1 = insert_bank_account(

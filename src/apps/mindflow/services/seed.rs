@@ -1,21 +1,14 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
 
-pub async fn run(pool: &SqlitePool, user_id: i64) -> Result<()> {
-    // Wipe all MindFlow data for this user (cascade handles sub-thoughts, comments, actions)
-    sqlx::query("DELETE FROM mindflow_categories WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    sqlx::query("DELETE FROM mindflow_thoughts WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    sqlx::query("DELETE FROM mindflow_actions WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    tracing::info!("Cleared existing MindFlow data for user {user_id}");
+use crate::apps::registry::delete_user_app_data;
+
+pub async fn run(
+    pool: &SqlitePool,
+    user_id: i64,
+    app: &dyn crate::apps::registry::App,
+) -> Result<()> {
+    delete_user_app_data(pool, app, user_id).await?;
 
     // Categories
     let categories = &[

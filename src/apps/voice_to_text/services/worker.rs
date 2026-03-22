@@ -33,10 +33,10 @@ pub fn spawn(pool: SqlitePool, config: Arc<Config>) {
 async fn process_next(pool: &SqlitePool, config: &Config) -> anyhow::Result<()> {
     // Claim the oldest pending job
     let job: Option<PendingJob> = sqlx::query_as(
-        "UPDATE voice_jobs
+        "UPDATE voice_to_text_jobs
          SET status = 'processing'
          WHERE id = (
-             SELECT id FROM voice_jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1
+             SELECT id FROM voice_to_text_jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1
          )
          RETURNING id, audio_path, model_used, original_filename",
     )
@@ -61,7 +61,7 @@ async fn process_next(pool: &SqlitePool, config: &Config) -> anyhow::Result<()> 
     match result {
         Ok(text) => {
             sqlx::query(
-                "UPDATE voice_jobs
+                "UPDATE voice_to_text_jobs
                  SET status = 'done', transcription = ?, duration_secs = ?,
                      completed_at = datetime('now')
                  WHERE id = ?",
@@ -91,7 +91,7 @@ async fn process_next(pool: &SqlitePool, config: &Config) -> anyhow::Result<()> 
         Err(e) => {
             let msg = format!("{e}");
             sqlx::query(
-                "UPDATE voice_jobs
+                "UPDATE voice_to_text_jobs
                  SET status = 'failed', error_message = ?, duration_secs = ?,
                      completed_at = datetime('now')
                  WHERE id = ?",

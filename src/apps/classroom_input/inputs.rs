@@ -59,7 +59,7 @@ async fn list(
 
     let inputs: Vec<InputRow> = sqlx::query_as(
         "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
-         FROM classroom_inputs WHERE user_id = ? ORDER BY created_at DESC",
+         FROM classroom_input_inputs WHERE user_id = ? ORDER BY created_at DESC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -67,19 +67,21 @@ async fn list(
     .unwrap_or_default();
 
     // Pre-fetch classrooms and form types for labels
-    let classrooms: Vec<ClassroomRow> =
-        sqlx::query_as("SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ?")
-            .bind(user_id.0)
-            .fetch_all(&state.pool)
-            .await
-            .unwrap_or_default();
+    let classrooms: Vec<ClassroomRow> = sqlx::query_as(
+        "SELECT id, label, pupils FROM classroom_input_classrooms WHERE user_id = ?",
+    )
+    .bind(user_id.0)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
 
-    let form_types: Vec<FormTypeRow> =
-        sqlx::query_as("SELECT id, name, columns_json FROM classroom_form_types WHERE user_id = ?")
-            .bind(user_id.0)
-            .fetch_all(&state.pool)
-            .await
-            .unwrap_or_default();
+    let form_types: Vec<FormTypeRow> = sqlx::query_as(
+        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ?",
+    )
+    .bind(user_id.0)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
 
     let delete_label = t.inp_delete;
     let delete_confirm = t.inp_delete_confirm;
@@ -173,7 +175,7 @@ async fn new_input_page(
     let t = super::i18n::t(lang);
 
     let classrooms: Vec<ClassroomRow> = sqlx::query_as(
-        "SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ? ORDER BY label ASC",
+        "SELECT id, label, pupils FROM classroom_input_classrooms WHERE user_id = ? ORDER BY label ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -181,7 +183,7 @@ async fn new_input_page(
     .unwrap_or_default();
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_form_types WHERE user_id = ? ORDER BY name ASC",
+        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ? ORDER BY name ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -477,7 +479,7 @@ async fn view(
 
     let inp: Option<InputRow> = sqlx::query_as(
         "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
-         FROM classroom_inputs WHERE id = ? AND user_id = ?",
+         FROM classroom_input_inputs WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id.0)
@@ -522,13 +524,13 @@ async fn view(
     table_html.push_str("</tbody></table>");
 
     let cls_label: Option<String> =
-        sqlx::query_scalar("SELECT label FROM classroom_classrooms WHERE id = ?")
+        sqlx::query_scalar("SELECT label FROM classroom_input_classrooms WHERE id = ?")
             .bind(inp.classroom_id)
             .fetch_optional(&state.pool)
             .await
             .unwrap_or(None);
     let ft_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM classroom_form_types WHERE id = ?")
+        sqlx::query_scalar("SELECT name FROM classroom_input_form_types WHERE id = ?")
             .bind(inp.form_type_id)
             .fetch_optional(&state.pool)
             .await
@@ -573,7 +575,7 @@ async fn delete(
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    sqlx::query("DELETE FROM classroom_inputs WHERE id = ? AND user_id = ?")
+    sqlx::query("DELETE FROM classroom_input_inputs WHERE id = ? AND user_id = ?")
         .bind(id)
         .bind(user_id.0)
         .execute(&state.pool)

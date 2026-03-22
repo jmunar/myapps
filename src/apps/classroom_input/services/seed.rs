@@ -1,21 +1,14 @@
 use anyhow::Result;
 use sqlx::SqlitePool;
 
-pub async fn run(pool: &SqlitePool, user_id: i64) -> Result<()> {
-    // Wipe all ClassroomInput data for this user (cascade handles inputs)
-    sqlx::query("DELETE FROM classroom_inputs WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    sqlx::query("DELETE FROM classroom_form_types WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    sqlx::query("DELETE FROM classroom_classrooms WHERE user_id = ?")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-    tracing::info!("Cleared existing ClassroomInput data for user {user_id}");
+use crate::apps::registry::delete_user_app_data;
+
+pub async fn run(
+    pool: &SqlitePool,
+    user_id: i64,
+    app: &dyn crate::apps::registry::App,
+) -> Result<()> {
+    delete_user_app_data(pool, app, user_id).await?;
 
     // ── Classrooms ────────────────────────────────────────────────
     let classrooms: &[(&str, &[&str])] = &[
@@ -81,7 +74,7 @@ pub async fn run(pool: &SqlitePool, user_id: i64) -> Result<()> {
     for (label, pupils) in classrooms {
         let pupils_text = pupils.join("\n");
         let result = sqlx::query(
-            "INSERT INTO classroom_classrooms (user_id, label, pupils) VALUES (?, ?, ?)",
+            "INSERT INTO classroom_input_classrooms (user_id, label, pupils) VALUES (?, ?, ?)",
         )
         .bind(user_id)
         .bind(label)
@@ -115,7 +108,7 @@ pub async fn run(pool: &SqlitePool, user_id: i64) -> Result<()> {
     let mut ft_count = 0u64;
     for (name, columns_json) in form_types {
         let result = sqlx::query(
-            "INSERT INTO classroom_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
+            "INSERT INTO classroom_input_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
         )
         .bind(user_id)
         .bind(name)
@@ -228,7 +221,7 @@ Mario Campos,6,6,5,Needs improvement";
 
 async fn cls_id(pool: &SqlitePool, user_id: i64, label: &str) -> Option<i64> {
     sqlx::query_as::<_, (i64,)>(
-        "SELECT id FROM classroom_classrooms WHERE user_id = ? AND label = ?",
+        "SELECT id FROM classroom_input_classrooms WHERE user_id = ? AND label = ?",
     )
     .bind(user_id)
     .bind(label)
@@ -241,7 +234,7 @@ async fn cls_id(pool: &SqlitePool, user_id: i64, label: &str) -> Option<i64> {
 
 async fn ft_id(pool: &SqlitePool, user_id: i64, name: &str) -> Option<i64> {
     sqlx::query_as::<_, (i64,)>(
-        "SELECT id FROM classroom_form_types WHERE user_id = ? AND name = ?",
+        "SELECT id FROM classroom_input_form_types WHERE user_id = ? AND name = ?",
     )
     .bind(user_id)
     .bind(name)
@@ -261,7 +254,7 @@ async fn insert_input(
     csv: &str,
 ) -> u64 {
     sqlx::query(
-        "INSERT INTO classroom_inputs (user_id, classroom_id, form_type_id, name, csv_data) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO classroom_input_inputs (user_id, classroom_id, form_type_id, name, csv_data) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(user_id)
     .bind(classroom_id)

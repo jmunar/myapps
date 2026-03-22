@@ -452,7 +452,7 @@ Missing rows default to visible — existing users see no change.
 | auth       | TEXT    | NOT NULL                       |
 | created_at | TEXT    | ISO 8601                       |
 
-### voice_jobs
+### voice_to_text_jobs
 
 | Column            | Type    | Notes                                        |
 |-------------------|---------|----------------------------------------------|
@@ -470,7 +470,7 @@ Missing rows default to visible — existing users see no change.
 
 Check constraint: `status != 'done' OR transcription IS NOT NULL`.
 
-### classroom_classrooms
+### classroom_input_classrooms
 
 | Column     | Type    | Notes                          |
 |------------|---------|--------------------------------|
@@ -480,7 +480,7 @@ Check constraint: `status != 'done' OR transcription IS NOT NULL`.
 | pupils     | TEXT    | Newline-separated pupil names  |
 | created_at | TEXT    | ISO 8601                       |
 
-### classroom_form_types
+### classroom_input_form_types
 
 | Column       | Type    | Notes                                          |
 |--------------|---------|-------------------------------------------------|
@@ -491,14 +491,14 @@ Check constraint: `status != 'done' OR transcription IS NOT NULL`.
 | created_at   | TEXT    | ISO 8601                                       |
 | updated_at   | TEXT    | ISO 8601                                       |
 
-### classroom_inputs
+### classroom_input_inputs
 
 | Column       | Type    | Notes                                 |
 |--------------|---------|---------------------------------------|
 | id           | INTEGER | PK, autoincrement                     |
 | user_id      | INTEGER | FK → users                            |
-| classroom_id | INTEGER | FK → classroom_classrooms             |
-| form_type_id | INTEGER | FK → classroom_form_types             |
+| classroom_id | INTEGER | FK → classroom_input_classrooms             |
+| form_type_id | INTEGER | FK → classroom_input_form_types             |
 | name         | TEXT    | NOT NULL                              |
 | csv_data     | TEXT    | Raw CSV (header + one row per pupil)  |
 | created_at   | TEXT    | ISO 8601                              |
@@ -509,13 +509,13 @@ Check constraint: `status != 'done' OR transcription IS NOT NULL`.
 User uploads audio (or records via browser mic)
   │
   ├─ Axum handler saves file to data/voice_uploads/<uuid>.<ext>
-  ├─ INSERT voice_jobs row with status = 'pending'
+  ├─ INSERT voice_to_text_jobs row with status = 'pending'
   │
   └─ Background worker (polls every 5s)
       ├─ Claims oldest pending job (atomic UPDATE...RETURNING)
       ├─ ffmpeg converts to 16kHz mono WAV
       ├─ whisper-cli transcribes using configured model
-      ├─ UPDATE voice_jobs with transcription text (or error)
+      ├─ UPDATE voice_to_text_jobs with transcription text (or error)
       └─ Send Web Push notification (success or failure)
 ```
 

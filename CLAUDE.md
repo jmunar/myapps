@@ -85,7 +85,7 @@ make run                            # Start dev server
   App-specific translations live in each app's `i18n.rs` module. Both use
   compile-time struct-based translations; adding a field forces both EN and ES
   to be updated.
-- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`, `classroom_classrooms`).
+- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `classroom_input_classrooms`).
 - When adding or removing environment variables, update all four places:
   `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`
   (`setup()`), and the Environment Variables section in `docs/deployment.md`.

@@ -13,7 +13,7 @@ pub async fn create_input(
     csv_data: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO classroom_inputs (user_id, classroom_id, form_type_id, name, csv_data) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO classroom_input_inputs (user_id, classroom_id, form_type_id, name, csv_data) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(user_id)
     .bind(classroom_id)
@@ -27,7 +27,7 @@ pub async fn create_input(
 
 /// Delete a classroom. Associated inputs are removed by ON DELETE CASCADE.
 pub async fn delete_classroom(pool: &SqlitePool, user_id: i64, id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM classroom_classrooms WHERE id = ? AND user_id = ?")
+    sqlx::query("DELETE FROM classroom_input_classrooms WHERE id = ? AND user_id = ?")
         .bind(id)
         .bind(user_id)
         .execute(pool)
@@ -37,7 +37,7 @@ pub async fn delete_classroom(pool: &SqlitePool, user_id: i64, id: i64) -> Resul
 
 /// Delete a form type. Associated inputs are removed by ON DELETE CASCADE.
 pub async fn delete_form_type(pool: &SqlitePool, user_id: i64, id: i64) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM classroom_form_types WHERE id = ? AND user_id = ?")
+    sqlx::query("DELETE FROM classroom_input_form_types WHERE id = ? AND user_id = ?")
         .bind(id)
         .bind(user_id)
         .execute(pool)
@@ -53,7 +53,7 @@ pub async fn find_classroom_by_label(
     label: &str,
 ) -> Result<Option<i64>, sqlx::Error> {
     let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM classroom_classrooms WHERE user_id = ? AND LOWER(label) = LOWER(?) LIMIT 1",
+        "SELECT id FROM classroom_input_classrooms WHERE user_id = ? AND LOWER(label) = LOWER(?) LIMIT 1",
     )
     .bind(user_id)
     .bind(label)
@@ -68,7 +68,7 @@ pub async fn find_form_type_by_name(
     name: &str,
 ) -> Result<Option<i64>, sqlx::Error> {
     let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM classroom_form_types WHERE user_id = ? AND LOWER(name) = LOWER(?) LIMIT 1",
+        "SELECT id FROM classroom_input_form_types WHERE user_id = ? AND LOWER(name) = LOWER(?) LIMIT 1",
     )
     .bind(user_id)
     .bind(name)
@@ -78,20 +78,22 @@ pub async fn find_form_type_by_name(
 }
 
 pub async fn list_classrooms(pool: &SqlitePool, user_id: i64) -> Result<Vec<String>, sqlx::Error> {
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT label FROM classroom_classrooms WHERE user_id = ? ORDER BY label")
-            .bind(user_id)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT label FROM classroom_input_classrooms WHERE user_id = ? ORDER BY label",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
 pub async fn list_form_types(pool: &SqlitePool, user_id: i64) -> Result<Vec<String>, sqlx::Error> {
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT name FROM classroom_form_types WHERE user_id = ? ORDER BY name")
-            .bind(user_id)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT name FROM classroom_input_form_types WHERE user_id = ? ORDER BY name",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 

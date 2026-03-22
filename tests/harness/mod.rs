@@ -86,7 +86,8 @@ impl TestApp {
         let user_id = myapps::auth::create_user(&self.pool, "seeduser", "seeduser")
             .await
             .unwrap();
-        myapps::apps::leanfin::services::seed::run(&self.pool, user_id)
+        let app = myapps::apps::leanfin::LeanFinApp;
+        myapps::apps::leanfin::services::seed::run(&self.pool, user_id, &app)
             .await
             .unwrap();
 

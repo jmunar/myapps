@@ -36,7 +36,7 @@ async fn list(
     let t = super::i18n::t(lang);
 
     let classrooms: Vec<ClassroomRow> = sqlx::query_as(
-        "SELECT id, label, pupils FROM classroom_classrooms WHERE user_id = ? ORDER BY label ASC",
+        "SELECT id, label, pupils FROM classroom_input_classrooms WHERE user_id = ? ORDER BY label ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -155,7 +155,7 @@ async fn create(
         .collect::<Vec<_>>()
         .join("\n");
 
-    sqlx::query("INSERT INTO classroom_classrooms (user_id, label, pupils) VALUES (?, ?, ?)")
+    sqlx::query("INSERT INTO classroom_input_classrooms (user_id, label, pupils) VALUES (?, ?, ?)")
         .bind(user_id.0)
         .bind(form.label.trim())
         .bind(&cleaned)
