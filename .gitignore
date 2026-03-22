@@ -7,3 +7,7 @@ data/
 deploy/*.env
 models/
 models
+node_modules/
+package.json
+package-lock.json
+test-results/
