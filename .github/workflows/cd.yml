@@ -18,6 +18,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Mask sensitive values
+        run: |
+          echo "::add-mask::${{ vars.DEPLOY_SERVER }}"
+          echo "::add-mask::$(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)"
+          echo "::add-mask::${{ vars.DEPLOY_DOMAIN }}"
+          echo "::add-mask::${{ vars.DEPLOY_REMOTE_DIR }}"
+          echo "::add-mask::${{ vars.DEPLOY_REMOTE_BUILD_DIR }}"
+
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
@@ -45,7 +53,8 @@ jobs:
           DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
-          DEPLOY_SEED_APPS="${{ vars.DEPLOY_SEED_APPS }}"
+          DEPLOY_SEED=${{ vars.DEPLOY_SEED }}
+          DEPLOY_USER_CLEANUP_DAYS=${{ vars.DEPLOY_USER_CLEANUP_DAYS }}
           EOF
 
       - name: Deploy to staging
@@ -54,7 +63,7 @@ jobs:
       - name: Smoke test
         run: |
           URL="https://${{ vars.DEPLOY_DOMAIN }}/login"
-          echo "Checking $URL ..."
+          echo "Checking smoke test..."
           for i in 1 2 3 4 5; do
             STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" || true)
             echo "  Attempt $i: HTTP $STATUS"
@@ -75,6 +84,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+
+      - name: Mask sensitive values
+        run: |
+          echo "::add-mask::${{ vars.DEPLOY_SERVER }}"
+          echo "::add-mask::$(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)"
+          echo "::add-mask::${{ vars.DEPLOY_DOMAIN }}"
+          echo "::add-mask::${{ vars.DEPLOY_REMOTE_DIR }}"
+          echo "::add-mask::${{ vars.DEPLOY_REMOTE_BUILD_DIR }}"
 
       - name: Configure SSH
         run: |
@@ -103,7 +120,8 @@ jobs:
           DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
-          DEPLOY_SEED_APPS="${{ vars.DEPLOY_SEED_APPS }}"
+          DEPLOY_SEED=${{ vars.DEPLOY_SEED }}
+          DEPLOY_USER_CLEANUP_DAYS=${{ vars.DEPLOY_USER_CLEANUP_DAYS }}
           EOF
 
       - name: Deploy to production
@@ -112,7 +130,7 @@ jobs:
       - name: Smoke test
         run: |
           URL="https://${{ vars.DEPLOY_DOMAIN }}/login"
-          echo "Checking $URL ..."
+          echo "Checking smoke test..."
           for i in 1 2 3 4 5; do
             STATUS=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" || true)
             echo "  Attempt $i: HTTP $STATUS"
