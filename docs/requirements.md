@@ -170,8 +170,11 @@ visibility into spending patterns.
 - **Account management** — re-authorize expired bank sessions and delete
   accounts from the UI.
 - **Integration test infrastructure** — HTTP-level tests using axum-test with
-  in-memory SQLite, covering auth flows, transaction list/filtering, and label
-  CRUD. A Claude Code agent automates test generation for new features.
+  in-memory SQLite, covering all apps: auth flows, launcher, settings, invite
+  registration, and per-app route/CRUD testing for LeanFin, MindFlow,
+  VoiceToText, and ClassroomInput. A Claude Code agent automates test
+  generation for new features. The `/finish-development` command includes a
+  frontend test generation step.
 - **Account balances** — fetch and display account balances from Enable Banking
   during sync. Balances are shown on the accounts page and as a running balance
   column in the transaction list.
@@ -334,8 +337,10 @@ users upload audio and are notified when the result is ready.
 - **Job deletion** — delete any job (any status) from the jobs list, removing
   the audio file from disk.
 
+- **Integration tests** — frontend tests for dashboard, job detail, new form,
+  delete, and list partial endpoints using axum-test.
+
 #### Not yet implemented
 - **Language selection** — currently auto-detected; allow explicit language choice.
 - **Max duration enforcement** — limit upload size/duration to bound processing time.
 - **Seed data** — demo jobs for development.
-- **Integration tests** — frontend tests for upload and job list pages.
