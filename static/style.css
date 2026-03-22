@@ -1987,3 +1987,222 @@ nav a.brand:hover {
     .ci-pupil-name { font-size: 0.7rem; max-width: 5.5rem; padding: 0 0.25rem; }
     .ci-cell-input, .ci-cell-select { font-size: 0.8rem; padding: 0.15rem 0.25rem; height: 1.8rem; }
 }
+
+/* ── Voice Command Bar ─────────────────────────────────────── */
+
+/* Floating mic button */
+.cmd-mic-btn {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    box-shadow: var(--shadow-lg);
+    cursor: pointer;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.cmd-mic-btn:hover { background: var(--accent-hover); }
+.cmd-mic-btn svg {
+    width: 1.5rem;
+    height: 1.5rem;
+    pointer-events: none;
+}
+
+/* While held down & recording */
+.cmd-mic-btn.recording {
+    background: var(--negative);
+    width: 4rem;
+    height: 4rem;
+    bottom: 1.25rem;
+    right: 1.25rem;
+    animation: cmd-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cmd-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(184, 66, 58, 0.5); }
+    50% { box-shadow: 0 0 0 14px rgba(184, 66, 58, 0); }
+}
+
+/* Swiped past threshold — faded out */
+.cmd-mic-btn.discarding {
+    opacity: 0.3;
+    animation: none;
+}
+
+/* Swipe-left arrow hint */
+.cmd-swipe-hint {
+    position: fixed;
+    bottom: 2.2rem;
+    right: 5.5rem;
+    font-size: 1.6rem;
+    color: var(--negative);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 999;
+    transition: opacity 0.1s;
+    font-weight: 700;
+}
+.cmd-swipe-hint.visible { display: block; }
+
+/* Floating result window */
+.cmd-window {
+    position: fixed;
+    bottom: 5.5rem;
+    right: 1.5rem;
+    width: 22rem;
+    max-width: calc(100vw - 2rem);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    z-index: 1001;
+    overflow: hidden;
+    animation: cmd-window-in 0.2s var(--ease);
+}
+@keyframes cmd-window-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.cmd-window-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: var(--bg-nav);
+    color: var(--text-nav-active);
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+.cmd-window-close {
+    background: none;
+    border: none;
+    color: var(--text-nav);
+    font-size: 1.25rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+.cmd-window-close:hover { color: var(--text-nav-active); }
+
+.cmd-status {
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+.cmd-transcription {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-light);
+}
+.cmd-transcription span {
+    flex: 1;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+.cmd-edit-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    padding: 0.1rem 0.3rem;
+    border-radius: var(--radius);
+    transition: color 0.15s var(--ease);
+}
+.cmd-edit-btn:hover { color: var(--accent); }
+
+.cmd-edit-area {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-light);
+}
+.cmd-edit-area textarea {
+    width: 100%;
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    resize: vertical;
+    margin-bottom: 0.5rem;
+    background: var(--bg-input);
+    color: var(--text);
+    box-sizing: border-box;
+}
+.cmd-edit-area .btn { width: 100%; }
+
+/* Command confirmation / result inside window */
+.command-confirm {
+    padding: 0.75rem 1rem;
+}
+.command-confirm-header {
+    margin-bottom: 0.5rem;
+}
+.command-confirm-app {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-right: 0.5rem;
+}
+.command-confirm-desc {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+.command-confirm-params {
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+}
+.command-confirm-confidence {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+}
+.command-confirm-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+.command-error {
+    color: var(--negative);
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+}
+.command-success {
+    color: var(--positive);
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+}
+
+@media (max-width: 640px) {
+    .cmd-window {
+        right: 0.5rem;
+        left: 0.5rem;
+        width: auto;
+        bottom: 5.5rem;
+    }
+    .cmd-mic-btn {
+        bottom: 1rem;
+        right: 1rem;
+    }
+    .cmd-mic-btn.recording {
+        bottom: 0.75rem;
+        right: 0.75rem;
+    }
+    .cmd-swipe-hint {
+        bottom: 1.7rem;
+        right: 4.5rem;
+    }
+}

@@ -436,6 +436,17 @@ pub struct Translations {
     pub cmd_confidence: &'static str,
     pub cmd_confirm: &'static str,
     pub cmd_cancel: &'static str,
+
+    // ── Command Bar (voice) ──────────────────────────────────
+    pub cmd_record: &'static str,
+    pub cmd_voice_command: &'static str,
+    pub cmd_recording: &'static str,
+    pub cmd_transcribing: &'static str,
+    pub cmd_interpreting: &'static str,
+    pub cmd_edit: &'static str,
+    pub cmd_edit_done: &'static str,
+    pub cmd_transcribe_error: &'static str,
+    pub cmd_mic_no_permission: &'static str,
 }
 
 impl Translations {

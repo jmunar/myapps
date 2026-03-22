@@ -49,6 +49,7 @@ pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> Tes
         whisper_models_dir: "models".into(),
         deploy_apps,
         llama_server_url: String::new(),
+        static_version: String::new(),
     };
 
     let app = myapps::routes::build_router(pool.clone(), config);

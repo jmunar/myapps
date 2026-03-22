@@ -23,6 +23,7 @@ pub struct AppState {
 /// Build the application router without binding to a port.
 /// Used by both `serve` and integration tests.
 pub fn build_router(pool: SqlitePool, config: Config) -> Router {
+    tracing::info!("Static assets version: {}", config.static_version);
     let state = AppState {
         pool: pool.clone(),
         config: Arc::new(config),

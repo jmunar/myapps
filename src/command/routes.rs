@@ -2,7 +2,8 @@ use super::{CommandIntent, collect_commands, validate_intent};
 use crate::auth::UserId;
 use crate::i18n::{self, Lang};
 use crate::routes::AppState;
-use axum::extract::Extension;
+use axum::extract::{Extension, Multipart};
+use axum::http::StatusCode;
 use axum::response::Html;
 use axum::{Form, Router, routing::post};
 use serde::Deserialize;
@@ -11,6 +12,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/interpret", post(interpret))
         .route("/execute", post(execute))
+        .route("/transcribe", post(transcribe))
 }
 
 #[derive(Deserialize)]
@@ -145,7 +147,7 @@ fn render_confirmation(
             <input type="hidden" name="intent" value="{intent_escaped}">
             <button type="submit" class="btn btn-primary">{confirm}</button>
         </form>
-        <button type="button" class="btn" onclick="document.getElementById('command-result').innerHTML=''">{cancel}</button>
+        <button type="button" class="btn cmd-cancel-btn" onclick="document.getElementById('command-result').innerHTML=''">{cancel}</button>
     </div>
 </div>"##,
         params_html = if params_summary.is_empty() {
@@ -268,4 +270,59 @@ async fn execute(
             t.cmd_error
         )),
     }
+}
+
+/// Accept recorded audio, transcribe via whisper, return plain text.
+async fn transcribe(
+    state: axum::extract::State<AppState>,
+    Extension(_user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    mut multipart: Multipart,
+) -> Result<String, (StatusCode, String)> {
+    let t = i18n::t(lang);
+
+    let models = state.config.available_whisper_models();
+    let model = models.first().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        t.cmd_transcribe_error.to_string(),
+    ))?;
+
+    // Extract audio from multipart
+    let mut audio_bytes = None;
+    while let Ok(Some(field)) = multipart.next_field().await {
+        if field.name() == Some("audio") {
+            audio_bytes = field.bytes().await.ok();
+        }
+    }
+    let bytes = audio_bytes.ok_or((
+        StatusCode::BAD_REQUEST,
+        t.cmd_transcribe_error.to_string(),
+    ))?;
+
+    // Write to temp file
+    let dir = std::path::PathBuf::from("data/cmd_uploads");
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let file_id = uuid::Uuid::new_v4();
+    let path = dir.join(format!("{file_id}.webm"));
+    tokio::fs::write(&path, &bytes)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Convert + transcribe
+    let wav_path =
+        crate::apps::voice_to_text::services::transcriber::convert_to_wav(&path)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let text =
+        crate::apps::voice_to_text::services::transcriber::transcribe(&state.config, &wav_path, model)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Cleanup temp files
+    let _ = tokio::fs::remove_file(&path).await;
+    let _ = tokio::fs::remove_file(&wav_path).await;
+
+    Ok(text)
 }
