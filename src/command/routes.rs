@@ -294,10 +294,7 @@ async fn transcribe(
             audio_bytes = field.bytes().await.ok();
         }
     }
-    let bytes = audio_bytes.ok_or((
-        StatusCode::BAD_REQUEST,
-        t.cmd_transcribe_error.to_string(),
-    ))?;
+    let bytes = audio_bytes.ok_or((StatusCode::BAD_REQUEST, t.cmd_transcribe_error.to_string()))?;
 
     // Write to temp file
     let dir = std::path::PathBuf::from("data/cmd_uploads");
@@ -311,14 +308,16 @@ async fn transcribe(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Convert + transcribe
-    let wav_path =
-        crate::apps::voice_to_text::services::transcriber::convert_to_wav(&path)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let text =
-        crate::apps::voice_to_text::services::transcriber::transcribe(&state.config, &wav_path, model)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let wav_path = crate::apps::voice_to_text::services::transcriber::convert_to_wav(&path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let text = crate::apps::voice_to_text::services::transcriber::transcribe(
+        &state.config,
+        &wav_path,
+        model,
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     // Cleanup temp files
     let _ = tokio::fs::remove_file(&path).await;
