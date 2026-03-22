@@ -87,6 +87,10 @@ impl App for MindFlowApp {
         }
     }
 
+    fn migrations(&self) -> sqlx::migrate::Migrator {
+        sqlx::migrate!("src/apps/mindflow/migrations")
+    }
+
     fn router(&self) -> Router<AppState> {
         router()
     }
@@ -118,6 +122,6 @@ impl App for MindFlowApp {
         user_id: i64,
     ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
     {
-        Some(Box::pin(services::seed::run(pool, user_id)))
+        Some(Box::pin(services::seed::run(pool, user_id, self)))
     }
 }

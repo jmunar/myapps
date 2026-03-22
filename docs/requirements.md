@@ -115,6 +115,10 @@ visibility into spending patterns.
   automatically logged in. The admin never sees the user's password.
 - **Auto-seed on registration** — when `SEED=true`, new users who register
   via invite automatically get demo data seeded for all deployed apps.
+- **User deletion** — `delete-user --username <name>` deletes a user and all
+  their data (CASCADE). `delete-user-app-data --username <name>` removes only
+  app data while keeping the user account; an optional `--app <key>` flag
+  targets a single app.
 - **Inactive user cleanup** — `cleanup-users --days N` deletes users whose
   last activity was more than N days ago. Activity is tracked via
   `last_active_at` (updated hourly by auth middleware). Used in staging to

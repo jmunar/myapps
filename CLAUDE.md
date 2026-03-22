@@ -22,6 +22,9 @@ cargo run -- cron                   # Run scheduled app tasks (e.g. bank sync)
 cargo run -- create-user            # Create a user (admin, direct password)
 cargo run -- invite                 # Generate a single-use invite link (48h)
 cargo run -- seed --user <name>              # Seed all apps for a user
+cargo run -- delete-user --username <name>      # Delete a user and all their data
+cargo run -- delete-user-app-data --username <name>          # Delete all app data (keeps user)
+cargo run -- delete-user-app-data --username <name> --app X  # Delete data for one app
 cargo run -- cleanup-users --days 7             # Delete users inactive >7 days
 
 # Makefile shortcuts
@@ -61,7 +64,10 @@ make run                            # Start dev server
 ## Project Conventions
 
 - SQL queries use runtime-checked sqlx (no compile-time macros).
-- Migrations live in `migrations/` and run automatically on startup.
+- Core migrations (auth, sessions, settings) live in `migrations/`.
+  App-specific migrations live in each app's `migrations/` directory
+  (e.g. `src/apps/leanfin/migrations/`). All are merged by timestamp
+  and run automatically on startup via `db::migrator()`.
 - Environment variables are loaded from `.env` in development (via dotenvy).
 - No secrets in the repo. See `.env.example` for required variables.
 - Keep memory footprint minimal — avoid unnecessary allocations and large
@@ -74,9 +80,9 @@ make run                            # Start dev server
   services) stays at the top level. Shared services (whisper transcription,
   push notifications) live in `src/services/`.
 - Each app implements the `App` trait in `src/apps/registry.rs`. The trait
-  provides hooks for routing, commands, seeding, scheduled tasks (`cron`),
-  and background workers (`on_serve`). Adding a new app means implementing
-  the trait and registering in `all_app_instances()`.
+  provides hooks for migrations, routing, commands, seeding, scheduled tasks
+  (`cron`), and background workers (`on_serve`). Adding a new app means
+  implementing the trait and registering in `all_app_instances()`.
 - The command bar module (`src/command/`) handles LLM-powered natural-language
   command interpretation and execution via a llama.cpp server.
 - Each app exposes an `ops.rs` module with shared action functions callable from
@@ -85,7 +91,7 @@ make run                            # Start dev server
   App-specific translations live in each app's `i18n.rs` module. Both use
   compile-time struct-based translations; adding a field forces both EN and ES
   to be updated.
-- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_jobs`, `classroom_classrooms`).
+- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `classroom_input_classrooms`).
 - When adding or removing environment variables, update all four places:
   `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`
   (`setup()`), and the Environment Variables section in `docs/deployment.md`.

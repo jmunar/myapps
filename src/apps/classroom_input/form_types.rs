@@ -69,7 +69,7 @@ async fn list(
     let t = super::i18n::t(lang);
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_form_types WHERE user_id = ? ORDER BY name ASC",
+        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ? ORDER BY name ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -210,13 +210,15 @@ async fn create(
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
 
-    sqlx::query("INSERT INTO classroom_form_types (user_id, name, columns_json) VALUES (?, ?, ?)")
-        .bind(user_id.0)
-        .bind(form.name.trim())
-        .bind(&json)
-        .execute(&state.pool)
-        .await
-        .ok();
+    sqlx::query(
+        "INSERT INTO classroom_input_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
+    )
+    .bind(user_id.0)
+    .bind(form.name.trim())
+    .bind(&json)
+    .execute(&state.pool)
+    .await
+    .ok();
     Redirect::to(&format!("{base}/classroom/form-types"))
 }
 
@@ -230,7 +232,7 @@ async fn edit_page(
     let t = super::i18n::t(lang);
 
     let ft: Option<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_form_types WHERE id = ? AND user_id = ?",
+        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id.0)
@@ -384,7 +386,7 @@ async fn edit(
     let json = serde_json::to_string(&columns).unwrap_or_default();
 
     sqlx::query(
-        "UPDATE classroom_form_types SET name = ?, columns_json = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        "UPDATE classroom_input_form_types SET name = ?, columns_json = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
     )
     .bind(form.name.trim())
     .bind(&json)

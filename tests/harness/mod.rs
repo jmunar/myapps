@@ -34,7 +34,7 @@ pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> Tes
         .await
         .unwrap();
 
-    sqlx::migrate!().run(&pool).await.unwrap();
+    myapps::db::migrator().run(&pool).await.unwrap();
 
     let config = myapps::config::Config {
         database_url: db_url,
@@ -86,7 +86,8 @@ impl TestApp {
         let user_id = myapps::auth::create_user(&self.pool, "seeduser", "seeduser")
             .await
             .unwrap();
-        myapps::apps::leanfin::services::seed::run(&self.pool, user_id)
+        let app = myapps::apps::leanfin::LeanFinApp;
+        myapps::apps::leanfin::services::seed::run(&self.pool, user_id, &app)
             .await
             .unwrap();
 

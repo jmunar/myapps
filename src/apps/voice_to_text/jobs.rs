@@ -194,7 +194,7 @@ async fn upload(
 
     // Create job row
     let result = sqlx::query(
-        "INSERT INTO voice_jobs (user_id, original_filename, audio_path, model_used)
+        "INSERT INTO voice_to_text_jobs (user_id, original_filename, audio_path, model_used)
          VALUES (?, ?, ?, ?)",
     )
     .bind(user_id.0)
@@ -280,7 +280,7 @@ async fn render_jobs_tbody(
 ) -> String {
     let jobs: Vec<JobRow> = sqlx::query_as(
         "SELECT id, status, original_filename, model_used, created_at, completed_at
-         FROM voice_jobs
+         FROM voice_to_text_jobs
          WHERE user_id = ?
          ORDER BY created_at DESC
          LIMIT 50",
@@ -322,7 +322,7 @@ async fn job_detail(
     let job: Option<JobDetail> = sqlx::query_as(
         "SELECT id, status, original_filename, transcription, error_message,
                 model_used, duration_secs, created_at, completed_at
-         FROM voice_jobs
+         FROM voice_to_text_jobs
          WHERE id = ? AND user_id = ?",
     )
     .bind(job_id)
@@ -459,7 +459,7 @@ async fn delete_job(
 ) -> Html<String> {
     // Delete the audio file if it exists
     let path: Option<(String,)> =
-        sqlx::query_as("SELECT audio_path FROM voice_jobs WHERE id = ? AND user_id = ?")
+        sqlx::query_as("SELECT audio_path FROM voice_to_text_jobs WHERE id = ? AND user_id = ?")
             .bind(job_id)
             .bind(user_id.0)
             .fetch_optional(&state.pool)
@@ -473,7 +473,7 @@ async fn delete_job(
         let _ = tokio::fs::remove_file(wav).await;
     }
 
-    sqlx::query("DELETE FROM voice_jobs WHERE id = ? AND user_id = ?")
+    sqlx::query("DELETE FROM voice_to_text_jobs WHERE id = ? AND user_id = ?")
         .bind(job_id)
         .bind(user_id.0)
         .execute(&state.pool)
@@ -500,7 +500,7 @@ async fn retry_job(
     if available.contains(&form.model) {
         // Look up the original job to reuse its audio file
         let original: Option<(String, String)> = sqlx::query_as(
-            "SELECT original_filename, audio_path FROM voice_jobs WHERE id = ? AND user_id = ?",
+            "SELECT original_filename, audio_path FROM voice_to_text_jobs WHERE id = ? AND user_id = ?",
         )
         .bind(job_id)
         .bind(user_id.0)
@@ -510,7 +510,7 @@ async fn retry_job(
 
         if let Some((filename, audio_path)) = original {
             sqlx::query(
-                "INSERT INTO voice_jobs (user_id, original_filename, audio_path, model_used)
+                "INSERT INTO voice_to_text_jobs (user_id, original_filename, audio_path, model_used)
                  VALUES (?, ?, ?, ?)",
             )
             .bind(user_id.0)

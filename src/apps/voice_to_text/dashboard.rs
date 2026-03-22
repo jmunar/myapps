@@ -99,7 +99,7 @@ async fn index(
 
     let jobs: Vec<JobRow> = sqlx::query_as(
         "SELECT id, status, original_filename, model_used, created_at, completed_at
-         FROM voice_jobs
+         FROM voice_to_text_jobs
          WHERE user_id = ?
          ORDER BY created_at DESC
          LIMIT 50",

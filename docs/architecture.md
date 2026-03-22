@@ -29,6 +29,9 @@ myapps create-user          # Create a user from the command line
 myapps invite               # Generate a single-use invite link (48h)
 myapps generate-vapid-keys  # Generate VAPID key pair for push notifications
 myapps seed --user <name>           # Seed all apps for a user (cleans existing app data)
+myapps delete-user --username <name>            # Delete a user and all their data
+myapps delete-user-app-data --username <name>   # Delete all app data (keeps user account)
+myapps delete-user-app-data --username <name> --app leanfin  # Delete data for one app only
 myapps cleanup-users --days 7       # Delete users inactive for >7 days
 ```
 
@@ -39,7 +42,7 @@ All subcommands share the same configuration and database.
 ```
 myapps/
 ├── docs/                    # Documentation
-├── migrations/              # SQLite migrations (sqlx)
+├── migrations/              # Core SQLite migrations (auth, sessions, settings)
 ├── tests/                   # Integration tests (axum-test)
 │   ├── harness/mod.rs       # Test harness: in-memory DB, login helpers
 │   ├── auth_tests.rs        # Platform auth flow tests
@@ -81,6 +84,7 @@ myapps/
 │   └── apps/                # Sub-applications
 │       ├── registry.rs      # App trait + registry (AppInfo, App trait, deployed_app_instances())
 │       ├── leanfin/         # LeanFin expense tracker
+│           ├── migrations/  # LeanFin database migrations
 │           ├── mod.rs       # LeanFin router + App trait impl
 │           ├── i18n.rs      # LeanFin translations (EN/ES)
 │           ├── ops.rs       # Shared action functions (command bar + handlers)
@@ -101,6 +105,7 @@ myapps/
 │               ├── labeling.rs        # Auto-labeling engine
 │               └── seed.rs            # Demo data seeding
 │       ├── mindflow/        # MindFlow thought capture + mind map
+│       │   ├── migrations/  # MindFlow database migrations
 │       │   ├── mod.rs       # MindFlow router + nav + App trait impl
 │       │   ├── i18n.rs      # MindFlow translations (EN/ES)
 │       │   ├── ops.rs       # Shared action functions (command bar + handlers)
@@ -112,6 +117,7 @@ myapps/
 │       │   └── services/
 │       │       └── seed.rs  # Demo data seeding
 │       ├── voice_to_text/   # VoiceToText audio transcription
+│       │   ├── migrations/  # VoiceToText database migrations
 │       │   ├── mod.rs       # VoiceToText router + App trait impl
 │       │   ├── i18n.rs      # VoiceToText translations (EN/ES)
 │       │   ├── ops.rs       # Shared action functions (command bar + handlers)
@@ -120,6 +126,7 @@ myapps/
 │       │   └── services/
 │       │       └── worker.rs       # Background job worker (polls pending jobs)
 │       └── classroom_input/ # ClassroomInput marks & notes recording
+│           ├── migrations/  # ClassroomInput database migrations
 │           ├── mod.rs       # ClassroomInput router + nav + App trait impl
 │           ├── i18n.rs      # ClassroomInput translations (EN/ES)
 │           ├── ops.rs       # Shared action functions (command bar + handlers)
@@ -258,171 +265,11 @@ After login, the top-level router serves:
 | used_at    | TEXT | Nullable, set when invite is consumed  |
 | created_at | TEXT | ISO 8601                               |
 
-### leanfin_accounts
-
-| Column             | Type    | Notes                                     |
-|--------------------|---------|-------------------------------------------|
-| id                 | INTEGER | PK, autoincrement                         |
-| user_id            | INTEGER | FK → users                                |
-| bank_name          | TEXT    | Bank name (or account name for manual)    |
-| bank_country       | TEXT    | ISO 3166-1 alpha-2 (empty for manual)     |
-| iban               | TEXT    | Nullable                                  |
-| session_id         | TEXT    | Enable Banking session ID (placeholder for manual) |
-| account_uid        | TEXT    | Enable Banking account UID, UNIQUE (generated UUID for manual) |
-| balance_amount     | REAL    | Nullable, latest balance                  |
-| balance_currency   | TEXT    | Nullable, ISO 4217 currency               |
-| session_expires_at | TEXT    | ISO 8601, when consent expires            |
-| account_type       | TEXT    | 'bank' or 'manual', default 'bank'       |
-| account_name       | TEXT    | Nullable, display name for manual accounts |
-| asset_category     | TEXT    | Nullable, e.g. investment, real_estate, vehicle, loan, crypto |
-| archived           | INTEGER | 0 or 1, default 0. Archived accounts are read-only |
-| created_at         | TEXT    | ISO 8601                                  |
-
-### leanfin_user_settings
-
-| Column                | Type    | Notes                                          |
-|-----------------------|---------|-------------------------------------------------|
-| user_id               | INTEGER | PK, FK → users, ON DELETE CASCADE               |
-| enable_banking_app_id | TEXT    | Nullable, Enable Banking application ID         |
-| enable_banking_key    | BLOB    | Nullable, AES-256-GCM encrypted RSA private key (nonce prepended) |
-| updated_at            | TEXT    | ISO 8601                                        |
-
-### leanfin_pending_links
-
-| Column     | Type    | Notes                                |
-|------------|---------|--------------------------------------|
-| state              | TEXT    | PK, CSRF token for OAuth callback              |
-| user_id            | INTEGER | FK → users                                     |
-| bank_name          | TEXT    | Bank being linked                              |
-| country            | TEXT    | Country code                                   |
-| reauth_account_id  | INTEGER | Nullable, FK → accounts (set for re-auth flow) |
-| created_at         | TEXT    | ISO 8601                                       |
-
-### leanfin_transactions
-
-| Column          | Type    | Notes                              |
-|-----------------|---------|------------------------------------|
-| id              | INTEGER | PK, autoincrement                  |
-| account_id      | INTEGER | FK → accounts                      |
-| external_id     | TEXT    | Transaction ID from Enable Banking |
-| date            | TEXT    | Booking date, ISO 8601             |
-| amount          | REAL    | Signed (negative = debit)          |
-| currency        | TEXT    | ISO 4217 (EUR, USD, etc.)          |
-| description     | TEXT    | From remittance information        |
-| counterparty    | TEXT    | Nullable                           |
-| balance_after   | REAL    | Nullable                           |
-| created_at      | TEXT    | When we first stored it            |
-| snapshot_id     | INTEGER | Nullable FK → balance_snapshots (ON DELETE SET NULL) |
-| UNIQUE(external_id, account_id) |  | Deduplication constraint  |
-
-### leanfin_labels
-
-| Column | Type    | Notes             |
-|--------|---------|-------------------|
-| id     | INTEGER | PK, autoincrement |
-| user_id| INTEGER | FK → users        |
-| name   | TEXT    | NOT NULL          |
-| color  | TEXT    | Hex color, e.g. #4CAF50 |
-| UNIQUE(user_id, name) | | |
-
-### leanfin_label_rules
-
-| Column    | Type    | Notes                                  |
-|-----------|---------|----------------------------------------|
-| id        | INTEGER | PK, autoincrement                      |
-| label_id  | INTEGER | FK → labels                            |
-| field     | TEXT    | 'description', 'counterparty', 'amount_range' |
-| pattern   | TEXT    | Keyword for text fields; "min,max" for amount_range |
-| priority  | INTEGER | Higher wins on conflict, default 0     |
-
-### leanfin_balance_snapshots
-
-| Column       | Type    | Notes                                          |
-|--------------|---------|------------------------------------------------|
-| id           | INTEGER | PK, autoincrement                              |
-| account_id   | INTEGER | FK → accounts                                  |
-| timestamp    | TEXT    | Full ISO 8601 datetime of the snapshot         |
-| date         | TEXT    | Date portion (YYYY-MM-DD), redundant for indexing |
-| balance      | REAL    | Balance at this point in time                  |
-| balance_type | TEXT    | ITAV, CLAV, XPCD, ITBD, CLBD, or MANUAL       |
-| created_at   | TEXT    | ISO 8601                                       |
-| UNIQUE(account_id, balance_type, timestamp) | | |
-
-### leanfin_api_payloads
-
-| Column        | Type     | Notes                                          |
-|---------------|----------|------------------------------------------------|
-| id            | INTEGER  | PK, autoincrement                              |
-| account_id    | INTEGER  | Nullable, FK → accounts (ON DELETE SET NULL)   |
-| provider      | TEXT     | NOT NULL, default 'enable_banking'             |
-| method        | TEXT     | NOT NULL, 'GET' or 'POST'                      |
-| endpoint      | TEXT     | NOT NULL, e.g. '/accounts/{uid}/transactions'  |
-| request_body  | TEXT     | Nullable, JSON string (NULL for GET requests)  |
-| response_body | TEXT     | Nullable, raw JSON response                    |
-| status_code   | INTEGER  | NOT NULL, HTTP status code                     |
-| duration_ms   | INTEGER  | NOT NULL, round-trip time in milliseconds      |
-| created_at    | DATETIME | NOT NULL, default now                          |
-
-Indexes: `account_id`, `created_at`.
-
-### leanfin_transaction_labels
-
-| Column         | Type    | Notes                      |
-|----------------|---------|----------------------------|
-| transaction_id | INTEGER | FK → transactions          |
-| label_id       | INTEGER | FK → labels                |
-| source         | TEXT    | 'auto' or 'manual'        |
-| PRIMARY KEY (transaction_id, label_id) | | |
-
-### mindflow_categories
-
-| Column     | Type    | Notes                                  |
-|------------|---------|----------------------------------------|
-| id         | INTEGER | PK, autoincrement                      |
-| user_id    | INTEGER | FK → users                             |
-| name       | TEXT    | NOT NULL, UNIQUE(user_id, name)        |
-| color      | TEXT    | NOT NULL, default '#6B6B6B'            |
-| icon       | TEXT    | Nullable                               |
-| parent_id  | INTEGER | Nullable FK → mindflow_categories      |
-| archived   | INTEGER | 0 or 1, default 0                      |
-| position   | INTEGER | Ordering, default 0                    |
-| created_at | TEXT    | ISO 8601                               |
-
-### mindflow_thoughts
-
-| Column            | Type    | Notes                                 |
-|-------------------|---------|---------------------------------------|
-| id                | INTEGER | PK, autoincrement                     |
-| user_id           | INTEGER | FK → users                            |
-| category_id       | INTEGER | Nullable FK → mindflow_categories     |
-| parent_thought_id | INTEGER | Nullable FK → mindflow_thoughts (nesting) |
-| content           | TEXT    | NOT NULL                              |
-| status            | TEXT    | 'active' or 'archived'                |
-| created_at        | TEXT    | ISO 8601                              |
-| updated_at        | TEXT    | ISO 8601                              |
-
-### mindflow_comments
-
-| Column     | Type    | Notes                                  |
-|------------|---------|----------------------------------------|
-| id         | INTEGER | PK, autoincrement                      |
-| thought_id | INTEGER | FK → mindflow_thoughts, ON DELETE CASCADE |
-| content    | TEXT    | NOT NULL                               |
-| created_at | TEXT    | ISO 8601                               |
-
-### mindflow_actions
-
-| Column       | Type    | Notes                                |
-|--------------|---------|--------------------------------------|
-| id           | INTEGER | PK, autoincrement                    |
-| thought_id   | INTEGER | FK → mindflow_thoughts, ON DELETE CASCADE |
-| user_id      | INTEGER | FK → users                           |
-| title        | TEXT    | NOT NULL                             |
-| due_date     | TEXT    | Nullable, ISO 8601 date              |
-| priority     | TEXT    | 'low', 'medium', 'high'             |
-| status       | TEXT    | 'pending' or 'done'                  |
-| created_at   | TEXT    | ISO 8601                             |
-| completed_at | TEXT    | Nullable, set when status → done     |
+App-specific table schemas live alongside their migrations:
+- [LeanFin](../src/apps/leanfin/migrations/README.md)
+- [MindFlow](../src/apps/mindflow/migrations/README.md)
+- [VoiceToText](../src/apps/voice_to_text/migrations/README.md)
+- [ClassroomInput](../src/apps/classroom_input/migrations/README.md)
 
 ### user_app_visibility
 
@@ -452,70 +299,19 @@ Missing rows default to visible — existing users see no change.
 | auth       | TEXT    | NOT NULL                       |
 | created_at | TEXT    | ISO 8601                       |
 
-### voice_jobs
-
-| Column            | Type    | Notes                                        |
-|-------------------|---------|----------------------------------------------|
-| id                | INTEGER | PK, autoincrement                            |
-| user_id           | INTEGER | FK → users                                   |
-| status            | TEXT    | 'pending', 'processing', 'done', 'failed'   |
-| original_filename | TEXT    | NOT NULL, user-uploaded filename              |
-| audio_path        | TEXT    | NOT NULL, path to stored file on disk         |
-| transcription     | TEXT    | Nullable, populated when status = 'done'     |
-| error_message     | TEXT    | Nullable, populated when status = 'failed'   |
-| model_used        | TEXT    | 'tiny' or 'base', default 'base'            |
-| duration_secs     | REAL    | Nullable, processing wall time               |
-| created_at        | TEXT    | ISO 8601                                     |
-| completed_at      | TEXT    | Nullable, set when processing finishes        |
-
-Check constraint: `status != 'done' OR transcription IS NOT NULL`.
-
-### classroom_classrooms
-
-| Column     | Type    | Notes                          |
-|------------|---------|--------------------------------|
-| id         | INTEGER | PK, autoincrement              |
-| user_id    | INTEGER | FK → users                     |
-| label      | TEXT    | NOT NULL (e.g. "1-A")          |
-| pupils     | TEXT    | Newline-separated pupil names  |
-| created_at | TEXT    | ISO 8601                       |
-
-### classroom_form_types
-
-| Column       | Type    | Notes                                          |
-|--------------|---------|-------------------------------------------------|
-| id           | INTEGER | PK, autoincrement                              |
-| user_id      | INTEGER | FK → users                                     |
-| name         | TEXT    | NOT NULL                                       |
-| columns_json | TEXT    | JSON array: `[{"name":"…","type":"text\|number\|bool"}]` |
-| created_at   | TEXT    | ISO 8601                                       |
-| updated_at   | TEXT    | ISO 8601                                       |
-
-### classroom_inputs
-
-| Column       | Type    | Notes                                 |
-|--------------|---------|---------------------------------------|
-| id           | INTEGER | PK, autoincrement                     |
-| user_id      | INTEGER | FK → users                            |
-| classroom_id | INTEGER | FK → classroom_classrooms             |
-| form_type_id | INTEGER | FK → classroom_form_types             |
-| name         | TEXT    | NOT NULL                              |
-| csv_data     | TEXT    | Raw CSV (header + one row per pupil)  |
-| created_at   | TEXT    | ISO 8601                              |
-
 ## Voice Transcription Flow
 
 ```
 User uploads audio (or records via browser mic)
   │
   ├─ Axum handler saves file to data/voice_uploads/<uuid>.<ext>
-  ├─ INSERT voice_jobs row with status = 'pending'
+  ├─ INSERT voice_to_text_jobs row with status = 'pending'
   │
   └─ Background worker (polls every 5s)
       ├─ Claims oldest pending job (atomic UPDATE...RETURNING)
       ├─ ffmpeg converts to 16kHz mono WAV
       ├─ whisper-cli transcribes using configured model
-      ├─ UPDATE voice_jobs with transcription text (or error)
+      ├─ UPDATE voice_to_text_jobs with transcription text (or error)
       └─ Send Web Push notification (success or failure)
 ```
 

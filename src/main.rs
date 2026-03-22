@@ -31,6 +31,19 @@ enum Command {
         #[arg(long)]
         user: String,
     },
+    /// Delete a user and all their data
+    DeleteUser {
+        #[arg(long)]
+        username: String,
+    },
+    /// Delete all app data for a user (keeps the user account)
+    DeleteUserAppData {
+        #[arg(long)]
+        username: String,
+        /// App key to delete data for (e.g. leanfin). Omit to delete all apps.
+        #[arg(long)]
+        app: Option<String>,
+    },
     /// Delete users who have been inactive for the given number of days
     CleanupUsers {
         /// Number of days of inactivity before a user is deleted
@@ -121,6 +134,42 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             tracing::info!("Seed complete for user '{user}'");
+        }
+        Command::DeleteUser { username } => {
+            let result = sqlx::query("DELETE FROM users WHERE username = ?")
+                .bind(&username)
+                .execute(&pool)
+                .await?;
+            anyhow::ensure!(result.rows_affected() > 0, "User '{username}' not found");
+            tracing::info!("Deleted user '{username}' and all their data");
+        }
+        Command::DeleteUserAppData { username, app } => {
+            let user_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = ?")
+                .bind(&username)
+                .fetch_optional(&pool)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("User '{username}' not found"))?;
+
+            let all_apps = apps::registry::deployed_app_instances(&config);
+            let targets: Vec<&dyn apps::registry::App> = match &app {
+                Some(key) => {
+                    let found = all_apps.iter().find(|a| a.info().key == key.as_str());
+                    match found {
+                        Some(a) => vec![a.as_ref()],
+                        None => anyhow::bail!("Unknown app '{key}'"),
+                    }
+                }
+                None => all_apps.iter().map(|a| a.as_ref()).collect(),
+            };
+
+            for a in &targets {
+                apps::registry::delete_user_app_data(&pool, *a, user_id).await?;
+            }
+            let names: Vec<&str> = targets.iter().map(|a| a.info().key).collect();
+            tracing::info!(
+                "Deleted app data for user '{username}': {}",
+                names.join(", ")
+            );
         }
         Command::CleanupUsers { days } => {
             let count = auth::cleanup_inactive_users(&pool, days).await?;

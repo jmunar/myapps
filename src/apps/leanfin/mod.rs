@@ -48,6 +48,10 @@ impl App for LeanFinApp {
         }
     }
 
+    fn migrations(&self) -> sqlx::migrate::Migrator {
+        sqlx::migrate!("src/apps/leanfin/migrations")
+    }
+
     fn router(&self) -> Router<AppState> {
         router()
     }
@@ -79,7 +83,7 @@ impl App for LeanFinApp {
         user_id: i64,
     ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
     {
-        Some(Box::pin(services::seed::run(pool, user_id)))
+        Some(Box::pin(services::seed::run(pool, user_id, self)))
     }
 
     fn cron<'a>(
