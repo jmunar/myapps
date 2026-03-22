@@ -105,9 +105,11 @@ async fn main() -> anyhow::Result<()> {
                 .map(|r| r.0)
                 .ok_or_else(|| anyhow::anyhow!("User '{user}' not found"))?;
 
-            apps::leanfin::services::seed::run(&pool, user_id).await?;
-            apps::mindflow::services::seed::run(&pool, user_id).await?;
-            apps::classroom_input::services::seed::run(&pool, user_id).await?;
+            for app in apps::registry::deployed_app_instances(&config) {
+                if let Some(fut) = app.seed(&pool, user_id) {
+                    fut.await?;
+                }
+            }
             tracing::info!("Seed complete for user '{user}'");
         }
         Command::CleanupUsers { days } => {

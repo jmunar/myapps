@@ -6,6 +6,7 @@ pub mod ops;
 pub mod services;
 mod thoughts;
 
+use crate::apps::registry::{App, AppInfo};
 use crate::i18n::{self, Lang};
 use crate::layout::NavItem;
 use crate::routes::AppState;
@@ -62,4 +63,52 @@ pub fn mindflow_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
             right: true,
         },
     ]
+}
+
+pub struct MindFlowApp;
+
+impl App for MindFlowApp {
+    fn info(&self) -> AppInfo {
+        AppInfo {
+            key: "mindflow",
+            name: "MindFlow",
+            description: "Thought capture &amp; mind map",
+            icon: "\u{1F9E0}",
+            path: "/mindflow",
+        }
+    }
+
+    fn router(&self) -> Router<AppState> {
+        router()
+    }
+
+    fn commands(&self) -> Vec<crate::command::CommandAction> {
+        ops::commands()
+    }
+
+    fn dispatch<'a>(
+        &'a self,
+        pool: &'a sqlx::SqlitePool,
+        user_id: i64,
+        action: &'a str,
+        params: &'a std::collections::HashMap<String, serde_json::Value>,
+        base_path: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<crate::command::CommandResult, String>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(ops::dispatch(pool, user_id, action, params, base_path))
+    }
+
+    fn seed<'a>(
+        &'a self,
+        pool: &'a sqlx::SqlitePool,
+        user_id: i64,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
+    {
+        Some(Box::pin(services::seed::run(pool, user_id)))
+    }
 }
