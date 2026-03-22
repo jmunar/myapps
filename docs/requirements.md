@@ -113,6 +113,12 @@ visibility into spending patterns.
   time-limited (48h) invite link via the CLI (`myapps invite`). New users
   open the link, choose their own username and password, and are
   automatically logged in. The admin never sees the user's password.
+- **Auto-seed on registration** — when `SEED=true`, new users who register
+  via invite automatically get demo data seeded for all deployed apps.
+- **Inactive user cleanup** — `cleanup-users --days N` deletes users whose
+  last activity was more than N days ago. Activity is tracked via
+  `last_active_at` (updated hourly by auth middleware). Used in staging to
+  keep the environment clean.
 - Enable Banking API uses self-signed JWTs (RS256) for authentication. Private
   keys are stored per-user in the database, encrypted at rest with AES-256-GCM
   using a server-side encryption key.
@@ -254,8 +260,8 @@ connections on an interactive mind map.
 - **Actions** — to-do items linked to thoughts, with priority (low/medium/high),
   optional due date, toggle done/pending, and delete. Actions page shows all
   actions sorted by status and priority.
-- **Seed data** — `cargo run -- seed --app mindflow` populates demo categories,
-  thoughts, comments, and actions.
+- **Seed data** — `cargo run -- seed --user <name>` populates demo categories,
+  thoughts, comments, and actions for a given user.
 
 #### Not yet implemented
 - **Sub-categories** — hierarchical nesting within categories.
@@ -286,8 +292,8 @@ spreadsheet-like grid that saves data as CSV.
 - **Input list and detail** — all inputs are listed with classroom, form type,
   row count, and date. Each input can be viewed as a read-only HTML table or
   deleted.
-- **Seed data** — `cargo run -- seed --app classroom` populates 3 classrooms,
-  4 form types, and 4 sample inputs with realistic data.
+- **Seed data** — `cargo run -- seed --user <name>` populates 3 classrooms,
+  4 form types, and 4 sample inputs with realistic data for a given user.
 
 #### Not yet implemented
 - **Input editing** — re-open a saved input for modification.

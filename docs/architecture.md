@@ -28,9 +28,8 @@ myapps sync                 # Fetch transactions from all linked accounts (cron)
 myapps create-user          # Create a user from the command line
 myapps invite               # Generate a single-use invite link (48h)
 myapps generate-vapid-keys  # Generate VAPID key pair for push notifications
-myapps seed --app leanfin           # Populate LeanFin demo data
-myapps seed --app leanfin --reset   # Wipe and re-seed demo data
-myapps seed --app classroom         # Populate ClassroomInput demo data
+myapps seed --user <name>           # Seed all apps for a user (cleans existing app data)
+myapps cleanup-users --days 7       # Delete users inactive for >7 days
 ```
 
 All subcommands share the same configuration and database.
@@ -232,9 +231,10 @@ After login, the top-level router serves:
 | Column        | Type    | Notes                     |
 |---------------|---------|---------------------------|
 | id            | INTEGER | PK, autoincrement         |
-| username      | TEXT    | UNIQUE, NOT NULL          |
-| password_hash | TEXT    | Argon2 hash               |
-| created_at    | TEXT    | ISO 8601                  |
+| username       | TEXT    | UNIQUE, NOT NULL          |
+| password_hash  | TEXT    | Argon2 hash               |
+| created_at     | TEXT    | ISO 8601                  |
+| last_active_at | TEXT    | Nullable, updated hourly by auth middleware |
 
 ### sessions (app login sessions)
 
