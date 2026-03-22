@@ -35,6 +35,7 @@ make test                           # Run all tests
 make audit                          # Security audit (cargo audit)
 make build                          # Release build
 make run                            # Start dev server
+make screenshots                    # Regenerate README screenshots (needs Node.js)
 
 # Deploy to server (rsyncs source via deploy user, builds on Odroid, installs + restarts)
 ./deploy.sh prod setup                    # First time only

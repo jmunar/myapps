@@ -1,4 +1,4 @@
-.PHONY: fmt lint test check audit build run seed gh-env
+.PHONY: fmt lint test check audit build run screenshots gh-env
 
 # Development
 fmt:
@@ -27,6 +27,9 @@ build:
 run:
 	cargo run -- serve
 
+# Screenshots for README (requires Node.js)
+screenshots:
+	./scripts/take-screenshots.sh
 
 # CD: create GitHub environments and set variables from deploy/*.env
 gh-env:

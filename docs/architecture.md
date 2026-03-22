@@ -163,11 +163,15 @@ myapps/
 │   │   └── audit.yml        # Cargo security audit (weekly + on lock changes)
 │   └── dependabot.yml       # Weekly Cargo + Actions dependency updates
 ├── Cargo.toml
-├── Makefile                 # Dev shortcuts: fmt, lint, test, check, audit, build, run
+├── Makefile                 # Dev shortcuts: fmt, lint, test, check, audit, build, run, screenshots
 ├── rustfmt.toml             # Formatting config (edition 2024)
 ├── .editorconfig            # Editor-agnostic whitespace/encoding
 ├── .env.example             # Example environment variables
 ├── CLAUDE.md
+├── playwright.config.ts     # Playwright config for screenshot automation
+├── scripts/
+│   ├── screenshots.ts       # Playwright test: capture mobile screenshots
+│   └── take-screenshots.sh  # Orchestrator: build, seed, serve, capture, cleanup
 └── deploy.sh                # Rsync + build on server + restart script
 ```
 
