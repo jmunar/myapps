@@ -44,17 +44,34 @@ myapps/
 ├── docs/                    # Documentation
 ├── migrations/              # Core SQLite migrations (auth, sessions, settings)
 ├── tests/                   # Integration tests (axum-test)
-│   ├── harness/mod.rs       # Test harness: in-memory DB, login helpers
-│   ├── auth_tests.rs        # Platform auth flow tests
+│   ├── harness/mod.rs       # Test harness: in-memory DB, login + seed helpers
+│   ├── auth_tests.rs        # Platform auth, launcher, settings, invite tests
 │   ├── leanfin.rs           # LeanFin test binary entry point
-│   └── leanfin/             # LeanFin app tests (mirrors src/apps/leanfin/)
-│       ├── accounts.rs      # Account list + balance display tests
-│       ├── csv_import.rs     # CSV import for manual accounts tests
-│       ├── manual_accounts.rs # Manual account CRUD + value update tests
-│       ├── transactions.rs  # Dashboard, transaction list/filter tests
-│       ├── labels.rs        # Label CRUD + rules tests
-│       ├── expenses.rs      # Expenses page + chart endpoint tests
-│       └── sync.rs          # Sync button + endpoint tests
+│   ├── leanfin/             # LeanFin app tests
+│   │   ├── accounts.rs      # Account list + balance display + archive tests
+│   │   ├── balance_evolution.rs # Balance evolution page + chart data tests
+│   │   ├── csv_import.rs    # CSV import for manual accounts tests
+│   │   ├── manual_accounts.rs # Manual account CRUD + value update tests
+│   │   ├── transactions.rs  # Dashboard, transaction list/filter tests
+│   │   ├── labels.rs        # Label CRUD + rules tests
+│   │   ├── expenses.rs      # Expenses page + chart endpoint tests
+│   │   └── sync.rs          # Sync button + endpoint tests
+│   ├── mindflow.rs          # MindFlow test binary entry point
+│   ├── mindflow/            # MindFlow app tests
+│   │   ├── mind_map.rs      # Mind map page, capture, map-data endpoint
+│   │   ├── thoughts.rs      # Thought detail, comments, archive, actions
+│   │   ├── categories.rs    # Category CRUD, archive/unarchive
+│   │   ├── inbox.rs         # Inbox listing, bulk recategorize
+│   │   └── actions.rs       # Actions list, toggle, delete
+│   ├── voice_to_text.rs     # VoiceToText test binary entry point
+│   ├── voice_to_text/       # VoiceToText app tests
+│   │   ├── dashboard.rs     # Jobs dashboard, empty state
+│   │   └── jobs.rs          # New form, job detail, delete, list partial
+│   ├── classroom_input.rs   # ClassroomInput test binary entry point
+│   └── classroom_input/     # ClassroomInput app tests
+│       ├── classrooms.rs    # Classroom CRUD
+│       ├── form_types.rs    # Form type CRUD + column definitions
+│       └── inputs.rs        # Input list, detail, create, delete
 ├── src/
 │   ├── lib.rs               # Library crate (re-exports modules for tests)
 │   ├── main.rs              # CLI entrypoint (clap subcommands)
