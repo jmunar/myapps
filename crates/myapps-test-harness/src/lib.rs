@@ -2,6 +2,7 @@ use axum_test::TestServer;
 use myapps_core::registry::App;
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -25,7 +26,7 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         .foreign_keys(true);
 
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+        .max_connections(3)
         .connect_with(options)
         .await
         .unwrap();
@@ -35,6 +36,18 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         .run(&pool)
         .await
         .unwrap();
+
+    // Create per-app scoped pools for database isolation
+    let all_keys: Vec<&'static str> = apps.iter().map(|a| a.info().key).collect();
+    let mut app_pools: HashMap<&'static str, SqlitePool> = HashMap::new();
+    for app in &apps {
+        let key = app.info().key;
+        let others: Vec<&str> = all_keys.iter().copied().filter(|k| *k != key).collect();
+        let scoped = myapps_core::db::init_scoped(&db_url, key, &others)
+            .await
+            .unwrap();
+        app_pools.insert(key, scoped);
+    }
 
     let config = myapps_core::config::Config {
         database_url: db_url,
@@ -54,7 +67,7 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         static_version: String::new(),
     };
 
-    let app = myapps_core::routes::build_router(pool.clone(), config, apps);
+    let app = myapps_core::routes::build_router(pool.clone(), app_pools, config, apps);
 
     let server = TestServer::builder()
         .save_cookies()

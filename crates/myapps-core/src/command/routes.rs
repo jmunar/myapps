@@ -63,7 +63,7 @@ async fn interpret(
         ));
     }
 
-    let context = super::collect_command_context(&state.pool, user_id.0, &state.apps).await;
+    let context = super::collect_command_context(&state.app_pools, user_id.0, &state.apps).await;
     let prompt = super::llm::build_prompt(&actions, input, &context);
 
     tracing::debug!("Sending prompt to llama server ({} actions)", actions.len());
@@ -208,8 +208,9 @@ async fn execute(
     let base = &state.config.base_path;
     let result = match state.apps.iter().find(|a| a.info().key == app) {
         Some(target) => {
+            let scoped = state.app_pools.get(app).unwrap_or(&state.pool);
             target
-                .dispatch(&state.pool, user_id.0, action_name, &intent.params, base)
+                .dispatch(scoped, user_id.0, action_name, &intent.params, base)
                 .await
         }
         None => Err(format!("Unknown app: {app}")),
