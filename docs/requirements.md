@@ -344,3 +344,34 @@ users upload audio and are notified when the result is ready.
 - **Language selection** — currently auto-detected; allow explicit language choice.
 - **Max duration enforcement** — limit upload size/duration to bound processing time.
 - **Seed data** — demo jobs for development.
+
+### Notes (fifth sub-application)
+
+Notes is a markdown-based note-taking application with a live WYSIWYG editor
+and voice dictation support.
+
+#### Implemented
+
+- **WYSIWYG Markdown editor** — contenteditable editor that converts Markdown
+  syntax on the fly. Typing `# ` + Enter becomes a heading, `---` becomes a
+  horizontal rule, triple backticks open a code block, `- ` starts a list,
+  `> ` starts a blockquote. Bold, italic, inline code, and links are rendered
+  in the editor. Server-side Markdown→HTML pre-rendering for initial page load.
+- **Note CRUD** — create, edit, save, and delete notes. Title and body stored
+  separately; untitled notes show a placeholder.
+- **Auto-save** — notes auto-save every 30 seconds via background fetch. Cmd/Ctrl+S
+  triggers an immediate save.
+- **Pin notes** — pin important notes so they appear at the top of the list.
+- **Voice dictation** — when whisper.cpp is configured, a dictate button records
+  audio, transcribes it server-side, and inserts the text at the cursor position.
+- **Note list** — grid of note cards showing title, preview text, date, and pinned
+  badge. Pinned notes sort first, then by last updated.
+- **Seed data** — `cargo run -- seed --user <name>` populates 4 demo notes with
+  rich Markdown content (headings, code blocks, lists, blockquotes, links).
+- **Integration tests** — 10 tests covering auth, CRUD, pin toggle, empty state,
+  and seeded data rendering.
+
+#### Not yet implemented
+- **Note sharing** — share notes with other users of the app.
+- **Full-text search** — search notes by content.
+- **Folders/tags** — organize notes into categories.
