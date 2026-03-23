@@ -74,6 +74,45 @@
 
     // ── Live Markdown input handling ─────────────────────
     editor.addEventListener('input', function(e) {
+        // List auto-creation: convert "- ", "* ", "1. " as soon as the space is typed
+        if (e.data === ' ') {
+            var sel = window.getSelection();
+            if (sel.rangeCount) {
+                var node = sel.anchorNode;
+                var block = node.nodeType === 1 ? node : node.parentElement;
+                while (block && block !== editor && !isBlockElement(block)) {
+                    block = block.parentElement;
+                }
+                if (block && (block.tagName === 'P' || block.tagName === 'DIV') && block !== editor) {
+                    var text = block.textContent;
+                    // Unordered list: "- " or "* "
+                    if (text === '- ' || text === '* ') {
+                        var ul = document.createElement('ul');
+                        var li = document.createElement('li');
+                        li.innerHTML = '<br>';
+                        ul.appendChild(li);
+                        block.replaceWith(ul);
+                        setCursorAt(li, 0);
+                        syncToTextarea();
+                        return;
+                    }
+                    // Ordered list: "1. "
+                    var olMatch = text.match(/^(\d+)\. $/);
+                    if (olMatch) {
+                        var ol = document.createElement('ol');
+                        ol.setAttribute('start', olMatch[1]);
+                        var li = document.createElement('li');
+                        li.innerHTML = '<br>';
+                        ol.appendChild(li);
+                        block.replaceWith(ol);
+                        setCursorAt(li, 0);
+                        syncToTextarea();
+                        return;
+                    }
+                }
+            }
+        }
+
         // Inline backtick → <code>: when user types closing backtick
         if (e.data === '`') {
             var sel = window.getSelection();
