@@ -145,10 +145,16 @@ Usage: `./deploy.sh <env> <command>`
 |-----------|-----------------------------------------------------|
 | `setup`   | First-time server provisioning (+ Rust install)     |
 | `deploy`  | Rsync source + build on server + install + restart  |
+| `install` | Rsync source + install + restart (skip build)       |
 | `build`   | Rsync source + build on server (no install)         |
 | `restart` | Restart the service                                 |
 | `logs`    | Tail the service logs (journalctl)                  |
 | `status`  | Show service status                                 |
+
+The `install` command accepts a `DEPLOY_BINARY_DIR` environment variable to
+copy the binary from a different build directory (defaults to the environment's
+own `DEPLOY_REMOTE_BUILD_DIR`). This is used by the CD pipeline so that
+production reuses the binary already compiled during the staging deploy.
 
 Available environments are defined by config files in `deploy/`:
 
@@ -495,14 +501,18 @@ Merging to `main` triggers automatic deployment via `.github/workflows/cd.yml`:
 push to main
     │
     ▼
- [deploy-stage]  ◄── automatic
+ [deploy-stage]  ◄── automatic (build + install + restart)
     │ smoke test /login → 200
     ▼
- [deploy-prod]   ◄── automatic after staging passes
+ [deploy-prod]   ◄── automatic (install only — reuses staging binary)
     │ smoke test /login → 200
     ▼
   Done
 ```
+
+The binary is compiled only once during the staging deploy. The production job
+skips compilation and copies the binary from staging's build directory via
+`DEPLOY_BINARY_DIR`, since both environments target the same Odroid server.
 
 CI (format, clippy, tests) runs separately via `ci.yml`. The CD pipeline
 trusts that CI has already passed on `main`.
