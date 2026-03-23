@@ -64,6 +64,7 @@ const SQLITE_DETACH: c_int = 25;
 const SQLITE_ALTER_TABLE: c_int = 26;
 const SQLITE_REINDEX: c_int = 27;
 const SQLITE_ANALYZE: c_int = 28;
+const SQLITE_PRAGMA: c_int = 19;
 const SQLITE_FUNCTION: c_int = 31;
 const SQLITE_SAVEPOINT: c_int = 32;
 const SQLITE_RECURSIVE: c_int = 33;
@@ -160,6 +161,7 @@ unsafe extern "C" fn authorizer_callback(
         // Always allow: bare SELECT, transactions, functions, savepoints, etc.
         SQLITE_SELECT
         | SQLITE_TRANSACTION
+        | SQLITE_PRAGMA
         | SQLITE_FUNCTION
         | SQLITE_SAVEPOINT
         | SQLITE_ANALYZE
