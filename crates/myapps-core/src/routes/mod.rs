@@ -10,6 +10,7 @@ use axum::http::header;
 use axum::response::Response;
 use axum::{Router, middleware, routing::get};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_cookies::CookieManagerLayer;
@@ -19,6 +20,9 @@ use tower_http::services::ServeDir;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: SqlitePool,
+    /// Per-app scoped pools (keyed by app key). Each pool's connections can only
+    /// access tables whose name starts with `<app_key>_`.
+    pub app_pools: Arc<HashMap<&'static str, SqlitePool>>,
     pub config: Arc<Config>,
     pub llm_lock: Arc<Mutex<()>>,
     pub apps: Arc<Vec<Box<dyn App>>>,
@@ -26,8 +30,21 @@ pub struct AppState {
 
 /// Build the application router without binding to a port.
 /// Used by both `serve` and integration tests.
-pub fn build_router(pool: SqlitePool, config: Config, apps: Vec<Box<dyn App>>) -> Router {
+pub fn build_router(
+    pool: SqlitePool,
+    app_pools: HashMap<&'static str, SqlitePool>,
+    config: Config,
+    apps: Vec<Box<dyn App>>,
+) -> Router {
     tracing::info!("Static assets version: {}", config.static_version);
+
+    let state = AppState {
+        pool: pool.clone(),
+        app_pools: Arc::new(app_pools),
+        config: Arc::new(config),
+        llm_lock: Arc::new(Mutex::new(())),
+        apps: Arc::new(apps),
+    };
 
     // Routes that require authentication
     let mut protected = Router::new()
@@ -35,26 +52,31 @@ pub fn build_router(pool: SqlitePool, config: Config, apps: Vec<Box<dyn App>>) -
         .merge(pwa::push_routes())
         .merge(settings::routes());
 
-    for app in &apps {
+    // Each app gets its own AppState where `.pool` is the scoped pool, so app
+    // handlers transparently use only their allowed tables.
+    for app in state.apps.iter() {
         let info = app.info();
-        protected = protected.nest(info.path, app.router());
+        let app_state = AppState {
+            pool: state
+                .app_pools
+                .get(info.key)
+                .cloned()
+                .unwrap_or_else(|| state.pool.clone()),
+            ..state.clone()
+        };
+        let resolved = app.router().with_state(app_state);
+        protected = protected.nest_service(info.path, resolved);
     }
-    if config.llm_enabled() {
+
+    if state.config.llm_enabled() {
         tracing::info!(
             "Command bar enabled (llama server: {})",
-            config.llama_server_url
+            state.config.llama_server_url
         );
         protected = protected.nest("/command", crate::command::routes::routes());
     } else {
         tracing::info!("Command bar disabled (LLAMA_SERVER_URL not set)");
     }
-
-    let state = AppState {
-        pool: pool.clone(),
-        config: Arc::new(config),
-        llm_lock: Arc::new(Mutex::new(())),
-        apps: Arc::new(apps),
-    };
 
     let protected = protected.layer(middleware::from_fn_with_state(
         state.clone(),
@@ -91,6 +113,7 @@ async fn apps_css(state: axum::extract::State<AppState>) -> Response {
 
 pub async fn serve(
     pool: SqlitePool,
+    app_pools: HashMap<&'static str, SqlitePool>,
     config: Config,
     apps: Vec<Box<dyn App>>,
 ) -> anyhow::Result<()> {
@@ -98,10 +121,12 @@ pub async fn serve(
     let worker_config = Arc::new(config.clone());
 
     for app in &apps {
-        app.on_serve(pool.clone(), worker_config.clone());
+        let key = app.info().key;
+        let scoped = app_pools.get(key).cloned().unwrap_or_else(|| pool.clone());
+        app.on_serve(scoped, worker_config.clone());
     }
 
-    let app = build_router(pool, config, apps);
+    let app = build_router(pool, app_pools, config, apps);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("Listening on {bind_addr}");

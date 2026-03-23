@@ -123,6 +123,11 @@ visibility into spending patterns.
   last activity was more than N days ago. Activity is tracked via
   `last_active_at` (updated hourly by auth middleware). Used in staging to
   keep the environment clean.
+- **Per-app database isolation** — each app's connection pool has a SQLite
+  authorizer that restricts writes to its own prefixed tables and denies reads
+  on other apps' tables. Core tables are readable (for FK constraint checks)
+  but not writable from app pools. This prevents bugs or malicious queries in
+  one app from affecting another's data.
 - Enable Banking API uses self-signed JWTs (RS256) for authentication. Private
   keys are stored per-user in the database, encrypted at rest with AES-256-GCM
   using a server-side encryption key.

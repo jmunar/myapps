@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 use crate::config::Config;
 use crate::registry::App;
@@ -76,6 +77,22 @@ pub fn init() {
         .init();
 }
 
+/// Create a scoped pool for each deployed app.
+async fn create_app_pools(
+    database_url: &str,
+    apps: &[Box<dyn App>],
+) -> anyhow::Result<HashMap<&'static str, SqlitePool>> {
+    let all_keys: Vec<&'static str> = apps.iter().map(|a| a.info().key).collect();
+    let mut pools = HashMap::new();
+    for app in apps {
+        let key = app.info().key;
+        let others: Vec<&str> = all_keys.iter().copied().filter(|k| *k != key).collect();
+        let pool = crate::db::init_scoped(database_url, key, &others).await?;
+        pools.insert(key, pool);
+    }
+    Ok(pools)
+}
+
 /// Run the CLI command with the given app instances.
 pub async fn run(cli: Cli, apps: Vec<Box<dyn App>>) -> anyhow::Result<()> {
     let mut config = Config::from_env()?;
@@ -90,10 +107,12 @@ pub async fn run(cli: Cli, apps: Vec<Box<dyn App>>) -> anyhow::Result<()> {
 
     match cli.command {
         Command::Serve => {
-            crate::routes::serve(pool, config, deployed).await?;
+            let app_pools = create_app_pools(&config.database_url, &deployed).await?;
+            crate::routes::serve(pool, app_pools, config, deployed).await?;
         }
         Command::Cron => {
-            run_cron(&pool, &config, &deployed).await;
+            let app_pools = create_app_pools(&config.database_url, &deployed).await?;
+            run_cron(&pool, &app_pools, &config, &deployed).await;
         }
         Command::CreateUser { username, password } => {
             crate::auth::create_user(&pool, &username, &password).await?;
@@ -109,7 +128,8 @@ pub async fn run(cli: Cli, apps: Vec<Box<dyn App>>) -> anyhow::Result<()> {
             generate_vapid_keys();
         }
         Command::Seed { user } => {
-            run_seed(&pool, &deployed, &user).await?;
+            let app_pools = create_app_pools(&config.database_url, &deployed).await?;
+            run_seed(&pool, &app_pools, &deployed, &user).await?;
         }
         Command::DeleteUser { username } => {
             let result = sqlx::query("DELETE FROM users WHERE username = ?")
@@ -131,10 +151,16 @@ pub async fn run(cli: Cli, apps: Vec<Box<dyn App>>) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_cron(pool: &SqlitePool, config: &Config, apps: &[Box<dyn App>]) {
+async fn run_cron(
+    pool: &SqlitePool,
+    app_pools: &HashMap<&'static str, SqlitePool>,
+    config: &Config,
+    apps: &[Box<dyn App>],
+) {
     for app in apps {
-        if let Some(fut) = app.cron(pool, config) {
-            let key = app.info().key;
+        let key = app.info().key;
+        let scoped = app_pools.get(key).unwrap_or(pool);
+        if let Some(fut) = app.cron(scoped, config) {
             tracing::info!("Running cron for {key}");
             if let Err(e) = fut.await {
                 tracing::error!("Cron failed for {key}: {e}");
@@ -143,7 +169,12 @@ async fn run_cron(pool: &SqlitePool, config: &Config, apps: &[Box<dyn App>]) {
     }
 }
 
-async fn run_seed(pool: &SqlitePool, apps: &[Box<dyn App>], user: &str) -> anyhow::Result<()> {
+async fn run_seed(
+    pool: &SqlitePool,
+    app_pools: &HashMap<&'static str, SqlitePool>,
+    apps: &[Box<dyn App>],
+    user: &str,
+) -> anyhow::Result<()> {
     let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE username = ?")
         .bind(user)
         .fetch_optional(pool)
@@ -153,7 +184,9 @@ async fn run_seed(pool: &SqlitePool, apps: &[Box<dyn App>], user: &str) -> anyho
         .ok_or_else(|| anyhow::anyhow!("User '{user}' not found"))?;
 
     for app in apps {
-        if let Some(fut) = app.seed(pool, user_id) {
+        let key = app.info().key;
+        let scoped = app_pools.get(key).unwrap_or(pool);
+        if let Some(fut) = app.seed(scoped, user_id) {
             fut.await?;
         }
     }
