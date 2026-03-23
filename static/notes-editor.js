@@ -106,6 +106,17 @@
         }
         if (block && (block.tagName === 'P' || block.tagName === 'DIV')) {
             var text = norm(block.textContent);
+            // Headings: "# ", "## ", "### " (exactly, nothing else)
+            var hMatch = text.match(/^(#{1,3})\s$/);
+            if (hMatch) {
+                var level = hMatch[1].length;
+                var heading = document.createElement('h' + level);
+                heading.innerHTML = '<br>';
+                block.replaceWith(heading);
+                setCursorAt(heading, 0);
+                syncToTextarea();
+                return;
+            }
             // Unordered list: "- " or "* " (exactly, nothing else)
             if (text === '- ' || text === '* ') {
                 var ul = document.createElement('ul');
