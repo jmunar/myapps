@@ -1,9 +1,9 @@
 # MyApps
 
 Multi-app personal platform. LeanFin (personal expense management), MindFlow
-(thought capture & mind map), VoiceToText (audio transcription), and
-ClassroomInput (classroom marks & notes recording) are the current
-sub-applications. After login, users
+(thought capture & mind map), VoiceToText (audio transcription),
+ClassroomInput (classroom marks & notes recording), and Notes
+(markdown-based note-taking) are the current sub-applications. After login, users
 see an app launcher and can navigate into individual apps. All apps share auth,
 DB, layout/styling, and config.
 
@@ -73,6 +73,7 @@ crates/
   myapps-mindflow/       # MindFlow app
   myapps-voice-to-text/  # VoiceToText app
   myapps-classroom-input/# ClassroomInput app
+  myapps-notes/           # Notes app
 src/
   main.rs                # Thin binary: CLI + app registration
   lib.rs                 # Re-export facade for tests
@@ -96,6 +97,7 @@ assembles all crates.
 - MindFlow-specific routes, handlers, and services live in `crates/myapps-mindflow/`.
 - VoiceToText-specific routes, handlers, and services live in `crates/myapps-voice-to-text/`.
 - ClassroomInput-specific routes and handlers live in `crates/myapps-classroom-input/`.
+- Notes-specific routes and handlers live in `crates/myapps-notes/`.
 - Shared infrastructure (auth, config, db, models, layout, i18n, command,
   services) lives in `crates/myapps-core/`. Shared services (whisper
   transcription, push notifications) live in `crates/myapps-core/src/services/`.
@@ -112,7 +114,7 @@ assembles all crates.
   `crates/myapps-core/src/i18n/`. App-specific translations live in each app
   crate's `i18n.rs` module. Both use compile-time struct-based translations;
   adding a field forces both EN and ES to be updated.
-- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `classroom_input_classrooms`).
+- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `classroom_input_classrooms`, `notes_notes`).
 - When adding or removing environment variables, update all four places:
   `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`
   (`setup()`), and the Environment Variables section in `docs/deployment.md`.

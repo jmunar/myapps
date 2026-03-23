@@ -155,7 +155,13 @@ async fn hiding_all_apps_shows_empty_state() {
     app.login_as("test", "pass").await;
 
     // Hide all apps
-    for key in &["leanfin", "mindflow", "voice_to_text", "classroom_input"] {
+    for key in &[
+        "leanfin",
+        "mindflow",
+        "voice_to_text",
+        "classroom_input",
+        "notes",
+    ] {
         app.server
             .post("/launcher/visibility")
             .form(&serde_json::json!({"app_key": key, "visible": "0"}))

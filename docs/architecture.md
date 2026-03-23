@@ -85,6 +85,11 @@ myapps/
 │   │   ├── static/style.css
 │   │   ├── tests/
 │   │   └── src/
+│   ├── myapps-notes/          # Notes markdown note-taking
+│   │   ├── migrations/
+│   │   ├── static/style.css
+│   │   ├── tests/
+│   │   └── src/
 │   └── myapps-test-harness/ # Shared test utilities (spawn_app, TestApp)
 ├── tests/                   # Root integration tests
 │   ├── harness/mod.rs       # Root test harness (uses all apps)
@@ -180,6 +185,14 @@ After login, the top-level router serves:
   - `POST /classroom/form-types/create` — Create form type
   - `/classroom/form-types/{id}/edit` — Edit form type (GET form, POST submit)
   - `POST /classroom/form-types/{id}/delete` — Delete form type and its inputs
+- `/notes/` — Notes sub-app (nested router)
+  - `/notes/` — Notes list (grid of note cards, pinned first)
+  - `POST /notes/new` — Create empty note (redirects to edit)
+  - `/notes/{id}/edit` — Edit note (WYSIWYG Markdown editor)
+  - `POST /notes/{id}/save` — Save note title + body
+  - `POST /notes/{id}/delete` — Delete note
+  - `POST /notes/{id}/toggle-pin` — Pin/unpin note
+  - `POST /notes/{id}/dictate` — Voice dictation (audio upload → whisper transcription)
 
 ## Database Schema
 
@@ -219,7 +232,7 @@ App-specific table schemas live alongside their migrations in each crate's
 | Column  | Type    | Notes                                          |
 |---------|---------|-------------------------------------------------|
 | user_id | INTEGER | FK → users, part of PK                          |
-| app_key | TEXT    | 'leanfin', 'mindflow', 'voice_to_text', part of PK |
+| app_key | TEXT    | 'leanfin', 'mindflow', 'voice_to_text', 'notes', etc., part of PK |
 | visible | INTEGER | 1 = shown, 0 = hidden, default 1               |
 
 Missing rows default to visible — existing users see no change.

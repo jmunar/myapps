@@ -16,6 +16,7 @@ pub mod apps {
     pub use myapps_classroom_input as classroom_input;
     pub use myapps_leanfin as leanfin;
     pub use myapps_mindflow as mindflow;
+    pub use myapps_notes as notes;
     pub use myapps_voice_to_text as voice_to_text;
 }
 
@@ -28,6 +29,7 @@ pub fn all_app_instances() -> Vec<Box<dyn App>> {
         Box::new(myapps_mindflow::MindFlowApp),
         Box::new(myapps_voice_to_text::VoiceToTextApp),
         Box::new(myapps_classroom_input::ClassroomInputApp),
+        Box::new(myapps_notes::NotesApp),
     ]
 }
 
