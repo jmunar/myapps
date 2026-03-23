@@ -1,4 +1,4 @@
-.PHONY: fmt lint test check audit build run screenshots gh-env
+.PHONY: fmt lint test check audit upgrade build run screenshots gh-env
 
 # Development
 fmt:
@@ -15,6 +15,11 @@ check: fmt-check lint test
 
 fmt-check:
 	cargo fmt -- --check
+
+# Dependencies
+upgrade:
+	cargo update
+	cargo audit
 
 # Security
 audit:
