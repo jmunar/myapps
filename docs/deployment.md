@@ -410,24 +410,20 @@ The server binary will be at `/opt/llama.cpp/build/bin/llama-server`.
 
 ### Download a model
 
-Any small instruction-tuned GGUF model works. Qwen3.5-2B is recommended — it's
-the latest Qwen release (Feb 2026) and leads at structured output in this size
-class:
+Any small instruction-tuned GGUF model works. Qwen2.5-1.5B-Instruct is
+recommended — it's a pure transformer where all layers use KV cache, enabling
+effective prompt prefix caching. Hybrid models like Qwen3.5 use SSM layers that
+must re-evaluate the full sequence on every request, making caching ineffective.
 
 ```bash
 sudo mkdir -p /opt/llama.cpp/models
 cd /opt/llama.cpp/models
-sudo wget https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf
+sudo wget https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q5_k_m.gguf
 ```
 
-Model size: ~1.3 GB on disk, ~1.5 GB RAM at runtime. With whisper base loaded,
-total memory use stays under 3 GB. Alternatives: SmolLM3-3B (~2 GB, more
-capable), Gemma 3 1B-it (~0.7 GB, faster but less accurate).
-
-Qwen3.5 has a "thinking" mode enabled by default that generates internal
-reasoning before answering. This bypasses grammar constraints and wastes tokens.
-The `--chat-template chatml` flag overrides the model's default template with
-plain ChatML (which Qwen natively supports), disabling thinking entirely.
+Model size: ~1.2 GB on disk, ~1.5 GB RAM at runtime. With whisper base loaded,
+total memory use stays under 3 GB. Qwen2.5 uses ChatML natively, matching how
+MyApps constructs prompts.
 
 ### Install as a systemd service
 
@@ -442,11 +438,9 @@ Type=simple
 ExecStart=/opt/llama.cpp/build/bin/llama-server \
     --host 127.0.0.1 \
     --port 8081 \
-    -m /opt/llama.cpp/models/Qwen3.5-2B-Q4_K_M.gguf \
+    -m /opt/llama.cpp/models/qwen2.5-1.5b-instruct-q5_k_m.gguf \
     -c 2048 \
-    --parallel 1 \
-    --reasoning-format none \
-    --chat-template chatml
+    --parallel 1
 Restart=on-failure
 RestartSec=5
 
@@ -477,16 +471,17 @@ of every page.
 curl http://127.0.0.1:8081/health
 
 # Test a completion
-curl http://127.0.0.1:8081/v1/chat/completions \
+curl http://127.0.0.1:8081/completion \
     -H "Content-Type: application/json" \
-    -d '{"messages":[{"role":"user","content":"Say hello"}],"max_tokens":32}'
+    -d '{"prompt":"Say hello","cache_prompt":true,"id_slot":0,"n_predict":32}'
 ```
 
 ### Performance on Odroid N2
 
 | Model | RAM | ~Inference time | Notes |
 |-------|-----|----------------|-------|
-| Qwen3.5-2B Q4_K_M | ~1.5 GB | 3–6s | Recommended |
+| Qwen2.5-1.5B-Instruct Q5_K_M | ~1.5 GB | 1–7s (cached) | Recommended — pure transformer, cache-friendly |
+| Qwen3.5-2B Q4_K_M | ~1.5 GB | 3–6s | Hybrid SSM, limited cache benefit |
 | SmolLM3-3B Q4_K_M | ~2.0 GB | 4–8s | More capable, higher RAM |
 | Gemma 3 1B-it Q4_K_M | ~0.7 GB | 1–3s | Fastest, less accurate |
 

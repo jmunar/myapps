@@ -64,7 +64,9 @@ async fn interpret(
     }
 
     let context = super::collect_command_context(&state.app_pools, user_id.0, &state.apps).await;
-    let prompt = super::llm::build_prompt(&actions, input, &context);
+    let system = super::llm::build_system_prompt(&actions);
+    let user_msg = super::llm::build_user_message(&actions, input, &context);
+    let prompt = super::llm::build_chatml_prompt(&system, &user_msg);
 
     tracing::debug!("Sending prompt to llama server ({} actions)", actions.len());
     let result = super::llm::run_inference(&state.config, &prompt, &actions).await;
