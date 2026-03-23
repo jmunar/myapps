@@ -1,0 +1,25 @@
+[package]
+name = "myapps-leanfin"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+myapps-core.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+reqwest.workspace = true
+tracing.workspace = true
+aes-gcm = "0.10"
+jsonwebtoken = "9"
+csv = "1"
+hex = "0.4"
+
+[dev-dependencies]
+myapps-test-harness.workspace = true
+tokio.workspace = true
+axum-test.workspace = true

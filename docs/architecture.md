@@ -39,140 +39,63 @@ All subcommands share the same configuration and database.
 
 ## Project Layout
 
+The project is a Cargo workspace with separate crates for core infrastructure
+and each app.
+
 ```
 myapps/
-├── docs/                    # Documentation
-├── migrations/              # Core SQLite migrations (auth, sessions, settings)
-├── tests/                   # Integration tests (axum-test)
-│   ├── harness/mod.rs       # Test harness: in-memory DB, login + seed helpers
-│   ├── auth_tests.rs        # Platform auth, launcher, settings, invite tests
-│   ├── leanfin.rs           # LeanFin test binary entry point
-│   ├── leanfin/             # LeanFin app tests
-│   │   ├── accounts.rs      # Account list + balance display + archive tests
-│   │   ├── balance_evolution.rs # Balance evolution page + chart data tests
-│   │   ├── csv_import.rs    # CSV import for manual accounts tests
-│   │   ├── manual_accounts.rs # Manual account CRUD + value update tests
-│   │   ├── transactions.rs  # Dashboard, transaction list/filter tests
-│   │   ├── labels.rs        # Label CRUD + rules tests
-│   │   ├── expenses.rs      # Expenses page + chart endpoint tests
-│   │   └── sync.rs          # Sync button + endpoint tests
-│   ├── mindflow.rs          # MindFlow test binary entry point
-│   ├── mindflow/            # MindFlow app tests
-│   │   ├── mind_map.rs      # Mind map page, capture, map-data endpoint
-│   │   ├── thoughts.rs      # Thought detail, comments, archive, actions
-│   │   ├── categories.rs    # Category CRUD, archive/unarchive
-│   │   ├── inbox.rs         # Inbox listing, bulk recategorize
-│   │   └── actions.rs       # Actions list, toggle, delete
-│   ├── voice_to_text.rs     # VoiceToText test binary entry point
-│   ├── voice_to_text/       # VoiceToText app tests
-│   │   ├── dashboard.rs     # Jobs dashboard, empty state
-│   │   └── jobs.rs          # New form, job detail, delete, list partial
-│   ├── classroom_input.rs   # ClassroomInput test binary entry point
-│   └── classroom_input/     # ClassroomInput app tests
-│       ├── classrooms.rs    # Classroom CRUD
-│       ├── form_types.rs    # Form type CRUD + column definitions
-│       └── inputs.rs        # Input list, detail, create, delete
+├── Cargo.toml               # Workspace root + thin binary crate
 ├── src/
-│   ├── lib.rs               # Library crate (re-exports modules for tests)
-│   ├── main.rs              # CLI entrypoint (clap subcommands)
-│   ├── config.rs            # Configuration (env vars)
-│   ├── db.rs                # Database pool and migrations
-│   ├── i18n/               # Shared translations (auth, launcher, command bar)
-│   │   ├── mod.rs           # Lang enum, Translations struct, t() dispatcher
-│   │   ├── en.rs            # English translations (const EN)
-│   │   └── es.rs            # Spanish translations (const ES)
-│   ├── layout.rs            # Shared HTML layout helper
-│   ├── models/              # Domain types (Transaction, Account, Label, etc.)
-│   ├── auth/                # Authentication & session management
-│   ├── routes/              # Top-level router, auth routes, app launcher
-│   │   ├── mod.rs           # Router setup, AppState, build_router(), nests sub-apps
-│   │   ├── auth.rs          # Login/logout (with language toggle)
-│   │   ├── invite.rs        # Invite-link registration (GET/POST /invite/{token})
-│   │   ├── settings.rs      # Language preference handler (POST /settings/language)
-│   │   ├── pwa.rs           # PWA manifest + service worker endpoints
-│   │   └── launcher.rs      # App launcher page + visibility config + language selector
-│   ├── command/             # Natural-language command bar (LLM-powered)
-│   │   ├── mod.rs           # Command types, action registry, validation
-│   │   ├── routes.rs        # POST /command/interpret + /execute + /transcribe
-│   │   └── llm.rs           # llama.cpp HTTP client (chat completions)
-│   ├── services/            # Shared services
-│   │   ├── notify.rs        # Web Push notifications (VAPID)
-│   │   └── whisper.rs       # Whisper transcription (ffmpeg + whisper-cli)
-│   └── apps/                # Sub-applications
-│       ├── registry.rs      # App trait + registry (AppInfo, App trait, deployed_app_instances())
-│       ├── leanfin/         # LeanFin expense tracker
-│           ├── migrations/  # LeanFin database migrations
-│           ├── mod.rs       # LeanFin router + App trait impl
-│           ├── i18n.rs      # LeanFin translations (EN/ES)
-│           ├── ops.rs       # Shared action functions (command bar + handlers)
-│           ├── dashboard.rs # Main transactions page
-│           ├── transactions.rs # Transaction list + allocation editor
-│           ├── accounts.rs  # Bank account linking (OAuth flow) + manual accounts CRUD
-│           ├── labels.rs    # Label CRUD
-│           ├── sync_handler.rs  # Sync button endpoint (POST /sync)
-│           ├── balance_evolution.rs  # Balance evolution page (Frappe Charts)
-│           ├── expenses.rs  # Expenses page: label selector + chart + txn list
-│           ├── settings.rs  # Per-user Enable Banking credentials (encrypted storage, settings UI)
-│           └── services/    # LeanFin-specific business logic
-│               ├── enable_banking.rs  # Enable Banking API client + JWT
-│               ├── sync.rs            # Transaction sync orchestration
-│               ├── balance.rs         # Balance snapshots, series computation + reconciliation
-│               ├── csv_import.rs      # CSV bulk import for manual account balances
-│               ├── expenses.rs        # Expense aggregation by label + date
-│               ├── labeling.rs        # Auto-labeling engine
-│               └── seed.rs            # Demo data seeding
-│       ├── mindflow/        # MindFlow thought capture + mind map
-│       │   ├── migrations/  # MindFlow database migrations
-│       │   ├── mod.rs       # MindFlow router + nav + App trait impl
-│       │   ├── i18n.rs      # MindFlow translations (EN/ES)
-│       │   ├── ops.rs       # Shared action functions (command bar + handlers)
-│       │   ├── mind_map.rs  # Mind map page (D3.js) + map data JSON endpoint
-│       │   ├── categories.rs # Category CRUD
-│       │   ├── thoughts.rs  # Thought capture, detail, comments, actions
-│       │   ├── inbox.rs     # Inbox (uncategorized thoughts) + bulk recategorize
-│       │   ├── actions.rs   # Actions list, toggle, delete
-│       │   └── services/
-│       │       └── seed.rs  # Demo data seeding
-│       ├── voice_to_text/   # VoiceToText audio transcription
-│       │   ├── migrations/  # VoiceToText database migrations
-│       │   ├── mod.rs       # VoiceToText router + App trait impl
-│       │   ├── i18n.rs      # VoiceToText translations (EN/ES)
-│       │   ├── ops.rs       # Shared action functions (command bar + handlers)
-│       │   ├── dashboard.rs # Job list page + nav helper
-│       │   ├── jobs.rs      # Upload form, recording, job detail, HTMX partials
-│       │   └── services/
-│       │       └── worker.rs       # Background job worker (polls pending jobs)
-│       └── classroom_input/ # ClassroomInput marks & notes recording
-│           ├── migrations/  # ClassroomInput database migrations
-│           ├── mod.rs       # ClassroomInput router + nav + App trait impl
-│           ├── i18n.rs      # ClassroomInput translations (EN/ES)
-│           ├── ops.rs       # Shared action functions (command bar + handlers)
-│           ├── classrooms.rs # Classroom CRUD (label + pupil list)
-│           ├── form_types.rs # Form type CRUD (column definitions)
-│           ├── inputs.rs    # Input grid, CSV save, list, detail, delete
-│           └── services/
-│               └── seed.rs  # Demo data seeding
-├── models/                  # Whisper GGML model files (gitignored, symlinked in worktrees)
-├── static/                  # CSS, JS (htmx, frappe-charts, d3), PWA assets (icon, sw.js, manifest)
+│   ├── main.rs              # CLI entrypoint (~10 lines, delegates to myapps_core::cli)
+│   └── lib.rs               # Re-export facade for test compatibility
+├── crates/
+│   ├── myapps-core/         # Shared infrastructure
+│   │   ├── migrations/      # Core SQLite migrations (auth, sessions, settings)
+│   │   └── src/
+│   │       ├── auth/        # Authentication & session management
+│   │       ├── cli.rs       # CLI parsing + command dispatch (clap)
+│   │       ├── command/     # Natural-language command bar (LLM-powered)
+│   │       ├── config.rs    # Configuration (env vars)
+│   │       ├── db.rs        # Database pool and migrations
+│   │       ├── i18n/        # Shared translations (auth, launcher, command bar)
+│   │       ├── layout.rs    # Shared HTML layout helper
+│   │       ├── models/      # Shared domain types (User, Session, Invite, settings)
+│   │       ├── registry.rs  # App trait + registry (AppInfo, deployed_app_instances)
+│   │       ├── routes/      # Top-level router, auth routes, launcher, PWA, settings
+│   │       └── services/    # Shared services (Web Push, Whisper transcription)
+│   ├── myapps-leanfin/      # LeanFin expense tracker
+│   │   ├── migrations/      # LeanFin database migrations
+│   │   ├── static/style.css # LeanFin CSS (embedded via App::css())
+│   │   ├── tests/           # LeanFin integration tests
+│   │   └── src/             # Handlers, services, models, i18n, ops
+│   ├── myapps-mindflow/     # MindFlow thought capture + mind map
+│   │   ├── migrations/
+│   │   ├── static/style.css
+│   │   ├── tests/
+│   │   └── src/
+│   ├── myapps-voice-to-text/ # VoiceToText audio transcription
+│   │   ├── migrations/
+│   │   ├── static/style.css
+│   │   ├── tests/
+│   │   └── src/
+│   ├── myapps-classroom-input/ # ClassroomInput marks & notes recording
+│   │   ├── migrations/
+│   │   ├── static/style.css
+│   │   ├── tests/
+│   │   └── src/
+│   └── myapps-test-harness/ # Shared test utilities (spawn_app, TestApp)
+├── tests/                   # Root integration tests
+│   ├── harness/mod.rs       # Root test harness (uses all apps)
+│   └── auth_tests.rs        # Platform auth, launcher, settings, invite tests
+├── models/                  # Whisper GGML model files (gitignored)
+├── static/                  # core.css, JS (htmx, frappe-charts, d3), PWA assets
 ├── .claude/agents/          # Claude Code agent prompts
-│   └── frontend-tester.md   # Agent for generating integration tests
 ├── .github/
-│   ├── workflows/
-│   │   ├── ci.yml           # PR/push: fmt check + clippy + tests
-│   │   ├── cd.yml           # Push to main: deploy staging → production
-│   │   └── audit.yml        # Cargo security audit (weekly + on lock changes)
-│   └── dependabot.yml       # Weekly Cargo + Actions dependency updates
-├── Cargo.toml
-├── Makefile                 # Dev shortcuts: fmt, lint, test, check, audit, build, run, screenshots
-├── rustfmt.toml             # Formatting config (edition 2024)
-├── .editorconfig            # Editor-agnostic whitespace/encoding
-├── .env.example             # Example environment variables
-├── CLAUDE.md
-├── playwright.config.ts     # Playwright config for screenshot automation
-├── scripts/
-│   ├── screenshots.ts       # Playwright test: capture mobile screenshots
-│   └── take-screenshots.sh  # Orchestrator: build, seed, serve, capture, cleanup
-└── deploy.sh                # Rsync + build on server + restart script
+│   ├── workflows/           # CI, CD, audit
+│   └── dependabot.yml
+├── Makefile                 # Dev shortcuts (workspace-wide: fmt, lint, test, check)
+├── deploy.sh                # Rsync + build on server + restart script
+└── scripts/                 # Screenshot automation
 ```
 
 ## Routing Structure
@@ -286,11 +209,8 @@ After login, the top-level router serves:
 | used_at    | TEXT | Nullable, set when invite is consumed  |
 | created_at | TEXT | ISO 8601                               |
 
-App-specific table schemas live alongside their migrations:
-- [LeanFin](../src/apps/leanfin/migrations/README.md)
-- [MindFlow](../src/apps/mindflow/migrations/README.md)
-- [VoiceToText](../src/apps/voice_to_text/migrations/README.md)
-- [ClassroomInput](../src/apps/classroom_input/migrations/README.md)
+App-specific table schemas live alongside their migrations in each crate's
+`migrations/` directory (e.g. `crates/myapps-leanfin/migrations/`).
 
 ### user_app_visibility
 

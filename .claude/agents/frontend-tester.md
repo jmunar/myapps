@@ -15,27 +15,26 @@ generate integration tests. Describe the feature/routes and this agent will:
 
 ## Test Harness
 
-All tests use the shared harness at `tests/harness/mod.rs`:
+Tests use the `myapps-test-harness` crate (`crates/myapps-test-harness/`):
 
-- `spawn_app()` — creates a `TestApp` with in-memory SQLite, migrations run,
-  and a `TestServer` with cookie saving enabled
+- `spawn_app(apps)` — creates a `TestApp` with in-memory SQLite, migrations run,
+  and a `TestServer` with cookie saving enabled. Pass the app instances to include.
 - `TestApp.login_as(username, password)` — creates a user and logs in
   (the session cookie is saved automatically in the cookie jar)
-- `TestApp.seed_and_login()` — runs full LeanFin seed data and logs in as "seeduser"
-- `TestApp.seed_and_login_mindflow()` — runs full MindFlow seed data and logs in as "seeduser"
-- `TestApp.seed_and_login_classroom()` — runs full ClassroomInput seed data and logs in as "seeduser"
+- `TestApp.seed_and_login(&app)` — creates a user, seeds the given app, and logs in as "seeduser"
 - `TestApp.pool` — direct DB access for setup/assertions
 - `TestApp.server` — the `axum_test::TestServer` for making requests
 
 ## Test File Structure
 
-Tests mirror the source code hierarchy:
+App-specific tests live in each app crate. Platform tests stay at the root.
 
 ```
 tests/
-  harness/mod.rs              # shared test infrastructure
-  auth_tests.rs               # platform-level (login, logout, launcher, settings, invite)
-  leanfin.rs                  # LeanFin test binary entry point
+  harness/mod.rs                          # Root harness (uses all apps)
+  auth_tests.rs                           # Auth, launcher, settings, invite tests
+crates/myapps-leanfin/tests/
+  integration.rs                          # Entry point
   leanfin/
     transactions.rs           # dashboard, transaction list/search/filter
     labels.rs                 # label CRUD + rules
@@ -45,29 +44,30 @@ tests/
     manual_accounts.rs        # manual account CRUD + value updates
     csv_import.rs             # CSV import for manual accounts
     sync.rs                   # bank sync trigger + status
-  mindflow.rs                 # MindFlow test binary entry point
+crates/myapps-mindflow/tests/
+  integration.rs
   mindflow/
     mind_map.rs               # mind map page, capture, map-data endpoint
     thoughts.rs               # thought detail, comments, archive, recategorize, actions, sub-thoughts
     categories.rs             # category CRUD, archive/unarchive
     inbox.rs                  # inbox listing, bulk recategorize
     actions.rs                # actions list, toggle status, delete
-  voice_to_text.rs            # VoiceToText test binary entry point
+crates/myapps-voice-to-text/tests/
+  integration.rs
   voice_to_text/
     dashboard.rs              # jobs dashboard, empty state
     jobs.rs                   # new form, job detail, delete, list partial
-  classroom_input.rs          # ClassroomInput test binary entry point
+crates/myapps-classroom-input/tests/
+  integration.rs
   classroom_input/
     classrooms.rs             # classroom CRUD
     form_types.rs             # form type CRUD + column definitions
     inputs.rs                 # input list, new page, detail view, create, delete
 ```
 
-- Platform-level tests (`auth_tests.rs`) are top-level files that start with `mod harness;`.
-- App-specific tests live under a directory matching the app name (e.g. `leanfin/`).
-- The entry point (`leanfin.rs`) declares `mod harness;` and the submodules.
-- Submodules (e.g. `leanfin/transactions.rs`) use `use crate::harness;` to access the harness.
-- When adding a new app, create `tests/<app>.rs` + `tests/<app>/` following this pattern.
+- Platform-level tests at root use `mod harness;` which creates a full app with all crates.
+- Per-app tests use `myapps_test_harness::spawn_app(vec![Box::new(AppStruct)])`.
+- When adding a new app, create `crates/myapps-{app}/tests/` following this pattern.
 
 ## Patterns
 
@@ -232,7 +232,7 @@ app.server
 
 ## Seed Data Summary
 
-### LeanFin (`seed_and_login()`)
+### LeanFin (`seed_and_login(&LeanFinApp)`)
 - User: seeduser/seeduser
 - 2 bank accounts: Santander (checking), ING Direct (savings)
 - 1 archived bank account: BBVA (expired session, with historical transactions from Oct-Nov 2025)
@@ -244,7 +244,7 @@ app.server
 - 16 auto-labeling rules (e.g., counterparty=Mercadona → Groceries)
 - Allocations for most transactions (some left unallocated intentionally)
 
-### MindFlow (`seed_and_login_mindflow()`)
+### MindFlow (`seed_and_login(&MindFlowApp)`)
 - User: seeduser/seeduser
 - 6 categories: Work, Health, Finance, Personal, Learning, Home
 - 18 thoughts (15 categorized + 3 inbox/uncategorized)
@@ -252,7 +252,7 @@ app.server
 - 2 comments on "Q1 project plan" thought
 - 4 actions: high/medium/low priority, some with due dates
 
-### ClassroomInput (`seed_and_login_classroom()`)
+### ClassroomInput (`seed_and_login(&ClassroomInputApp)`)
 - User: seeduser/seeduser
 - 3 classrooms: 1-A (15 pupils), 1-B (14 pupils), 2-A (12 pupils)
 - 4 form types: Weekly quiz, Attendance, Reading assessment, Behaviour report
@@ -269,6 +269,6 @@ app.server
 7. Keep tests focused — one assertion concept per test
 8. For data-dependent tests, either use the seed helpers or insert minimal
    data via direct SQL on `app.pool`
-9. Always run `cargo test` after writing tests to verify they pass
+9. Always run `cargo test --workspace` after writing tests to verify they pass
 10. VoiceToText `voice_to_text_jobs` table has a CHECK constraint: status='done'
     requires transcription IS NOT NULL. Always include transcription when inserting done jobs.

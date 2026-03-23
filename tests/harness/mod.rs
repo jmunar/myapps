@@ -34,7 +34,9 @@ pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> Tes
         .await
         .unwrap();
 
-    myapps::db::migrator().run(&pool).await.unwrap();
+    let all_apps = myapps::all_app_instances();
+    let migrators: Vec<_> = all_apps.iter().map(|a| a.migrations()).collect();
+    myapps::db::migrator(&migrators).run(&pool).await.unwrap();
 
     let config = myapps::config::Config {
         database_url: db_url,
@@ -54,7 +56,8 @@ pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> Tes
         static_version: String::new(),
     };
 
-    let app = myapps::routes::build_router(pool.clone(), config);
+    let apps = myapps::deployed_app_instances(&config);
+    let app = myapps::routes::build_router(pool.clone(), config, apps);
 
     let server = TestServer::builder()
         .save_cookies()

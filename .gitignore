@@ -5,8 +5,7 @@ data/
 *.db-wal
 *.db-shm
 deploy/*.env
-models/
-models
+/models
 node_modules/
 package.json
 package-lock.json

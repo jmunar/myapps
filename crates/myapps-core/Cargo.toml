@@ -1,0 +1,30 @@
+[package]
+name = "myapps-core"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tower-cookies.workspace = true
+reqwest.workspace = true
+uuid.workspace = true
+tower-http = { version = "0.6", features = ["fs"] }
+argon2 = "0.5"
+rand = "0.9"
+rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+hex = "0.4"
+dotenvy = "0.15"
+web-push = "0.11"
+base64 = "0.22"
+aes-gcm = "0.10"
+thiserror = "2"
+url = "2"
+clap = { version = "4", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
