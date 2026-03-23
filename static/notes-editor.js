@@ -72,44 +72,63 @@
         return text;
     }
 
+    // Normalize text: replace &nbsp; (0xA0) with regular space
+    function norm(s) { return s.replace(/\u00A0/g, ' '); }
+
+    // Find the block-level parent of the current selection
+    function currentBlock() {
+        var sel = window.getSelection();
+        if (!sel.rangeCount) return null;
+        var node = sel.anchorNode;
+        var block = node.nodeType === 1 ? node : node.parentElement;
+        while (block && block !== editor && !isBlockElement(block)) {
+            block = block.parentElement;
+        }
+        if (!block || block === editor) return null;
+        return block;
+    }
+
     // ── Live Markdown input handling ─────────────────────
     editor.addEventListener('input', function(e) {
-        // List auto-creation: convert "- ", "* ", "1. " as soon as the space is typed
-        if (e.data === ' ') {
-            var sel = window.getSelection();
-            if (sel.rangeCount) {
-                var node = sel.anchorNode;
-                var block = node.nodeType === 1 ? node : node.parentElement;
-                while (block && block !== editor && !isBlockElement(block)) {
-                    block = block.parentElement;
-                }
-                if (block && (block.tagName === 'P' || block.tagName === 'DIV') && block !== editor) {
-                    var text = block.textContent;
-                    // Unordered list: "- " or "* "
-                    if (text === '- ' || text === '* ') {
-                        var ul = document.createElement('ul');
-                        var li = document.createElement('li');
-                        li.innerHTML = '<br>';
-                        ul.appendChild(li);
-                        block.replaceWith(ul);
-                        setCursorAt(li, 0);
-                        syncToTextarea();
-                        return;
-                    }
-                    // Ordered list: "1. "
-                    var olMatch = text.match(/^(\d+)\. $/);
-                    if (olMatch) {
-                        var ol = document.createElement('ol');
-                        ol.setAttribute('start', olMatch[1]);
-                        var li = document.createElement('li');
-                        li.innerHTML = '<br>';
-                        ol.appendChild(li);
-                        block.replaceWith(ol);
-                        setCursorAt(li, 0);
-                        syncToTextarea();
-                        return;
-                    }
-                }
+        // List auto-creation: convert "- ", "* ", "1. " as soon as typed
+        var block = currentBlock();
+        // Also handle bare text nodes directly in the editor (no wrapping <p>)
+        if (!block) {
+            var sel0 = window.getSelection();
+            if (sel0.rangeCount && sel0.anchorNode && sel0.anchorNode.nodeType === 3 && sel0.anchorNode.parentNode === editor) {
+                // Wrap the text node in a <p> first so the rest of the logic works
+                var bare = sel0.anchorNode;
+                var wrapper = document.createElement('p');
+                bare.parentNode.insertBefore(wrapper, bare);
+                wrapper.appendChild(bare);
+                block = wrapper;
+            }
+        }
+        if (block && (block.tagName === 'P' || block.tagName === 'DIV')) {
+            var text = norm(block.textContent);
+            // Unordered list: "- " or "* " (exactly, nothing else)
+            if (text === '- ' || text === '* ') {
+                var ul = document.createElement('ul');
+                var li = document.createElement('li');
+                li.innerHTML = '<br>';
+                ul.appendChild(li);
+                block.replaceWith(ul);
+                setCursorAt(li, 0);
+                syncToTextarea();
+                return;
+            }
+            // Ordered list: "1. ", "2. ", etc. (exactly, nothing else)
+            var olMatch = text.match(/^(\d+)\.\s$/);
+            if (olMatch) {
+                var ol = document.createElement('ol');
+                ol.setAttribute('start', olMatch[1]);
+                var li = document.createElement('li');
+                li.innerHTML = '<br>';
+                ol.appendChild(li);
+                block.replaceWith(ol);
+                setCursorAt(li, 0);
+                syncToTextarea();
+                return;
             }
         }
 
