@@ -63,8 +63,7 @@ async fn interpret(
         ));
     }
 
-    let context =
-        super::collect_command_context(&state.app_pools, user_id.0, &state.apps).await;
+    let context = super::collect_command_context(&state.app_pools, user_id.0, &state.apps).await;
     let system = super::llm::build_system_prompt(&actions);
     let user_msg = super::llm::build_user_message(&actions, input, &context);
     let prompt = super::llm::build_chatml_prompt(&system, &user_msg);
