@@ -14,6 +14,7 @@ Environments: ${ENVS:-none found}
 Commands:
   build         Build the release binary on the server
   deploy        Sync source + build on server + install + restart
+  install       Sync source + install + restart (skip build; set DEPLOY_BINARY_DIR to use a pre-built binary)
   setup         First-time server setup (user, dirs, systemd, cron)
   restart       Restart the service on the server
   logs          Tail the server logs
@@ -70,10 +71,11 @@ build() {
 }
 
 install() {
+    local binary_dir="${DEPLOY_BINARY_DIR:-$DEPLOY_REMOTE_BUILD_DIR}"
     echo "▸ Installing binary and static files..."
-    ssh_server DEPLOY_REMOTE_BUILD_DIR="$DEPLOY_REMOTE_BUILD_DIR" DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'INSTALL'
+    ssh_server DEPLOY_BINARY_DIR="$binary_dir" DEPLOY_REMOTE_BUILD_DIR="$DEPLOY_REMOTE_BUILD_DIR" DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'INSTALL'
 set -euo pipefail
-sudo cp $DEPLOY_REMOTE_BUILD_DIR/target/release/myapps $DEPLOY_REMOTE_DIR/myapps.new
+sudo cp $DEPLOY_BINARY_DIR/target/release/myapps $DEPLOY_REMOTE_DIR/myapps.new
 sudo mv $DEPLOY_REMOTE_DIR/myapps.new $DEPLOY_REMOTE_DIR/myapps
 sudo chown myapps:myapps $DEPLOY_REMOTE_DIR/myapps
 sudo chmod +x $DEPLOY_REMOTE_DIR/myapps
@@ -246,6 +248,7 @@ SETUP
 case "${COMMAND}" in
     build)   build ;;
     deploy)  build && install && restart && cleanup ;;
+    install) sync_source && install && restart && cleanup ;;
     setup)   setup ;;
     restart) restart ;;
     logs)    ssh_server "sudo journalctl -u $DEPLOY_SERVICE_NAME -f --no-pager" ;;
