@@ -6,7 +6,7 @@
 |------------------|---------------------------------|
 | Language         | Rust                            |
 | HTTP framework   | Axum                            |
-| Database         | SQLite (via sqlx, runtime-checked queries) |
+| Database         | SQLite (via sqlx, runtime-checked queries, per-app authorizer isolation) |
 | Frontend         | HTMX + server-rendered HTML     |
 | Charts           | Frappe Charts 1.6.2 (client-side)|
 | Auth             | Argon2 + server-side sessions   |
@@ -35,7 +35,9 @@ myapps delete-user-app-data --username <name> --app leanfin  # Delete data for o
 myapps cleanup-users --days 7       # Delete users inactive for >7 days
 ```
 
-All subcommands share the same configuration and database.
+All subcommands share the same configuration and database. Each app receives
+a scoped connection pool whose SQLite authorizer restricts table access to
+only the app's own prefixed tables (see *Database Isolation* below).
 
 ## Project Layout
 
@@ -252,6 +254,27 @@ Missing rows default to visible — existing users see no change.
 | p256dh     | TEXT    | NOT NULL                       |
 | auth       | TEXT    | NOT NULL                       |
 | created_at | TEXT    | ISO 8601                       |
+
+## Database Isolation
+
+All apps share a single SQLite file but each app gets its own scoped
+connection pool with an `sqlite3_set_authorizer` callback that enforces
+table-level access control:
+
+| Operation | Own tables (`<app>_*`) | Core tables (`users`, `sessions`, …) | Other apps' tables |
+|-----------|------------------------|--------------------------------------|--------------------|
+| Read      | ✅ Allowed              | ✅ Allowed (needed for FK checks)     | ❌ Denied           |
+| Write     | ✅ Allowed              | ❌ Denied                             | ❌ Denied           |
+| DDL       | ✅ Allowed              | ❌ Denied                             | ❌ Denied           |
+
+The core pool (unrestricted) is used for auth middleware, admin CLI
+commands, and migration runner. App handlers, command-bar dispatch, cron
+tasks, seed, and background workers all use scoped pools.
+
+`AppState` holds both the core pool (`pool`) and a map of per-app scoped
+pools (`app_pools`). Each app's router is mounted with its own `AppState`
+clone where `pool` is swapped with the scoped pool, so app handlers
+transparently use the restricted connection without code changes.
 
 ## Voice Transcription Flow
 

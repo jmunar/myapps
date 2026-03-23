@@ -63,8 +63,10 @@ async fn interpret(
         ));
     }
 
-    let context = super::collect_command_context(&state.pool, user_id.0, &state.apps).await;
-    let prompt = super::llm::build_prompt(&actions, input, &context);
+    let context = super::collect_command_context(&state.app_pools, user_id.0, &state.apps).await;
+    let system = super::llm::build_system_prompt(&actions);
+    let user_msg = super::llm::build_user_message(&actions, input, &context);
+    let prompt = super::llm::build_chatml_prompt(&system, &user_msg);
 
     tracing::debug!("Sending prompt to llama server ({} actions)", actions.len());
     let result = super::llm::run_inference(&state.config, &prompt, &actions).await;
@@ -208,8 +210,9 @@ async fn execute(
     let base = &state.config.base_path;
     let result = match state.apps.iter().find(|a| a.info().key == app) {
         Some(target) => {
+            let scoped = state.app_pools.get(app).unwrap_or(&state.pool);
             target
-                .dispatch(&state.pool, user_id.0, action_name, &intent.params, base)
+                .dispatch(scoped, user_id.0, action_name, &intent.params, base)
                 .await
         }
         None => Err(format!("Unknown app: {app}")),

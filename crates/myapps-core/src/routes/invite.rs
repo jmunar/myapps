@@ -97,10 +97,11 @@ async fn invite_submit(
     // Auto-seed deployed apps for new user if configured
     if state.config.seed {
         for app in state.apps.iter() {
-            if let Some(fut) = app.seed(&state.pool, user_id)
+            let key = app.info().key;
+            let scoped = state.app_pools.get(key).unwrap_or(&state.pool);
+            if let Some(fut) = app.seed(scoped, user_id)
                 && let Err(e) = fut.await
             {
-                let key = app.info().key;
                 tracing::error!("Failed to seed {key} for user {user_id}: {e}");
             }
         }
