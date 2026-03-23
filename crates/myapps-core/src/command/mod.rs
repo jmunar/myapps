@@ -77,13 +77,16 @@ pub fn collect_commands(apps: &[Box<dyn crate::registry::App>]) -> Vec<CommandAc
 /// Collect dynamic context for the LLM prompt (e.g. available classrooms).
 /// Returns a map of `"app.action"` → context string.
 pub async fn collect_command_context(
-    pool: &sqlx::SqlitePool,
+    app_pools: &std::collections::HashMap<&'static str, sqlx::SqlitePool>,
     user_id: i64,
     apps: &[Box<dyn crate::registry::App>],
 ) -> HashMap<String, String> {
     let mut ctx = HashMap::new();
     for app in apps {
-        ctx.extend(app.command_context(pool, user_id).await);
+        let key = app.info().key;
+        if let Some(pool) = app_pools.get(key) {
+            ctx.extend(app.command_context(pool, user_id).await);
+        }
     }
     ctx
 }
