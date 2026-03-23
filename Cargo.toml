@@ -24,6 +24,7 @@ myapps-leanfin = { path = "crates/myapps-leanfin" }
 myapps-mindflow = { path = "crates/myapps-mindflow" }
 myapps-voice-to-text = { path = "crates/myapps-voice-to-text" }
 myapps-classroom-input = { path = "crates/myapps-classroom-input" }
+myapps-notes = { path = "crates/myapps-notes" }
 myapps-test-harness = { path = "crates/myapps-test-harness" }
 
 [package]
@@ -37,6 +38,7 @@ myapps-leanfin.workspace = true
 myapps-mindflow.workspace = true
 myapps-voice-to-text.workspace = true
 myapps-classroom-input.workspace = true
+myapps-notes.workspace = true
 
 clap = { version = "4", features = ["derive"] }
 tokio.workspace = true

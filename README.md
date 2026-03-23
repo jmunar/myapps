@@ -18,6 +18,7 @@ login and launcher.
 | **MindFlow** (🧠) | [`myapps-mindflow`](crates/myapps-mindflow/) | Thought capture and mind mapping. Quickly jot down ideas, organise them into categories, visualise connections on a D3-powered map, and turn thoughts into actions. |
 | **VoiceToText** (🎤) | [`myapps-voice-to-text`](crates/myapps-voice-to-text/) | Audio transcription powered by whisper.cpp. Record or upload audio and get text back — all processed locally, no cloud APIs. |
 | **ClassroomInput** (✎) | [`myapps-classroom-input`](crates/myapps-classroom-input/) | Classroom marks and notes recording. Define custom form types, manage classrooms and students, and record structured observations. |
+| **Notes** (✏️) | [`myapps-notes`](crates/myapps-notes/) | Markdown-based note-taking with live WYSIWYG editing and voice dictation. |
 
 All apps share authentication, database, layout/styling, i18n (EN/ES), and
 push notifications.
