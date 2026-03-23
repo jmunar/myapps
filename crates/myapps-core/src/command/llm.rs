@@ -3,20 +3,17 @@ use crate::config::Config;
 use serde::Serialize;
 use std::collections::HashMap;
 
-/// Build the system prompt for the LLM, listing all available actions.
+/// Build the **static** system prompt listing all available actions.
 ///
-/// `context` maps `"app.action"` → a string of available values (e.g.
-/// `"Available classrooms: Math 3A, Science 4B"`). These are injected
-/// into the prompt so the LLM can pick the right names without a
-/// separate listing step.
-/// Build the LLM prompt. The action catalog comes first (cacheable across
-/// requests) and the user input last so llama-server's KV cache can skip
-/// re-evaluating the prefix on repeated calls.
-pub fn build_prompt(
-    actions: &[CommandAction],
-    user_input: &str,
-    context: &HashMap<String, String>,
-) -> String {
+/// This part is identical across requests for the same set of deployed apps
+/// and contains no per-user or per-request data.  By placing it first in the
+/// chatml `<|im_start|>system` block, llama-server's KV cache can skip
+/// re-evaluating these tokens on subsequent calls that share the same prefix.
+///
+/// Dynamic, per-user context (e.g. "Available classrooms: …") is deliberately
+/// kept out of here and placed in the user message instead so the cache hit
+/// rate is maximised.
+pub fn build_system_prompt(actions: &[CommandAction]) -> String {
     let mut prompt =
         String::from("Pick the action matching the user input. Reply JSON only.\n\nActions:\n");
 
@@ -37,15 +34,51 @@ pub fn build_prompt(
                 .collect();
             prompt.push_str(&format!(" [{}]", params_desc.join(", ")));
         }
-        if let Some(ctx) = context.get(&key) {
-            prompt.push_str(&format!(" — {ctx}"));
-        }
         prompt.push('\n');
     }
 
-    prompt.push_str(&format!("\nInput: \"{user_input}\"\nJSON:"));
-
     prompt
+}
+
+/// Build the **dynamic** user message containing per-user context and input.
+pub fn build_user_message(
+    actions: &[CommandAction],
+    user_input: &str,
+    context: &HashMap<String, String>,
+) -> String {
+    let mut msg = String::new();
+
+    // Append context lines for actions that have dynamic values.
+    let mut has_context = false;
+    for action in actions {
+        let key = format!("{}.{}", action.app, action.name);
+        if let Some(ctx) = context.get(&key) {
+            msg.push_str(&format!("{key}: {ctx}\n"));
+            has_context = true;
+        }
+    }
+    if has_context {
+        msg.push('\n');
+    }
+
+    msg.push_str(user_input);
+    msg
+}
+
+/// Assemble the full prompt in chatml format.
+///
+/// The resulting token sequence is:
+/// ```text
+/// <|im_start|>system\n{system_prompt}<|im_end|>\n
+/// <|im_start|>user\n{user_message}<|im_end|>\n
+/// <|im_start|>assistant\n
+/// ```
+///
+/// The system block is static across requests, maximising the cacheable prefix.
+pub fn build_chatml_prompt(system: &str, user: &str) -> String {
+    format!(
+        "<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n<|im_start|>assistant\n"
+    )
 }
 
 /// Build a JSON Schema that constrains the LLM to produce a valid CommandIntent.
@@ -75,20 +108,17 @@ fn build_json_schema(actions: &[CommandAction]) -> serde_json::Value {
     })
 }
 
+/// Request body for the llama.cpp `/completion` endpoint.
 #[derive(Serialize)]
-struct ChatMessage {
-    role: &'static str,
-    content: String,
-}
-
-#[derive(Serialize)]
-struct ChatRequest {
-    messages: Vec<ChatMessage>,
+struct CompletionRequest {
+    prompt: String,
     temperature: f64,
-    max_tokens: u32,
+    n_predict: u32,
+    stop: Vec<&'static str>,
+    cache_prompt: bool,
+    id_slot: i32,
+    /// JSON Schema sent as `response_format` so the server constrains output.
     response_format: ResponseFormat,
-    /// Disable thinking/reasoning mode so grammar enforcement works.
-    enable_thinking: bool,
 }
 
 #[derive(Serialize)]
@@ -102,28 +132,33 @@ struct SchemaWrapper {
     schema: serde_json::Value,
 }
 
-/// Send a chat completion request to the llama.cpp server and parse the response.
+/// Send a completion request to the llama.cpp server and parse the response.
+///
+/// Uses the raw `/completion` endpoint (not `/v1/chat/completions`) because:
+/// - It supports `cache_prompt` + `id_slot` for reliable KV-cache prefix
+///   reuse across requests that share the same system prompt.
+/// - We apply the chatml template ourselves so the static system block stays
+///   byte-identical between calls, maximising the cacheable prefix.
 pub async fn run_inference(
     config: &Config,
     prompt: &str,
     actions: &[CommandAction],
 ) -> Result<CommandIntent, String> {
-    let url = format!("{}/v1/chat/completions", config.llama_server_url);
+    let url = format!("{}/completion", config.llama_server_url);
 
-    let request = ChatRequest {
-        messages: vec![ChatMessage {
-            role: "user",
-            content: prompt.to_string(),
-        }],
+    let request = CompletionRequest {
+        prompt: prompt.to_string(),
         temperature: 0.1,
-        max_tokens: 128,
+        n_predict: 128,
+        stop: vec!["<|im_end|>"],
+        cache_prompt: true,
+        id_slot: 0,
         response_format: ResponseFormat {
             r#type: "json_schema",
             json_schema: SchemaWrapper {
                 schema: build_json_schema(actions),
             },
         },
-        enable_thinking: false,
     };
 
     tracing::debug!("LLM prompt:\n{prompt}");
@@ -151,12 +186,21 @@ pub async fn run_inference(
 
     tracing::debug!("LLM full response: {body}");
 
-    let content = body["choices"][0]["message"]["content"]
+    let content = body["content"]
         .as_str()
         .ok_or("No content in llama server response")?;
 
-    serde_json::from_str(content)
-        .map_err(|e| format!("Failed to parse LLM JSON: {e} — raw: {content}"))
+    // Strip any <think>...</think> wrapper the model may emit.
+    let json_str = if let Some(rest) = content.strip_prefix("<think>") {
+        rest.split_once("</think>")
+            .map(|(_, after)| after.trim())
+            .unwrap_or(content)
+    } else {
+        content
+    };
+
+    serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse LLM JSON: {e} -- raw: {content}"))
 }
 
 #[cfg(test)]
@@ -165,7 +209,28 @@ mod tests {
     use crate::command::{CommandParam, ParamType};
 
     #[test]
-    fn prompt_includes_actions_and_context() {
+    fn system_prompt_lists_actions_without_context() {
+        static PARAMS: &[CommandParam] = &[CommandParam {
+            name: "content",
+            description: "The thought content",
+            param_type: ParamType::Text,
+            required: true,
+        }];
+        let actions = vec![CommandAction {
+            app: "mindflow",
+            name: "capture_thought",
+            description: "Capture a new thought",
+            params: PARAMS,
+        }];
+        let system = build_system_prompt(&actions);
+        assert!(system.contains("mindflow.capture_thought"));
+        assert!(system.contains("content (text)"));
+        // Context should NOT appear in the system prompt.
+        assert!(!system.contains("Available categories"));
+    }
+
+    #[test]
+    fn user_message_includes_context_and_input() {
         static PARAMS: &[CommandParam] = &[CommandParam {
             name: "content",
             description: "The thought content",
@@ -183,11 +248,17 @@ mod tests {
             "mindflow.capture_thought".to_string(),
             "Available categories: Work, Personal".to_string(),
         );
-        let prompt = build_prompt(&actions, "capture a thought about groceries", &ctx);
-        assert!(prompt.contains("mindflow.capture_thought"));
-        assert!(prompt.contains("content (text)"));
-        assert!(prompt.contains("Available categories: Work, Personal"));
-        assert!(prompt.contains("capture a thought about groceries"));
+        let user = build_user_message(&actions, "capture a thought about groceries", &ctx);
+        assert!(user.contains("Available categories: Work, Personal"));
+        assert!(user.contains("capture a thought about groceries"));
+    }
+
+    #[test]
+    fn chatml_prompt_has_correct_structure() {
+        let full = build_chatml_prompt("system content", "user content");
+        assert!(full.starts_with("<|im_start|>system\nsystem content<|im_end|>"));
+        assert!(full.contains("<|im_start|>user\nuser content<|im_end|>"));
+        assert!(full.ends_with("<|im_start|>assistant\n"));
     }
 
     #[test]
