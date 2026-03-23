@@ -6,6 +6,7 @@ on:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
+      - ".github/workflows/audit.yml"
   schedule:
     - cron: "0 8 * * 1" # Every Monday at 08:00 UTC
 
@@ -20,8 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
 
       - name: Run cargo audit
         run: cargo audit
