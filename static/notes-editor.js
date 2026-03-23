@@ -73,7 +73,47 @@
     }
 
     // ── Live Markdown input handling ─────────────────────
-    editor.addEventListener('input', function() {
+    editor.addEventListener('input', function(e) {
+        // Inline backtick → <code>: when user types closing backtick
+        if (e.data === '`') {
+            var sel = window.getSelection();
+            if (sel.rangeCount) {
+                var range = sel.getRangeAt(0);
+                var textNode = range.startContainer;
+                if (textNode.nodeType === 3) {
+                    var content = textNode.textContent;
+                    var cursorPos = range.startOffset;
+                    // Look for pattern: `text` (opening backtick, content, closing backtick at cursor)
+                    var before = content.substring(0, cursorPos);
+                    var openIdx = before.lastIndexOf('`', cursorPos - 2);
+                    if (openIdx >= 0 && openIdx < cursorPos - 1) {
+                        var inner = before.substring(openIdx + 1, cursorPos - 1);
+                        if (inner.length > 0) {
+                            var beforeText = content.substring(0, openIdx);
+                            var afterText = content.substring(cursorPos);
+
+                            var parent = textNode.parentNode;
+                            var frag = document.createDocumentFragment();
+                            if (beforeText) frag.appendChild(document.createTextNode(beforeText));
+                            var codeEl = document.createElement('code');
+                            codeEl.textContent = inner;
+                            frag.appendChild(codeEl);
+                            // Add a zero-width space after so cursor can escape the code element
+                            var afterNode = document.createTextNode('\u200B' + afterText);
+                            frag.appendChild(afterNode);
+                            parent.replaceChild(frag, textNode);
+
+                            // Place cursor after the code element
+                            var newRange = document.createRange();
+                            newRange.setStart(afterNode, 1);
+                            newRange.collapse(true);
+                            sel.removeAllRanges();
+                            sel.addRange(newRange);
+                        }
+                    }
+                }
+            }
+        }
         syncToTextarea();
     });
 
@@ -153,17 +193,51 @@
                     return;
                 }
 
-                // Unordered list
-                if (text.match(/^-\s+(.*)/)) {
+                // Unordered list (- or *)
+                var ulMatch = text.match(/^[-*]\s+(.*)/);
+                if (ulMatch) {
                     e.preventDefault();
                     var ul = document.createElement('ul');
                     var li = document.createElement('li');
-                    li.textContent = text.substring(2);
+                    li.textContent = ulMatch[1];
                     ul.appendChild(li);
                     block.replaceWith(ul);
                     var p = document.createElement('p');
                     p.innerHTML = '<br>';
                     ul.insertAdjacentElement('afterend', p);
+                    setCursorAt(p, 0);
+                    syncToTextarea();
+                    return;
+                }
+
+                // Ordered list (1. text, 2. text, etc.)
+                var olMatch = text.match(/^(\d+)\.\s+(.*)/);
+                if (olMatch) {
+                    e.preventDefault();
+                    var ol = document.createElement('ol');
+                    var li = document.createElement('li');
+                    li.textContent = olMatch[2];
+                    ol.appendChild(li);
+                    block.replaceWith(ol);
+                    var p = document.createElement('p');
+                    p.innerHTML = '<br>';
+                    ol.insertAdjacentElement('afterend', p);
+                    setCursorAt(p, 0);
+                    syncToTextarea();
+                    return;
+                }
+            }
+
+            // Enter at beginning of a heading → insert empty paragraph before it
+            if (/^H[1-6]$/.test(block.tagName)) {
+                var sel2 = window.getSelection();
+                var range2 = sel2.getRangeAt(0);
+                // Check if cursor is at position 0
+                if (range2.startOffset === 0 && (range2.startContainer === block || range2.startContainer === block.firstChild)) {
+                    e.preventDefault();
+                    var p = document.createElement('p');
+                    p.innerHTML = '<br>';
+                    block.insertAdjacentElement('beforebegin', p);
                     setCursorAt(p, 0);
                     syncToTextarea();
                     return;

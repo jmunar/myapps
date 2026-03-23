@@ -428,14 +428,18 @@ fn markdown_to_editor_html(md: &str) -> String {
             continue;
         }
 
-        // Unordered list
-        if trimmed.starts_with("- [x] ") || trimmed.starts_with("- [ ] ") {
+        // Unordered list (- or *)
+        if trimmed.starts_with("- [x] ")
+            || trimmed.starts_with("- [ ] ")
+            || trimmed.starts_with("* [x] ")
+            || trimmed.starts_with("* [ ] ")
+        {
             if !in_list {
                 html.push_str("<ul>");
                 in_list = true;
                 list_ordered = false;
             }
-            let checked = trimmed.starts_with("- [x]");
+            let checked = trimmed.starts_with("- [x]") || trimmed.starts_with("* [x]");
             let rest = &trimmed[6..];
             let check = if checked { "&#9745; " } else { "&#9744; " };
             html.push_str(&format!(
@@ -445,7 +449,10 @@ fn markdown_to_editor_html(md: &str) -> String {
             ));
             continue;
         }
-        if let Some(rest) = trimmed.strip_prefix("- ") {
+        if let Some(rest) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        {
             if !in_list {
                 html.push_str("<ul>");
                 in_list = true;
