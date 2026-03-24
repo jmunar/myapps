@@ -53,7 +53,6 @@ jobs:
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
           DEPLOY_SEED=${{ vars.DEPLOY_SEED }}
-          DEPLOY_USER_CLEANUP_DAYS=${{ vars.DEPLOY_USER_CLEANUP_DAYS }}
           EOF
 
       - name: Deploy to staging
@@ -120,7 +119,6 @@ jobs:
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
           DEPLOY_SEED=${{ vars.DEPLOY_SEED }}
-          DEPLOY_USER_CLEANUP_DAYS=${{ vars.DEPLOY_USER_CLEANUP_DAYS }}
           EOF
 
       - name: Deploy to production (reuse staging build)

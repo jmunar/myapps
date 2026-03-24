@@ -540,7 +540,6 @@ The CD workflow requires two GitHub **Environments** (`staging` and
 | `DEPLOY_CRON_ENABLED`     | `false`                     | `true`                     |
 | `DEPLOY_ICON`             | `icon-stage.svg`            | `icon.svg`                 |
 | `DEPLOY_SEED`             | `true`                      | `false`                    |
-| `DEPLOY_USER_CLEANUP_DAYS`| `7`                         | `0`                        |
 
 These match the values in `deploy/*.env.example`.
 
@@ -613,13 +612,12 @@ ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps invite'
 When `SEED=true` is set in the server's `.env`, new users who register via an
 invite link will automatically get demo data seeded for all deployed apps.
 
-When `CLEANUP_INACTIVE_DAYS` is set (e.g. `7`), the `cleanup-users` command
-deletes users who haven't accessed the app for that many days. This runs
-automatically on each deploy when `DEPLOY_USER_CLEANUP_DAYS` is set in the deploy
-config. You can also run it manually:
+When `CLEANUP_INACTIVE_DAYS` is set (e.g. `7`), inactive users are
+automatically cleaned up on each service start (i.e. on every deploy, since
+the service restarts). You can also run it manually:
 
 ```bash
-ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps cleanup-users --days 7'
+cargo run -- cleanup-users --days 7
 ```
 
 ### Directory structure (staging)

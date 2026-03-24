@@ -95,14 +95,6 @@ restart() {
     ssh_server "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME"
 }
 
-cleanup() {
-    if [[ "${DEPLOY_USER_CLEANUP_DAYS:-0}" == "0" ]]; then
-        return
-    fi
-    echo "▸ Cleaning up inactive users (>${DEPLOY_USER_CLEANUP_DAYS} days)..."
-    ssh_server "sudo -u myapps $DEPLOY_REMOTE_DIR/myapps cleanup-users --days $DEPLOY_USER_CLEANUP_DAYS"
-}
-
 setup() {
     echo "▸ Running first-time server setup on $SERVER ($ENV_NAME)..."
     echo "  (you may be prompted for your sudo password)"
@@ -162,7 +154,7 @@ LLAMA_SERVER_URL=
 BIND_ADDR=127.0.0.1:$DEPLOY_PORT
 DEPLOY_APPS=${DEPLOY_APPS:-}
 SEED=${DEPLOY_SEED:-false}
-CLEANUP_INACTIVE_DAYS=${DEPLOY_USER_CLEANUP_DAYS:-0}
+CLEANUP_INACTIVE_DAYS=0
 ENV
     sudo chown myapps:myapps $DEPLOY_REMOTE_DIR/.env
     sudo chmod 600 $DEPLOY_REMOTE_DIR/.env
@@ -247,8 +239,8 @@ SETUP
 # ── Command dispatch ───────────────────────────────────────────────
 case "${COMMAND}" in
     build)   build ;;
-    deploy)  build && install && restart && cleanup ;;
-    install) sync_source && install && restart && cleanup ;;
+    deploy)  build && install && restart ;;
+    install) sync_source && install && restart ;;
     setup)   setup ;;
     restart) restart ;;
     logs)    ssh_server "sudo journalctl -u $DEPLOY_SERVICE_NAME -f --no-pager" ;;

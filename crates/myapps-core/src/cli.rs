@@ -107,6 +107,17 @@ pub async fn run(cli: Cli, apps: Vec<Box<dyn App>>) -> anyhow::Result<()> {
 
     match cli.command {
         Command::Serve => {
+            if config.cleanup_inactive_days > 0 {
+                let count =
+                    crate::auth::cleanup_inactive_users(&pool, config.cleanup_inactive_days)
+                        .await?;
+                if count > 0 {
+                    tracing::info!(
+                        "Cleaned up {count} inactive users (>{} days)",
+                        config.cleanup_inactive_days
+                    );
+                }
+            }
             let app_pools = create_app_pools(&config.database_url, &deployed).await?;
             crate::routes::serve(pool, app_pools, config, deployed).await?;
         }
