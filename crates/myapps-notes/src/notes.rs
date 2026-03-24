@@ -194,9 +194,7 @@ async fn edit(
                            class="notes-title-input" autocomplete="off">
                     <div class="notes-editor-actions">
                         {dictate_btn}
-                        <form method="POST" action="{base}/notes/{id}/toggle-pin" style="display:inline">
-                            <button type="submit" class="btn btn-secondary">{pin_label}</button>
-                        </form>
+                        <button type="submit" formaction="{base}/notes/{id}/toggle-pin" class="btn btn-secondary">{pin_label}</button>
                         <button type="submit" class="btn btn-primary">{save}</button>
                         <a href="{base}/notes" class="btn btn-secondary">{back}</a>
                     </div>
