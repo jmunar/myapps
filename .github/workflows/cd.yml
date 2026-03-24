@@ -14,9 +14,6 @@ jobs:
     name: Deploy to staging
     runs-on: ubuntu-latest
     environment: staging
-    outputs:
-      build_dir: ${{ vars.DEPLOY_REMOTE_BUILD_DIR }}
-
     steps:
       - uses: actions/checkout@v6
 
@@ -127,7 +124,7 @@ jobs:
           EOF
 
       - name: Deploy to production (reuse staging build)
-        run: DEPLOY_CI=true DEPLOY_BINARY_DIR="${{ needs.deploy-stage.outputs.build_dir }}" ./deploy.sh prod install
+        run: DEPLOY_CI=true ./deploy.sh prod install
 
       - name: Smoke test
         run: |
