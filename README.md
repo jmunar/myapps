@@ -65,6 +65,13 @@ hide per-user.
   <img src="docs/screenshots/classroom-classrooms.png" width="270" alt="ClassroomInput – Classrooms" />
 </p>
 
+### Notes
+
+<p align="center">
+  <img src="docs/screenshots/notes-list.png" width="270" alt="Notes – List" />
+  <img src="docs/screenshots/notes-editor.png" width="270" alt="Notes – Editor" />
+</p>
+
 ---
 
 ## Tech stack
