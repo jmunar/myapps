@@ -89,5 +89,17 @@ test.describe("README screenshots", () => {
 
     await page.goto(`${BASE_URL}/classroom/classrooms`);
     await snap(page, "classroom-classrooms");
+
+    // ── Notes ──
+    await page.goto(`${BASE_URL}/notes`);
+    await snap(page, "notes-list");
+
+    // Open the first note for editing (click the first note link).
+    const firstNote = page.locator('a[href^="/notes/"]').first();
+    if (await firstNote.isVisible()) {
+      await firstNote.click();
+      await page.waitForTimeout(800); // Wait for editor to initialize.
+      await snap(page, "notes-editor");
+    }
   });
 });

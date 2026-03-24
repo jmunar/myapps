@@ -35,9 +35,22 @@ git merge origin/main
 
 If there are merge conflicts, resolve them, then commit the merge. If the merge is clean, proceed.
 
-## 6. Frontend tests
+## 6. Frontend tests & screenshots
 
-If any commits on this branch (compared to `main`) touch frontend code (routes, handlers, HTML templates, or CSS classes used in assertions), run the **frontend-tester agent** (`.claude/agents/frontend-tester.md`) to generate or update integration tests for the changed routes. Commit any new or updated tests with message "Add/update frontend tests for [feature]". Include the co-author trailer. If no frontend code was changed, skip this step.
+If any commits on this branch (compared to `main`) touch frontend code (routes, handlers, HTML templates, or CSS classes used in assertions):
+
+1. **Integration tests**: Run the **frontend-tester agent** (`.claude/agents/frontend-tester.md`) to generate or update integration tests for the changed routes.
+
+2. **Screenshots**: Review `scripts/screenshots.ts` and check whether the Playwright script needs updating for the changed app(s):
+   - If a **new app** was added: add a new section to the Playwright script that navigates to the app's main pages and captures screenshots, following the existing pattern. Then add the corresponding `<img>` tags to the main `README.md` (under a new `### AppName` heading before the `---` separator) and to the app's own `crates/myapps-<app>/README.md`.
+   - If **existing pages changed significantly** (new pages, layout overhauls, removed pages): update the Playwright script accordingly (add/remove/rename `snap()` calls) and update any affected `<img>` tags in `README.md` and the app README.
+   - If the changes are minor (bug fixes, copy changes, small styling tweaks), the existing screenshots will be refreshed automatically when the script runs — no script changes needed.
+
+   After any script changes, run `make screenshots` to regenerate the screenshot PNGs. Verify the new/updated images look correct.
+
+3. **Commit**: Commit any new or updated tests, script changes, README updates, and regenerated screenshots with message "Add/update frontend tests and screenshots for [feature]". Include the co-author trailer.
+
+If no frontend code was changed, skip this step.
 
 ## 7. Run checks
 
