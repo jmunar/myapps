@@ -10,6 +10,7 @@
 
     // ── Sync editor HTML → markdown textarea ─────────────
     function syncToTextarea() {
+        ensureTrailingParagraph();
         textarea.value = htmlToMarkdown(editor);
     }
 
@@ -370,6 +371,17 @@
         return /^(P|H[1-6]|PRE|BLOCKQUOTE|UL|OL|LI|HR|DIV)$/.test(el.tagName);
     }
 
+    // Ensure the editor always has a trailing <p> so the user can escape
+    // block elements (code blocks, lists, blockquotes, etc.) at the end.
+    function ensureTrailingParagraph() {
+        var last = editor.lastElementChild;
+        if (!last || last.tagName !== 'P') {
+            var p = document.createElement('p');
+            p.innerHTML = '<br>';
+            editor.appendChild(p);
+        }
+    }
+
     function setCursorAt(el, offset) {
         var range = document.createRange();
         var sel = window.getSelection();
@@ -397,6 +409,9 @@
             body: new URLSearchParams(formData)
         }).catch(function() {});
     }, 30000);
+
+    // Ensure trailing paragraph on initial load
+    ensureTrailingParagraph();
 
     // ── Voice dictation ─────────────────────────────────
     if (WHISPER) {

@@ -319,7 +319,7 @@ async fn handle_dictation(
 
     let data = audio_data.ok_or_else(|| anyhow::anyhow!("No audio data"))?;
 
-    let tmp_dir = std::env::temp_dir().join("myapps-notes");
+    let tmp_dir = std::path::PathBuf::from("data/notes_tmp");
     std::fs::create_dir_all(&tmp_dir)?;
     let input_path = tmp_dir.join(format!("dictate-{}.webm", uuid::Uuid::new_v4()));
     let mut f = std::fs::File::create(&input_path)?;
@@ -491,6 +491,13 @@ fn markdown_to_editor_html(md: &str) -> String {
     }
 
     close_list(&mut html, &mut in_list, list_ordered);
+
+    // Ensure the editor always ends with a <p> so the user can place their
+    // cursor after trailing block elements (code blocks, lists, etc.).
+    if !html.ends_with("</p>") {
+        html.push_str("<p><br></p>");
+    }
+
     html
 }
 
