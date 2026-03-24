@@ -220,7 +220,34 @@ async fn edit_note_form_actions_point_to_correct_urls() {
     let body = r.text();
     assert!(body.contains(&format!(r#"action="/notes/{id}/save""#)));
     assert!(body.contains(&format!(r#"action="/notes/{id}/delete""#)));
-    assert!(body.contains(&format!(r#"action="/notes/{id}/toggle-pin""#)));
+    assert!(body.contains(&format!(r#"formaction="/notes/{id}/toggle-pin""#)));
+}
+
+#[tokio::test]
+async fn edit_note_no_nested_forms() {
+    let app = app().await;
+    app.seed_and_login(&NotesApp).await;
+
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let r = app.server.get(&format!("/notes/{id}/edit")).await;
+    let body = r.text();
+    // The save form should not contain a nested form for toggle-pin;
+    // pin uses formaction on the button instead.
+    let save_form_start = body.find(r#"id="notes-form""#).unwrap();
+    let save_form_body = &body[save_form_start..];
+    // After the opening <form id="notes-form">, the next </form> should close it.
+    // There should be no <form inside the save form before the hidden textarea.
+    let textarea_pos = save_form_body.find(r#"id="notes-raw""#).unwrap();
+    let between = &save_form_body[..textarea_pos];
+    assert!(
+        !between.contains("<form "),
+        "save form should not contain nested forms"
+    );
 }
 
 #[tokio::test]
