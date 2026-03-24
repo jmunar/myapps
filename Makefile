@@ -38,6 +38,18 @@ screenshots:
 
 # CD: create GitHub environments and set variables from deploy/*.env
 gh-env:
+	@BUILD_DIR=""; \
+	for f in deploy/*.env; do \
+		val=$$(grep '^DEPLOY_REMOTE_BUILD_DIR=' "$$f" | head -1 | cut -d= -f2- | sed 's/^"//;s/"$$//'); \
+		if [ -n "$$val" ]; then \
+			if [ -z "$$BUILD_DIR" ]; then \
+				BUILD_DIR="$$val"; \
+			elif [ "$$BUILD_DIR" != "$$val" ]; then \
+				echo "ERROR: DEPLOY_REMOTE_BUILD_DIR mismatch: '$$BUILD_DIR' vs '$$val' in $$f"; \
+				exit 1; \
+			fi; \
+		fi; \
+	done
 	@for f in deploy/*.env; do \
 		GH_ENV=""; \
 		while IFS='=' read -r key value; do \

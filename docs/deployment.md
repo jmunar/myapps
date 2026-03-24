@@ -109,7 +109,10 @@ make gh-env
 
 `make gh-env` reads each `deploy/*.env` file, creates the GitHub environment
 (from `DEPLOY_GH_ENVIRONMENT`), and sets all non-empty variables. Empty values
-are skipped — GitHub doesn't allow empty environment variables.
+are skipped — GitHub doesn't allow empty environment variables. It also asserts
+that `DEPLOY_REMOTE_BUILD_DIR` is identical across all environments (required
+because the CD pipeline builds once on staging and reuses the binary for
+production).
 
 ## Quick Start
 
@@ -151,10 +154,9 @@ Usage: `./deploy.sh <env> <command>`
 | `logs`    | Tail the service logs (journalctl)                  |
 | `status`  | Show service status                                 |
 
-The `install` command accepts a `DEPLOY_BINARY_DIR` environment variable to
-copy the binary from a different build directory (defaults to the environment's
-own `DEPLOY_REMOTE_BUILD_DIR`). This is used by the CD pipeline so that
-production reuses the binary already compiled during the staging deploy.
+Both environments share the same `DEPLOY_REMOTE_BUILD_DIR` so that production's
+`install` command picks up the binary already compiled during the staging deploy.
+`make gh-env` asserts that all environments use the same value.
 
 Available environments are defined by config files in `deploy/`:
 
@@ -531,7 +533,7 @@ The CD workflow requires two GitHub **Environments** (`staging` and
 | `DEPLOY_SERVER`           | `deploy@odroid.local`       | `deploy@odroid.local`      |
 | `DEPLOY_DOMAIN`           | `stage.yourdomain.com`      | `yourdomain.com`           |
 | `DEPLOY_REMOTE_DIR`       | `/opt/myapps-stage`         | `/opt/myapps`              |
-| `DEPLOY_REMOTE_BUILD_DIR` | `~/myapps-stage-build`      | `~/myapps-build`           |
+| `DEPLOY_REMOTE_BUILD_DIR` | `~/myapps-stage-build`      | `~/myapps-stage-build`     |
 | `DEPLOY_SERVICE_NAME`     | `myapps-stage`              | `myapps`                   |
 | `DEPLOY_NGINX_SITE`       | `myapps-stage`              | `myapps`                   |
 | `DEPLOY_PORT`             | `3001`                      | `3000`                     |
