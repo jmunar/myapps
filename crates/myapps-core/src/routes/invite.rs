@@ -191,7 +191,7 @@ fn render_form(
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>{title}</title>
-    <link rel="stylesheet" href="{base}/static/style.css">
+    <link rel="stylesheet" href="{base}/static/core.css">
     <link rel="manifest" href="{base}/manifest.json">
     <link rel="icon" type="image/svg+xml" href="{base}/static/icon.svg">
     <link rel="apple-touch-icon" href="{base}/static/icon.svg">
@@ -248,7 +248,7 @@ fn render_error(base: &str, lang: Lang, t: &i18n::Translations, message: &str) -
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>{title}</title>
-    <link rel="stylesheet" href="{base}/static/style.css">
+    <link rel="stylesheet" href="{base}/static/core.css">
     <link rel="manifest" href="{base}/manifest.json">
     <link rel="icon" type="image/svg+xml" href="{base}/static/icon.svg">
     <link rel="apple-touch-icon" href="{base}/static/icon.svg">
