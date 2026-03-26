@@ -502,6 +502,26 @@ async fn invite_token_cannot_be_reused() {
     assert!(!body.contains(r#"name="confirm_password""#));
 }
 
+// --- Stylesheet link tests (BUG-54) ---
+
+#[tokio::test]
+async fn login_page_links_core_css() {
+    let app = harness::spawn_app().await;
+    let response = app.server.get("/login").await;
+    let body = response.text();
+    assert!(body.contains(r#"href="/static/core.css""#));
+}
+
+#[tokio::test]
+async fn invite_page_links_core_css() {
+    let app = harness::spawn_app().await;
+    let token = myapps::auth::create_invite(&app.pool).await.unwrap();
+
+    let response = app.server.get(&format!("/invite/{token}")).await;
+    let body = response.text();
+    assert!(body.contains(r#"href="/static/core.css""#));
+}
+
 #[tokio::test]
 async fn invite_page_has_language_toggle() {
     let app = harness::spawn_app().await;
