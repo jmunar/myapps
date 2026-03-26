@@ -761,6 +761,41 @@ tr.txn-misallocated .txn-date {
     background: var(--bg-card);
 }
 
+.alloc-rule-form {
+    border-top: 1px solid var(--border-light);
+    padding-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.alloc-rule-form .rule-add-form {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.alloc-rule-form .rule-add-form select,
+.alloc-rule-form .rule-add-form input[type="text"] {
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--text);
+}
+
+.alloc-flash {
+    font-size: 0.8rem;
+    color: var(--positive);
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+    background: color-mix(in srgb, var(--positive) 10%, transparent);
+    border-radius: var(--radius);
+}
+
 .alloc-footer {
     display: flex;
     justify-content: flex-end;

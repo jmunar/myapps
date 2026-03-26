@@ -21,6 +21,7 @@ pub fn routes() -> Router<AppState> {
             post(alloc_delete),
         )
         .route("/transactions/{txn_id}/row", get(txn_row))
+        .route("/transactions/{txn_id}/rules/create", post(rule_create))
 }
 
 // ── Shared types ─────────────────────────────────────────────
@@ -334,12 +335,22 @@ async fn alloc_editor(
     Extension(lang): Extension<Lang>,
     Path(txn_id): Path<i64>,
 ) -> Html<String> {
+    alloc_editor_inner(&state, user_id, lang, txn_id, None).await
+}
+
+async fn alloc_editor_inner(
+    state: &axum::extract::State<AppState>,
+    user_id: UserId,
+    lang: Lang,
+    txn_id: i64,
+    flash: Option<&str>,
+) -> Html<String> {
     let t = super::i18n::t(lang);
     let base = &state.config.base_path;
 
-    // Get transaction amount
-    let txn: Option<(f64,)> = sqlx::query_as(
-        r#"SELECT t.amount FROM leanfin_transactions t
+    // Get transaction details (amount, counterparty, description)
+    let txn: Option<(f64, String, Option<String>)> = sqlx::query_as(
+        r#"SELECT t.amount, t.description, t.counterparty FROM leanfin_transactions t
            JOIN leanfin_accounts a ON t.account_id = a.id
            WHERE t.id = ? AND a.user_id = ?"#,
     )
@@ -349,7 +360,7 @@ async fn alloc_editor(
     .await
     .unwrap_or(None);
 
-    let Some((txn_amount,)) = txn else {
+    let Some((txn_amount, txn_description, txn_counterparty)) = txn else {
         return Html("".to_string());
     };
 
@@ -422,6 +433,25 @@ async fn alloc_editor(
         "alloc-remaining-pending"
     };
 
+    // Build "Add Rule" form with pre-filled values
+    let counterparty_val = txn_counterparty.as_deref().unwrap_or("");
+    let description_val = &txn_description;
+    let default_field;
+    let default_pattern;
+    if !counterparty_val.is_empty() {
+        default_field = "counterparty";
+        default_pattern = counterparty_val;
+    } else {
+        default_field = "description";
+        default_pattern = &txn_description;
+    }
+
+    let flash_html = if let Some(msg) = flash {
+        format!(r#"<div class="alloc-flash">{msg}</div>"#)
+    } else {
+        String::new()
+    };
+
     Html(format!(
         r##"<tr id="alloc-editor-{txn_id}" class="alloc-editor-row">
             <td colspan="6">
@@ -430,6 +460,7 @@ async fn alloc_editor(
                         <span class="text-sm"><strong>{alloc_title}</strong> — total: <span class="mono">{abs_total:.2}</span></span>
                         <span class="text-sm {remaining_class}">{alloc_remaining}: <span class="mono">{remaining:.2}</span></span>
                     </div>
+                    {flash_html}
                     <div class="alloc-list">{alloc_rows}</div>
                     <form class="alloc-add-form"
                           hx-post="{base}/leanfin/transactions/{txn_id}/allocations/add"
@@ -441,6 +472,24 @@ async fn alloc_editor(
                                class="alloc-amount-input mono">
                         <button type="submit" class="btn btn-primary btn-sm">{alloc_add}</button>
                     </form>
+                    <div class="alloc-rule-form">
+                        <span class="text-sm" style="font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-secondary)">{alloc_add_rule}</span>
+                        <form class="rule-add-form"
+                              hx-post="{base}/leanfin/transactions/{txn_id}/rules/create"
+                              hx-target="#alloc-editor-{txn_id}"
+                              hx-swap="outerHTML">
+                            <select name="label_id" required>{rule_label_options}</select>
+                            <select name="field" required
+                                    data-cp="{counterparty_val}"
+                                    data-desc="{description_val}"
+                                    onchange="this.closest('form').querySelector('input[name=pattern]').value=this.selectedOptions[0].value==='counterparty'?this.dataset.cp:this.dataset.desc">
+                                <option value="counterparty" {sel_cp}>{lbl_counterparty}</option>
+                                <option value="description" {sel_desc}>{lbl_description}</option>
+                            </select>
+                            <input type="text" name="pattern" value="{default_pattern}" placeholder="{alloc_rule_pattern}" required style="flex:1">
+                            <button type="submit" class="btn btn-primary btn-sm">{alloc_add_rule}</button>
+                        </form>
+                    </div>
                     <div class="alloc-footer">
                         <button class="btn btn-secondary btn-sm"
                                 hx-get="{base}/leanfin/transactions/{txn_id}/row"
@@ -456,6 +505,23 @@ async fn alloc_editor(
         alloc_amount = t.alloc_amount,
         alloc_add = t.alloc_add,
         alloc_done = t.alloc_done,
+        alloc_add_rule = t.alloc_add_rule,
+        alloc_rule_pattern = t.alloc_rule_pattern,
+        lbl_counterparty = t.lbl_counterparty,
+        lbl_description = t.lbl_description,
+        sel_cp = if default_field == "counterparty" {
+            "selected"
+        } else {
+            ""
+        },
+        sel_desc = if default_field == "description" {
+            "selected"
+        } else {
+            ""
+        },
+        counterparty_val = counterparty_val,
+        description_val = description_val,
+        rule_label_options = options,
     ))
 }
 
@@ -495,14 +561,7 @@ async fn alloc_add(
         .ok();
     }
 
-    // Re-render the editor
-    alloc_editor(
-        state,
-        Extension(UserId(user_id.0)),
-        Extension(lang),
-        Path(txn_id),
-    )
-    .await
+    alloc_editor_inner(&state, user_id, lang, txn_id, None).await
 }
 
 // ── Delete allocation ────────────────────────────────────────
@@ -525,13 +584,66 @@ async fn alloc_delete(
     .await
     .ok();
 
-    alloc_editor(
-        state,
-        Extension(UserId(user_id.0)),
-        Extension(lang),
-        Path(txn_id),
+    alloc_editor_inner(&state, user_id, lang, txn_id, None).await
+}
+
+// ── Create rule from transaction ─────────────────────────────
+
+#[derive(Deserialize)]
+struct CreateRuleForm {
+    label_id: i64,
+    field: String,
+    pattern: String,
+}
+
+async fn rule_create(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    Path(txn_id): Path<i64>,
+    Form(form): Form<CreateRuleForm>,
+) -> Html<String> {
+    let t = super::i18n::t(lang);
+
+    // Validate field
+    if form.field != "description" && form.field != "counterparty" {
+        return alloc_editor_inner(&state, user_id, lang, txn_id, None).await;
+    }
+
+    // Verify label belongs to user
+    let owns: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE id = ? AND user_id = ?")
+            .bind(form.label_id)
+            .bind(user_id.0)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
+
+    if owns.is_none() {
+        return alloc_editor_inner(&state, user_id, lang, txn_id, None).await;
+    }
+
+    // Create the rule
+    if let Err(e) = sqlx::query(
+        "INSERT INTO leanfin_label_rules (label_id, field, pattern, priority) VALUES (?, ?, ?, 0)",
     )
+    .bind(form.label_id)
+    .bind(&form.field)
+    .bind(&form.pattern)
+    .execute(&state.pool)
     .await
+    {
+        tracing::error!("Failed to create rule from transaction: {e}");
+        return alloc_editor_inner(&state, user_id, lang, txn_id, None).await;
+    }
+
+    // Apply rules to all unallocated transactions
+    match super::services::labeling::apply_rules(&state.pool, user_id.0).await {
+        Ok(n) => tracing::info!("Rule created from txn {txn_id}: auto-labeled {n} transactions"),
+        Err(e) => tracing::error!("Failed to apply rules after creation: {e}"),
+    }
+
+    alloc_editor_inner(&state, user_id, lang, txn_id, Some(t.alloc_rule_created)).await
 }
 
 // ── Single row (for "Done" button — refreshes row with correct class) ──

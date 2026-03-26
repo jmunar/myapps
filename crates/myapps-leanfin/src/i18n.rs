@@ -36,6 +36,10 @@ pub struct Translations {
     pub alloc_amount: &'static str,
     pub alloc_add: &'static str,
     pub alloc_done: &'static str,
+    pub alloc_add_rule: &'static str,
+    pub alloc_rule_field: &'static str,
+    pub alloc_rule_pattern: &'static str,
+    pub alloc_rule_created: &'static str,
 
     // ── Accounts ─────────────────────────────────────────────
     pub acc_title: &'static str,
@@ -202,6 +206,10 @@ pub const EN: Translations = Translations {
     alloc_amount: "Amount",
     alloc_add: "Add",
     alloc_done: "Done",
+    alloc_add_rule: "Add Rule",
+    alloc_rule_field: "Match field",
+    alloc_rule_pattern: "Pattern",
+    alloc_rule_created: "Rule created and applied to unallocated transactions",
 
     // ── Accounts ─────────────────────────────────────────────
     acc_title: "Accounts",
@@ -368,6 +376,10 @@ pub const ES: Translations = Translations {
     alloc_amount: "Importe",
     alloc_add: "Añadir",
     alloc_done: "Hecho",
+    alloc_add_rule: "Añadir regla",
+    alloc_rule_field: "Campo de coincidencia",
+    alloc_rule_pattern: "Patrón",
+    alloc_rule_created: "Regla creada y aplicada a movimientos sin asignar",
 
     // ── Accounts ─────────────────────────────────────────────
     acc_title: "Cuentas",

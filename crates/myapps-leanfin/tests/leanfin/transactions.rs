@@ -354,3 +354,228 @@ async fn transaction_balance_shows_dash_when_null() {
     assert!(body.contains(r#"class="txn-balance">"#));
     assert!(body.contains(">\u{2014}</td>"));
 }
+
+// ── Allocation editor: Add Rule form ────────────────────────
+
+#[tokio::test]
+async fn alloc_editor_shows_add_rule_form_with_prefilled_counterparty() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Pick a transaction that has a counterparty (Mercadona)
+    let (txn_id,): (i64,) = sqlx::query_as(
+        "SELECT id FROM leanfin_transactions WHERE counterparty = 'Mercadona' LIMIT 1",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let response = app
+        .server
+        .get(&format!("/leanfin/transactions/{txn_id}/allocations"))
+        .await;
+    let body = response.text();
+
+    // The "Add Rule" section is present
+    assert!(body.contains("alloc-rule-form"));
+    assert!(body.contains("rule-add-form"));
+    // Pattern is pre-filled with counterparty value
+    assert!(body.contains(r#"value="Mercadona""#));
+    // Counterparty option is selected by default
+    assert!(body.contains(r#"value="counterparty" selected"#));
+    // The form POSTs to the rules/create endpoint
+    assert!(body.contains(&format!("/leanfin/transactions/{txn_id}/rules/create")));
+}
+
+#[tokio::test]
+async fn rule_create_returns_editor_with_flash_message() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let (txn_id,): (i64,) = sqlx::query_as(
+        "SELECT id FROM leanfin_transactions WHERE counterparty = 'Mercadona' LIMIT 1",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let (label_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let response = app
+        .server
+        .post(&format!("/leanfin/transactions/{txn_id}/rules/create"))
+        .form(&serde_json::json!({
+            "label_id": label_id,
+            "field": "counterparty",
+            "pattern": "Mercadona"
+        }))
+        .await;
+    let body = response.text();
+
+    // Flash message confirms the rule was created
+    assert!(body.contains("alloc-flash"));
+    assert!(body.contains("Rule created"));
+    // Still returns the allocation editor
+    assert!(body.contains("alloc-editor"));
+}
+
+#[tokio::test]
+async fn rule_create_auto_allocates_matching_unallocated_transactions() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Get an account to insert transactions into
+    let (account_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    // Delete existing rules so we start clean for this specific pattern
+    sqlx::query("DELETE FROM leanfin_label_rules")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    // Delete existing allocations so transactions are unallocated
+    sqlx::query("DELETE FROM leanfin_allocations")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    // Insert two unallocated transactions with matching counterparty
+    for i in 0..2 {
+        sqlx::query(
+            "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, counterparty) VALUES (?, ?, '2025-06-01', -15.00, 'EUR', 'Test purchase', 'UniqueVendor')",
+        )
+        .bind(account_id)
+        .bind(format!("rule-test-{i}"))
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    }
+
+    // Pick one of our new transactions to create the rule from
+    let (txn_id,): (i64,) = sqlx::query_as(
+        "SELECT id FROM leanfin_transactions WHERE counterparty = 'UniqueVendor' LIMIT 1",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let (label_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    // Create the rule — this should auto-allocate all matching transactions
+    app.server
+        .post(&format!("/leanfin/transactions/{txn_id}/rules/create"))
+        .form(&serde_json::json!({
+            "label_id": label_id,
+            "field": "counterparty",
+            "pattern": "UniqueVendor"
+        }))
+        .await;
+
+    // Verify: the two UniqueVendor transactions now have allocations
+    let (alloc_count,): (i64,) = sqlx::query_as(
+        r#"SELECT COUNT(*) FROM leanfin_allocations al
+           JOIN leanfin_transactions t ON al.transaction_id = t.id
+           WHERE t.counterparty = 'UniqueVendor' AND al.label_id = ?"#,
+    )
+    .bind(label_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    assert_eq!(alloc_count, 2);
+}
+
+#[tokio::test]
+async fn rule_create_with_invalid_label_id_does_not_create_rule() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let (txn_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_transactions LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let (rule_count_before,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM leanfin_label_rules")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    // Use a label_id that doesn't belong to the user (non-existent)
+    let response = app
+        .server
+        .post(&format!("/leanfin/transactions/{txn_id}/rules/create"))
+        .form(&serde_json::json!({
+            "label_id": 999999,
+            "field": "counterparty",
+            "pattern": "SomeVendor"
+        }))
+        .await;
+    let body = response.text();
+
+    // Returns the editor without a flash message
+    assert!(body.contains("alloc-editor") || body.is_empty());
+    assert!(!body.contains("alloc-flash"));
+
+    let (rule_count_after,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM leanfin_label_rules")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rule_count_before, rule_count_after);
+}
+
+#[tokio::test]
+async fn rule_create_with_invalid_field_does_not_create_rule() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let (txn_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_transactions LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let (label_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let (rule_count_before,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM leanfin_label_rules")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    // Use an invalid field value
+    let response = app
+        .server
+        .post(&format!("/leanfin/transactions/{txn_id}/rules/create"))
+        .form(&serde_json::json!({
+            "label_id": label_id,
+            "field": "invalid_field",
+            "pattern": "SomePattern"
+        }))
+        .await;
+    let body = response.text();
+
+    // Returns the editor without a flash message
+    assert!(body.contains("alloc-editor"));
+    assert!(!body.contains("alloc-flash"));
+
+    let (rule_count_after,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM leanfin_label_rules")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    assert_eq!(rule_count_before, rule_count_after);
+}
