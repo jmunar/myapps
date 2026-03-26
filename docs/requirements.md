@@ -78,6 +78,10 @@ visibility into spending patterns.
 - Users can define auto-labeling rules (pattern matching on description or
   counterparty). Rules run automatically on newly fetched transactions and
   create a single allocation for the full amount.
+- Rules can also be created directly from the allocation editor in the
+  transaction list. The pattern is pre-filled from the transaction's
+  counterparty or description. On creation, the rule is immediately applied
+  to all existing unallocated transactions.
 - Manual allocations take precedence over auto-assigned ones.
 
 ### Notifications
@@ -168,7 +172,8 @@ visibility into spending patterns.
 ### Implemented
 
 - **Label rule management UI** — create/edit/delete auto-labeling rules from
-  the web interface.
+  the web interface, including inline rule creation from the transaction
+  allocation editor with immediate application to unallocated transactions.
 - **Transaction filtering** — filter the transaction list by free text search,
   account, or allocation status (not fully allocated). Filters are reactive
   and trigger on every change via HTMX.
