@@ -52,6 +52,13 @@ test.describe("README screenshots", () => {
     await page.goto(`${BASE_URL}/leanfin`);
     await snap(page, "leanfin-transactions");
 
+    // Open an allocation editor and click "More details" to show the raw payload
+    await page.locator(".label-add-btn").first().click();
+    await page.waitForSelector(".alloc-editor");
+    await page.locator("button", { hasText: /More details|Más detalles/ }).first().click();
+    await page.waitForSelector(".json-viewer");
+    await snap(page, "leanfin-transaction-details");
+
     await page.goto(`${BASE_URL}/leanfin/accounts`);
     await snap(page, "leanfin-accounts");
 
