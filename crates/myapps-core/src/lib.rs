@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod cli;
 pub mod command;
+pub mod components;
 pub mod config;
 pub mod db;
 pub mod i18n;

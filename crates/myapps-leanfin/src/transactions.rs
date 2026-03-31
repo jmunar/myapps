@@ -22,6 +22,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/transactions/{txn_id}/row", get(txn_row))
         .route("/transactions/{txn_id}/rules/create", post(rule_create))
+        .route("/transactions/{txn_id}/details", get(txn_details))
 }
 
 // ── Shared types ─────────────────────────────────────────────
@@ -490,7 +491,12 @@ async fn alloc_editor_inner(
                             <button type="submit" class="btn btn-primary btn-sm">{alloc_add_rule}</button>
                         </form>
                     </div>
+                    <div id="txn-details-{txn_id}"></div>
                     <div class="alloc-footer">
+                        <button class="btn btn-secondary btn-sm"
+                                hx-get="{base}/leanfin/transactions/{txn_id}/details"
+                                hx-target="#txn-details-{txn_id}"
+                                hx-swap="innerHTML">{txn_more_details}</button>
                         <button class="btn btn-secondary btn-sm"
                                 hx-get="{base}/leanfin/transactions/{txn_id}/row"
                                 hx-target="#txn-{txn_id}"
@@ -507,6 +513,7 @@ async fn alloc_editor_inner(
         alloc_done = t.alloc_done,
         alloc_add_rule = t.alloc_add_rule,
         alloc_rule_pattern = t.alloc_rule_pattern,
+        txn_more_details = t.txn_more_details,
         lbl_counterparty = t.lbl_counterparty,
         lbl_description = t.lbl_description,
         sel_cp = if default_field == "counterparty" {
@@ -688,4 +695,84 @@ async fn txn_row(
 
     let refs: Vec<&AllocRow> = allocs.iter().collect();
     Html(render_row(&t, &refs, base))
+}
+
+// ── Transaction details (raw API payload) ───────────────────
+
+async fn txn_details(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    Path(txn_id): Path<i64>,
+) -> Html<String> {
+    let t = super::i18n::t(lang);
+
+    // Get transaction's external_id and account_id
+    let txn: Option<(String, i64)> = sqlx::query_as(
+        r#"SELECT t.external_id, t.account_id FROM leanfin_transactions t
+           JOIN leanfin_accounts a ON t.account_id = a.id
+           WHERE t.id = ? AND a.user_id = ?"#,
+    )
+    .bind(txn_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some((external_id, account_id)) = txn else {
+        return Html("".into());
+    };
+
+    // Search API payloads for this transaction's raw data
+    let payloads: Vec<(String,)> = sqlx::query_as(
+        r#"SELECT response_body FROM leanfin_api_payloads
+           WHERE account_id = ? AND endpoint = '/accounts/{uid}/transactions'
+             AND status_code = 200 AND response_body IS NOT NULL
+           ORDER BY created_at DESC"#,
+    )
+    .bind(account_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let mut raw_txn: Option<serde_json::Value> = None;
+    for (body,) in &payloads {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(body) {
+            if let Some(transactions) = parsed.get("transactions").and_then(|t| t.as_array()) {
+                for txn_val in transactions {
+                    let matches = txn_val
+                        .get("transaction_id")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|id| id == external_id)
+                        || txn_val
+                            .get("entry_reference")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|id| id == external_id);
+                    if matches {
+                        raw_txn = Some(txn_val.clone());
+                        break;
+                    }
+                }
+            }
+            if raw_txn.is_some() {
+                break;
+            }
+        }
+    }
+
+    let content = match raw_txn {
+        Some(val) => myapps_core::components::render_json_viewer(&val),
+        None => format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.txn_details_not_found
+        ),
+    };
+
+    Html(format!(
+        r#"<div class="txn-details">
+            <span class="text-sm" style="font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-secondary)">{title}</span>
+            {content}
+        </div>"#,
+        title = t.txn_details_title,
+    ))
 }

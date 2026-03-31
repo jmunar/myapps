@@ -995,6 +995,14 @@ tr.txn-misallocated .txn-date {
     border-radius: var(--radius);
 }
 
+/* ── Transaction details ──────────────────────────────────── */
+.txn-details {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
 /* Brand as link in nav */
 nav a.brand {
     font-family: var(--font-display);

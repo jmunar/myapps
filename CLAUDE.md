@@ -99,7 +99,7 @@ assembles all crates.
 - ClassroomInput-specific routes and handlers live in `crates/myapps-classroom-input/`.
 - Notes-specific routes and handlers live in `crates/myapps-notes/`.
 - Shared infrastructure (auth, config, db, models, layout, i18n, command,
-  services) lives in `crates/myapps-core/`. Shared services (whisper
+  components, services) lives in `crates/myapps-core/`. Shared services (whisper
   transcription, push notifications) live in `crates/myapps-core/src/services/`.
 - Each app implements the `App` trait from `myapps_core::registry`. The trait
   provides hooks for migrations, routing, CSS, commands, seeding, scheduled

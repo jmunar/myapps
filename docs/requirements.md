@@ -244,6 +244,13 @@ visibility into spending patterns.
   provides an audit trail for debugging sync issues, reconciliation mismatches,
   and provider behavior changes. Payloads are linked to the relevant account when
   available; pre-account calls (auth, sessions) store a NULL account_id.
+- **Transaction details viewer** — a "More details" button in the allocation
+  editor loads the raw Enable Banking API payload for a transaction. The payload
+  is located by matching the transaction's external ID against stored API
+  responses, with null fields stripped. The JSON is rendered using a reusable
+  collapsible tree component (`myapps_core::components`) that uses
+  `<details>`/`<summary>` elements for expand/collapse without JavaScript.
+  Seed data includes matching API payloads for demo users.
 - **Per-user Enable Banking credentials** — each user configures their own
   Enable Banking Application ID and RSA private key via a settings page
   (`/leanfin/settings`). Private keys are uploaded as PEM files, validated

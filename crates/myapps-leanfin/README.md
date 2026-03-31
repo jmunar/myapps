@@ -14,6 +14,7 @@ breakdowns.
 <p align="center">
   <img src="../../docs/screenshots/leanfin-expenses.png" width="270" alt="Expenses" />
   <img src="../../docs/screenshots/leanfin-labels.png" width="270" alt="Labels" />
+  <img src="../../docs/screenshots/leanfin-transaction-details.png" width="270" alt="Transaction details" />
 </p>
 
 ## Features
