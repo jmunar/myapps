@@ -40,6 +40,9 @@ pub struct Translations {
     pub alloc_rule_field: &'static str,
     pub alloc_rule_pattern: &'static str,
     pub alloc_rule_created: &'static str,
+    pub txn_more_details: &'static str,
+    pub txn_details_title: &'static str,
+    pub txn_details_not_found: &'static str,
 
     // ── Accounts ─────────────────────────────────────────────
     pub acc_title: &'static str,
@@ -210,6 +213,9 @@ pub const EN: Translations = Translations {
     alloc_rule_field: "Match field",
     alloc_rule_pattern: "Pattern",
     alloc_rule_created: "Rule created and applied to unallocated transactions",
+    txn_more_details: "More details",
+    txn_details_title: "Raw API payload",
+    txn_details_not_found: "No raw payload found for this transaction.",
 
     // ── Accounts ─────────────────────────────────────────────
     acc_title: "Accounts",
@@ -380,6 +386,9 @@ pub const ES: Translations = Translations {
     alloc_rule_field: "Campo de coincidencia",
     alloc_rule_pattern: "Patrón",
     alloc_rule_created: "Regla creada y aplicada a movimientos sin asignar",
+    txn_more_details: "Más detalles",
+    txn_details_title: "Respuesta original de la API",
+    txn_details_not_found: "No se encontró la respuesta original para este movimiento.",
 
     // ── Accounts ─────────────────────────────────────────────
     acc_title: "Cuentas",

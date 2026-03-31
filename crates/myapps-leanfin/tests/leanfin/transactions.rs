@@ -579,3 +579,154 @@ async fn rule_create_with_invalid_field_does_not_create_rule() {
 
     assert_eq!(rule_count_before, rule_count_after);
 }
+
+// ── Transaction details (raw API payload) ───────────────────
+
+#[tokio::test]
+async fn txn_details_returns_json_viewer_when_payload_exists() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Pick a transaction — seed data now includes API payloads
+    let (txn_id, external_id): (i64, String) =
+        sqlx::query_as("SELECT id, external_id FROM leanfin_transactions LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let response = app
+        .server
+        .get(&format!("/leanfin/transactions/{txn_id}/details"))
+        .await;
+    let body = response.text();
+
+    // Contains the json-viewer component
+    assert!(body.contains(r#"class="json-viewer""#));
+    // Contains the txn-details wrapper
+    assert!(body.contains(r#"class="txn-details""#));
+    // Contains the section title
+    assert!(body.contains("Raw API payload"));
+    // Contains the transaction_id from the payload
+    assert!(body.contains(&external_id));
+    // Does NOT contain the "not found" message
+    assert!(!body.contains("No raw payload found"));
+}
+
+#[tokio::test]
+async fn txn_details_returns_not_found_when_no_payload_exists() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Insert a transaction with no matching API payload
+    let (account_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency, description) VALUES (?, 'no_payload_ext', '2026-01-01', -10.0, 'EUR', 'Orphan txn')"
+    )
+    .bind(account_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    let (txn_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_transactions WHERE external_id = 'no_payload_ext'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let response = app
+        .server
+        .get(&format!("/leanfin/transactions/{txn_id}/details"))
+        .await;
+    let body = response.text();
+
+    // Contains the txn-details wrapper
+    assert!(body.contains(r#"class="txn-details""#));
+    // Contains the section title
+    assert!(body.contains("Raw API payload"));
+    // Contains the "not found" message
+    assert!(body.contains("No raw payload found"));
+    // Does NOT contain the json-viewer component
+    assert!(!body.contains(r#"class="json-viewer""#));
+}
+
+#[tokio::test]
+async fn txn_details_matches_by_entry_reference() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Create a transaction with a unique external_id not present in seed payloads
+    let (account_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let ext_id = "entryref_only_txn";
+    sqlx::query(
+        "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency, description) VALUES (?, ?, '2026-01-01', -99.99, 'EUR', 'Entry ref test')"
+    )
+    .bind(account_id)
+    .bind(ext_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    let (txn_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_transactions WHERE external_id = ?")
+            .bind(ext_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    // Insert payload that only has entry_reference (no transaction_id)
+    let payload_body = serde_json::json!({
+        "transactions": [
+            {
+                "entry_reference": ext_id,
+                "amount": -99.99,
+                "note": "Matched via entry_reference"
+            }
+        ]
+    });
+    sqlx::query(
+        r#"INSERT INTO leanfin_api_payloads (account_id, provider, method, endpoint, status_code, duration_ms, response_body)
+           VALUES (?, 'enable_banking', 'GET', '/accounts/{uid}/transactions', 200, 100, ?)"#,
+    )
+    .bind(account_id)
+    .bind(payload_body.to_string())
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let response = app
+        .server
+        .get(&format!("/leanfin/transactions/{txn_id}/details"))
+        .await;
+    let body = response.text();
+
+    assert!(body.contains(r#"class="json-viewer""#));
+    assert!(body.contains("Matched via entry_reference"));
+}
+
+#[tokio::test]
+async fn alloc_editor_has_more_details_button() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let (txn_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_transactions LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let response = app
+        .server
+        .get(&format!("/leanfin/transactions/{txn_id}/allocations"))
+        .await;
+    let body = response.text();
+
+    // The "More details" button is present
+    assert!(body.contains("More details"));
+    // It targets the details container
+    assert!(body.contains(&format!("hx-target=\"#txn-details-{txn_id}\"")));
+    // It fetches from the details endpoint
+    assert!(body.contains(&format!("/leanfin/transactions/{txn_id}/details")));
+}

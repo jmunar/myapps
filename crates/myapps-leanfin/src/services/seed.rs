@@ -227,6 +227,7 @@ pub async fn run(
     // Simulate daily syncs: create a snapshot at each "sync date", then link
     // transactions whose booking date falls within that sync window.
     let count = seed_bank_txns_with_snapshots(pool, acct1, txns, "seed_chk", 3245.67).await?;
+    seed_api_payloads(pool, acct1, txns, "seed_chk", 3245.67).await?;
 
     // Savings account — fewer, larger movements
     let savings_txns: &[(&str, f64, &str, &str, Option<&str>)] = &[
@@ -269,6 +270,7 @@ pub async fn run(
 
     let count2 =
         seed_bank_txns_with_snapshots(pool, acct2, savings_txns, "seed_sav", 8500.85).await?;
+    seed_api_payloads(pool, acct2, savings_txns, "seed_sav", 8500.85).await?;
 
     // Archived BBVA account — old transactions (account closed in late 2025)
     let bbva_txns: &[(&str, f64, &str, &str, Option<&str>)] = &[
@@ -340,6 +342,7 @@ pub async fn run(
     ];
 
     let count3 = seed_bank_txns_with_snapshots(pool, acct4, bbva_txns, "seed_bbva", 585.92).await?;
+    seed_api_payloads(pool, acct4, bbva_txns, "seed_bbva", 585.92).await?;
     let count = count + count2 + count3;
 
     // Seed labels, rules, and allocations
@@ -685,6 +688,83 @@ async fn seed_manual_balances(
         .bind(account_id)
         .execute(pool)
         .await?;
+
+    Ok(())
+}
+
+/// Seed fake Enable Banking API payloads so the "More details" viewer has data.
+async fn seed_api_payloads(
+    pool: &SqlitePool,
+    account_id: i64,
+    txns: &[(&str, f64, &str, &str, Option<&str>)],
+    prefix: &str,
+    final_balance: f64,
+) -> Result<()> {
+    // Build a running balance backwards from final_balance (same logic as snapshot seeding)
+    let mut balance_after: Vec<f64> = vec![0.0; txns.len()];
+    let mut bal = final_balance;
+    // Transactions are provided newest-first; walk forward so the last entry = final_balance
+    for (i, (_, amount, _, _, _)) in txns.iter().enumerate() {
+        balance_after[i] = bal;
+        bal -= amount;
+    }
+
+    // Build BankTransaction-shaped JSON objects
+    let api_txns: Vec<serde_json::Value> = txns
+        .iter()
+        .enumerate()
+        .map(|(i, (date, amount, currency, desc, cp))| {
+            let abs = amount.abs();
+            let indicator = if *amount < 0.0 { "DBIT" } else { "CRDT" };
+            let eid = format!("{prefix}_{i:03}");
+
+            // Creditor/debtor depends on direction
+            let (creditor, debtor) = if *amount < 0.0 {
+                (
+                    cp.map(|name| serde_json::json!({"name": name})),
+                    None::<serde_json::Value>,
+                )
+            } else {
+                (
+                    None::<serde_json::Value>,
+                    cp.map(|name| serde_json::json!({"name": name})),
+                )
+            };
+
+            serde_json::json!({
+                "transaction_id": eid,
+                "entry_reference": format!("REF-{eid}"),
+                "booking_date": date,
+                "value_date": date,
+                "transaction_amount": {
+                    "currency": currency,
+                    "amount": format!("{abs:.2}")
+                },
+                "credit_debit_indicator": indicator,
+                "status": "booked",
+                "creditor": creditor,
+                "debtor": debtor,
+                "remittance_information": [desc],
+                "balance_after_transaction": {
+                    "amount": format!("{:.2}", balance_after[i])
+                }
+            })
+        })
+        .collect();
+
+    let response_body = serde_json::json!({
+        "transactions": api_txns
+    });
+
+    sqlx::query(
+        r#"INSERT INTO leanfin_api_payloads
+           (account_id, method, endpoint, response_body, status_code, duration_ms)
+           VALUES (?, 'GET', '/accounts/{uid}/transactions', ?, 200, 342)"#,
+    )
+    .bind(account_id)
+    .bind(response_body.to_string())
+    .execute(pool)
+    .await?;
 
     Ok(())
 }

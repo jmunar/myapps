@@ -790,3 +790,73 @@ button:active, .btn:active {
         right: 4.5rem;
     }
 }
+
+/* ── JSON Viewer (reusable component) ─────────────────────── */
+.json-viewer {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.5;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+}
+
+.json-viewer details.json-node {
+    margin-left: 1rem;
+}
+
+.json-viewer details.json-node > summary {
+    cursor: pointer;
+    list-style: none;
+    color: var(--text);
+    font-weight: 500;
+    padding: 0.1rem 0;
+}
+
+.json-viewer details.json-node > summary::before {
+    content: "\25B6";
+    display: inline-block;
+    width: 1rem;
+    font-size: 0.6rem;
+    transition: transform 0.15s var(--ease);
+    color: var(--text-secondary);
+}
+
+.json-viewer details.json-node[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.json-viewer .json-children {
+    border-left: 1px solid var(--border-light);
+    margin-left: 0.35rem;
+    padding-left: 0.5rem;
+}
+
+.json-viewer .json-leaf {
+    margin-left: 1rem;
+    padding: 0.1rem 0;
+}
+
+.json-viewer .json-key {
+    color: var(--text);
+    font-weight: 500;
+}
+
+.json-viewer .json-string {
+    color: var(--positive);
+}
+
+.json-viewer .json-number {
+    color: var(--accent);
+}
+
+.json-viewer .json-bool {
+    color: var(--warning);
+}
+
+.json-viewer .json-null {
+    color: var(--text-secondary);
+    font-style: italic;
+}
