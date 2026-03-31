@@ -57,6 +57,7 @@ myapps/
 │   │       ├── auth/        # Authentication & session management
 │   │       ├── cli.rs       # CLI parsing + command dispatch (clap)
 │   │       ├── command/     # Natural-language command bar (LLM-powered)
+│   │       ├── components.rs # Reusable UI components (JSON viewer)
 │   │       ├── config.rs    # Configuration (env vars)
 │   │       ├── db.rs        # Database pool and migrations
 │   │       ├── i18n/        # Shared translations (auth, launcher, command bar)
