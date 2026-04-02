@@ -74,9 +74,10 @@ jobs:
 
       - name: Cross-compile for aarch64
         if: steps.tag_check.outputs.exists == 'false'
-        run: cross build --release --target aarch64-unknown-linux-gnu
-        env:
-          RUSTC_WRAPPER: ""
+        run: |
+          # Remove sccache wrapper — not available inside cross's Docker container
+          sed -i '/rustc-wrapper/d' .cargo/config.toml
+          cross build --release --target aarch64-unknown-linux-gnu
 
       - name: Create tag and GitHub Release
         if: steps.tag_check.outputs.exists == 'false'
