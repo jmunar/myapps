@@ -76,7 +76,7 @@ jobs:
       - name: Bump version
         run: |
           sed -i '/^\[package\]/,/^\[/{s/^version = ".*"/version = "${{ steps.version.outputs.version }}"/}' Cargo.toml
-          cargo generate-lockfile
+          RUSTC_WRAPPER="" cargo generate-lockfile
 
       - name: Commit and tag
         run: |
