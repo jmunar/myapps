@@ -10,13 +10,13 @@
 
 ## Build Strategy
 
-The project is built **natively on the Odroid** rather than cross-compiled
-on the development machine. The deploy script rsyncs the source code to the
-server, compiles there, and installs the binary. The Odroid N2 with 4 GB RAM
-handles Rust compilation without issues.
+Release binaries are **cross-compiled in GitHub Actions** for
+`aarch64-unknown-linux-gnu` using [`cross`](https://github.com/cross-rs/cross).
+Each merge to `main` automatically bumps the version, creates a GitHub Release
+with the binary attached, and deploys it to staging then production.
 
-This avoids the complexity of cross-compilation toolchains (linkers, Docker,
-`cross`) when developing on macOS.
+For local development deploys, `deploy.sh deploy` can still build natively on
+the Odroid if needed.
 
 ## Prerequisites
 
@@ -144,19 +144,21 @@ ssh odroid-deploy 'sudo -u myapps /opt/myapps/myapps create-user --username your
 
 Usage: `./deploy.sh <env> <command>`
 
-| Command   | Description                                         |
-|-----------|-----------------------------------------------------|
-| `setup`   | First-time server provisioning (+ Rust install)     |
-| `deploy`  | Rsync source + build on server + install + restart  |
-| `install` | Rsync source + install + restart (skip build)       |
-| `build`   | Rsync source + build on server (no install)         |
-| `restart` | Restart the service                                 |
-| `logs`    | Tail the service logs (journalctl)                  |
-| `status`  | Show service status                                 |
+| Command                      | Description                                              |
+|------------------------------|----------------------------------------------------------|
+| `release-deploy <binary>`   | Upload a pre-built binary + static files directly to target dir, restart (used by CD) |
+| `setup`                     | First-time server provisioning                           |
+| `deploy`                    | Rsync source + build on server + install + restart       |
+| `install`                   | Rsync source + install + restart (skip build)            |
+| `build`                     | Rsync source + build on server (no install)              |
+| `restart`                   | Restart the service                                      |
+| `logs`                      | Tail the service logs (journalctl)                       |
+| `status`                    | Show service status                                      |
 
-Both environments share the same `DEPLOY_REMOTE_BUILD_DIR` so that production's
-`install` command picks up the binary already compiled during the staging deploy.
-`make gh-env` asserts that all environments use the same value.
+The `release-deploy` command is used by the CD pipeline — it copies the
+cross-compiled binary and static files directly to the target directory
+(`DEPLOY_REMOTE_DIR`) via SCP/rsync, without needing a build directory on the
+server. The `deploy` and `install` commands are kept for local manual deploys.
 
 Available environments are defined by config files in `deploy/`:
 
@@ -169,6 +171,33 @@ The SSH target is set via `DEPLOY_SERVER` in each `deploy/*.env` file
 (e.g. `odroid-deploy` matching your SSH config alias).
 
 ## Deploy Flow
+
+### CD pipeline (automatic, on merge to main)
+
+```
+GitHub Actions                      Odroid N2
+──────────────                      ─────────
+push to main
+  │
+  ├─ bump version in Cargo.toml
+  ├─ commit + tag (v0.2.0)
+  ├─ cross build --target aarch64
+  ├─ create GitHub Release
+  │
+  ├─ [deploy-stage]
+  │    ├─ gh release download
+  │    ├─ scp binary + static ──▸  /opt/myapps-stage/
+  │    ├─ ssh: restart
+  │    └─ smoke test /login → 200
+  │
+  └─ [deploy-prod]
+       ├─ gh release download
+       ├─ scp binary + static ──▸  /opt/myapps/
+       ├─ ssh: restart
+       └─ smoke test /login → 200
+```
+
+### Manual deploy (from dev machine)
 
 ```
 Dev machine                         Odroid N2
@@ -498,18 +527,37 @@ Merging to `main` triggers automatic deployment via `.github/workflows/cd.yml`:
 push to main
     │
     ▼
- [deploy-stage]  ◄── automatic (build + install + restart)
+ [release]       ◄── auto-bump version, cross-compile aarch64, create GitHub Release
+    │
+    ▼
+ [deploy-stage]  ◄── download release binary, upload to server, install + restart
     │ smoke test /login → 200
     ▼
- [deploy-prod]   ◄── automatic (install only — reuses staging binary)
+ [deploy-prod]   ◄── download same release binary, upload to server, install + restart
     │ smoke test /login → 200
     ▼
   Done
 ```
 
-The binary is compiled only once during the staging deploy. The production job
-skips compilation and copies the binary from staging's build directory via
-`DEPLOY_BINARY_DIR`, since both environments target the same Odroid server.
+### Versioning
+
+The version in `Cargo.toml` is bumped during development as part of the
+`/finish-development` workflow, before the PR is opened. Bump type is
+determined by the branch name and commit prefixes:
+
+| Prefix        | Bump  | Example                          |
+|---------------|-------|----------------------------------|
+| `[FEAT-*]`   | minor | `[FEAT-42] Add new dashboard`    |
+| `[BREAKING-*]`| major | `[BREAKING] Remove legacy API`  |
+| anything else | patch | `[BUG-99] Fix login redirect`    |
+
+Makefile targets are available for manual use: `make bump-patch`,
+`make bump-minor`, `make bump-major`.
+
+When merged to `main`, the CD pipeline reads the version from `Cargo.toml`,
+creates a git tag (`v0.2.0`), and publishes a GitHub Release. If the tag
+already exists (e.g. re-running the workflow), the release step is skipped
+and the existing release binary is deployed.
 
 CI (format, clippy, tests) runs separately via `ci.yml`. The CD pipeline
 trusts that CI has already passed on `main`.

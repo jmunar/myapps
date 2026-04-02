@@ -141,9 +141,10 @@ visibility into spending patterns.
 
 - GitHub Actions enforces formatting (rustfmt), linting (clippy with
   warnings-as-errors), and tests on every push and pull request.
-- Merging to `main` triggers automatic deployment: staging first (with smoke
-  test), then production (with smoke test). Deploys use a dedicated SSH user
-  with scoped sudo.
+- Merging to `main` triggers automatic deployment: the CD pipeline auto-bumps
+  the version, cross-compiles for aarch64, creates a GitHub Release with the
+  binary, then deploys to staging and production (with smoke tests). Deploys
+  use a dedicated SSH user with scoped sudo.
 - A scheduled security audit (`cargo audit`) runs weekly and on Cargo.toml/lock
   changes.
 - Dependabot opens weekly PRs for Cargo dependency updates and GitHub Actions
@@ -154,7 +155,9 @@ visibility into spending patterns.
 ### Deployment
 
 - Development happens on a separate machine (not the server).
-- Source is rsynced to the server and compiled natively on the Odroid N2.
+- Release binaries are cross-compiled in GitHub Actions for aarch64 and
+  deployed directly to the server. Manual deploys can still build natively
+  on the Odroid via `deploy.sh deploy`.
 - The application runs as a systemd service on the server.
 - The cron job is a system crontab entry that invokes the same binary with the
   `cron` subcommand, which runs each deployed app's scheduled tasks.

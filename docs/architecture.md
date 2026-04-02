@@ -102,7 +102,7 @@ myapps/
 │   ├── workflows/           # CI, CD, audit
 │   └── dependabot.yml
 ├── Makefile                 # Dev shortcuts (workspace-wide: fmt, lint, test, check)
-├── deploy.sh                # Rsync + build on server + restart script
+├── deploy.sh                # Deploy script (release-deploy for CI, build/install for local)
 └── scripts/                 # Screenshot automation
 ```
 
@@ -378,7 +378,8 @@ Development machine and server are separate. The workflow is:
 
 1. Develop and test locally (using a local SQLite DB).
 2. Merging to `main` triggers the CD pipeline (`.github/workflows/cd.yml`),
-   which deploys to staging (with smoke test) then production (with smoke test).
+   which auto-bumps the version, cross-compiles for aarch64, creates a GitHub
+   Release, then deploys the binary to staging and production (with smoke tests).
 3. Manual deploys are also possible via `./deploy.sh <env> deploy`, which
    rsyncs source to the Odroid, builds natively, and installs + restarts the
    service.

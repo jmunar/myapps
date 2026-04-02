@@ -12,13 +12,14 @@ Usage: $0 <env> <command>
 Environments: ${ENVS:-none found}
 
 Commands:
-  build         Build the release binary on the server
-  deploy        Sync source + build on server + install + restart
-  install       Sync source + install + restart (skip build; set DEPLOY_BINARY_DIR to use a pre-built binary)
-  setup         First-time server setup (user, dirs, systemd, cron)
-  restart       Restart the service on the server
-  logs          Tail the server logs
-  status        Show service status
+  release-deploy <binary>  Upload a pre-built binary + static files, install + restart
+  build                    Build the release binary on the server
+  deploy                   Sync source + build on server + install + restart
+  install                  Sync source + install + restart (skip build; set DEPLOY_BINARY_DIR to use a pre-built binary)
+  setup                    First-time server setup (user, dirs, systemd, cron)
+  restart                  Restart the service on the server
+  logs                     Tail the server logs
+  status                   Show service status
 EOF
     exit 1
 }
@@ -41,6 +42,7 @@ fi
 source "$ENV_FILE"
 
 SERVER="$DEPLOY_SERVER"
+EXTRA_ARG="${3:-}"
 
 # ── Helpers ────────────────────────────────────────────────────────
 
@@ -62,6 +64,32 @@ sync_source() {
         --exclude data \
         --exclude '.env' \
         ./ "$SERVER:$DEPLOY_REMOTE_BUILD_DIR/"
+}
+
+release_install() {
+    local local_binary="${1:?Usage: $0 <env> release-deploy <binary-path>}"
+    [[ -f "$local_binary" ]] || { echo "Error: binary not found: $local_binary"; exit 1; }
+    echo "▸ Uploading release binary to $SERVER..."
+    scp "$local_binary" "$SERVER:/tmp/myapps.new"
+    echo "▸ Installing binary..."
+    ssh_server DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" bash <<'INSTALL'
+set -euo pipefail
+sudo mv /tmp/myapps.new $DEPLOY_REMOTE_DIR/myapps.new
+sudo mv $DEPLOY_REMOTE_DIR/myapps.new $DEPLOY_REMOTE_DIR/myapps
+sudo chown myapps:myapps $DEPLOY_REMOTE_DIR/myapps
+sudo chmod +x $DEPLOY_REMOTE_DIR/myapps
+INSTALL
+    echo "▸ Syncing static files..."
+    rsync -az --delete -e ssh static/ "$SERVER:/tmp/myapps-static/"
+    ssh_server DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'STATIC'
+set -euo pipefail
+sudo rsync -a --delete /tmp/myapps-static/ $DEPLOY_REMOTE_DIR/static/
+if [[ -n "$DEPLOY_ICON" && "$DEPLOY_ICON" != "icon.svg" ]]; then
+    sudo cp $DEPLOY_REMOTE_DIR/static/$DEPLOY_ICON $DEPLOY_REMOTE_DIR/static/icon.svg
+fi
+sudo chown -R myapps:myapps $DEPLOY_REMOTE_DIR/static
+rm -rf /tmp/myapps-static
+STATIC
 }
 
 build() {
@@ -238,6 +266,7 @@ SETUP
 
 # ── Command dispatch ───────────────────────────────────────────────
 case "${COMMAND}" in
+    release-deploy) release_install "$EXTRA_ARG" && restart ;;
     build)   build ;;
     deploy)  build && install && restart ;;
     install) sync_source && install && restart ;;

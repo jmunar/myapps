@@ -29,10 +29,14 @@ myapps-test-harness = { path = "crates/myapps-test-harness" }
 
 [package]
 name = "myapps"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 
+[features]
+vendored-openssl = ["dep:openssl"]
+
 [dependencies]
+openssl = { version = "0.10", features = ["vendored"], optional = true }
 myapps-core.workspace = true
 myapps-leanfin.workspace = true
 myapps-mindflow.workspace = true
