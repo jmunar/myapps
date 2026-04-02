@@ -43,10 +43,11 @@ Determine the appropriate version bump by looking at the branch name prefix and 
 - If any commit contains `[BREAKING`: **major** bump
 - Otherwise (bug fixes, chores, refactors): **patch** bump
 
-Run the corresponding Makefile target (`make bump-patch`, `make bump-minor`, or `make bump-major`). Then commit the change:
+Run the corresponding Makefile target (`make bump-patch`, `make bump-minor`, or `make bump-major`). The Makefile only updates `Cargo.toml`; regenerate the lockfile with `cargo generate-lockfile`, then commit both:
 
 ```
-git add Cargo.toml
+cargo generate-lockfile
+git add Cargo.toml Cargo.lock
 git commit -m "Bump version to <new-version>"
 ```
 
