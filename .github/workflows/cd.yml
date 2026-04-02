@@ -2,6 +2,16 @@ name: CD
 
 on:
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump override (auto-detected from commits if empty)"
+        required: false
+        type: choice
+        options:
+          - ""
+          - patch
+          - minor
+          - major
   push:
     branches: [main]
 
@@ -10,12 +20,110 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release:
+    name: Build & release
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[release]')"
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Determine version bump
+        id: version
+        run: |
+          CURRENT=$(sed -n '/^\[package\]/,/^\[/{s/^version = "\(.*\)"/\1/p}' Cargo.toml)
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          BUMP="${{ inputs.bump }}"
+          if [[ -z "$BUMP" ]]; then
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [[ -n "$LAST_TAG" ]]; then
+              COMMITS=$(git log "$LAST_TAG"..HEAD --format=%s)
+            else
+              COMMITS=$(git log --format=%s)
+            fi
+
+            if echo "$COMMITS" | grep -qi '\[breaking'; then
+              BUMP=major
+            elif echo "$COMMITS" | grep -qi '\[feat'; then
+              BUMP=minor
+            else
+              BUMP=patch
+            fi
+          fi
+
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Bumping $CURRENT → $VERSION ($BUMP)"
+
+      - name: Bump version
+        run: |
+          sed -i '/^\[package\]/,/^\[/{s/^version = ".*"/version = "${{ steps.version.outputs.version }}"/}' Cargo.toml
+          cargo generate-lockfile
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "[release] v${{ steps.version.outputs.version }}"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin main --tags
+
+      - uses: Swatinem/rust-cache@v2.9.1
+        with:
+          key: aarch64
+
+      - name: Install cross
+        uses: taiki-e/install-action@cross
+
+      - name: Cross-compile for aarch64
+        run: cross build --release --target aarch64-unknown-linux-gnu
+        env:
+          RUSTC_WRAPPER: ""
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          files: target/aarch64-unknown-linux-gnu/release/myapps
+
   deploy-stage:
     name: Deploy to staging
+    needs: release
     runs-on: ubuntu-latest
     environment: staging
     steps:
       - uses: actions/checkout@v6
+
+      - name: Download release binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-binary
+          gh release download "${{ needs.release.outputs.tag }}" \
+            --pattern "myapps" \
+            --dir ./release-binary
+          chmod +x ./release-binary/myapps
 
       - name: Mask sensitive values
         run: |
@@ -23,7 +131,6 @@ jobs:
           echo "::add-mask::$(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)"
           echo "::add-mask::${{ vars.DEPLOY_DOMAIN }}"
           echo "::add-mask::${{ vars.DEPLOY_REMOTE_DIR }}"
-          echo "::add-mask::${{ vars.DEPLOY_REMOTE_BUILD_DIR }}"
 
       - name: Configure SSH
         run: |
@@ -56,7 +163,7 @@ jobs:
           EOF
 
       - name: Deploy to staging
-        run: DEPLOY_CI=true ./deploy.sh stage deploy
+        run: DEPLOY_CI=true ./deploy.sh stage release-deploy ./release-binary/myapps
 
       - name: Smoke test
         run: |
@@ -76,12 +183,21 @@ jobs:
 
   deploy-prod:
     name: Deploy to production
-    needs: deploy-stage
+    needs: [release, deploy-stage]
     runs-on: ubuntu-latest
     environment: production
-
     steps:
       - uses: actions/checkout@v6
+
+      - name: Download release binary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-binary
+          gh release download "${{ needs.release.outputs.tag }}" \
+            --pattern "myapps" \
+            --dir ./release-binary
+          chmod +x ./release-binary/myapps
 
       - name: Mask sensitive values
         run: |
@@ -89,7 +205,6 @@ jobs:
           echo "::add-mask::$(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)"
           echo "::add-mask::${{ vars.DEPLOY_DOMAIN }}"
           echo "::add-mask::${{ vars.DEPLOY_REMOTE_DIR }}"
-          echo "::add-mask::${{ vars.DEPLOY_REMOTE_BUILD_DIR }}"
 
       - name: Configure SSH
         run: |
@@ -121,8 +236,8 @@ jobs:
           DEPLOY_SEED=${{ vars.DEPLOY_SEED }}
           EOF
 
-      - name: Deploy to production (reuse staging build)
-        run: DEPLOY_CI=true ./deploy.sh prod install
+      - name: Deploy to production
+        run: DEPLOY_CI=true ./deploy.sh prod release-deploy ./release-binary/myapps
 
       - name: Smoke test
         run: |
