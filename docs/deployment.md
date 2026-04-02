@@ -541,7 +541,9 @@ push to main
 
 ### Versioning
 
-Version is auto-bumped on each merge to `main` based on commit message prefixes:
+The version in `Cargo.toml` is bumped during development as part of the
+`/finish-development` workflow, before the PR is opened. Bump type is
+determined by the branch name and commit prefixes:
 
 | Prefix        | Bump  | Example                          |
 |---------------|-------|----------------------------------|
@@ -549,11 +551,13 @@ Version is auto-bumped on each merge to `main` based on commit message prefixes:
 | `[BREAKING-*]`| major | `[BREAKING] Remove legacy API`  |
 | anything else | patch | `[BUG-99] Fix login redirect`    |
 
-The workflow can also be triggered manually via `workflow_dispatch` with an
-explicit bump type override (patch, minor, or major).
+Makefile targets are available for manual use: `make bump-patch`,
+`make bump-minor`, `make bump-major`.
 
-The release commit (`[release] v0.2.0`) is automatically skipped by both CI
-and CD to avoid infinite loops.
+When merged to `main`, the CD pipeline reads the version from `Cargo.toml`,
+creates a git tag (`v0.2.0`), and publishes a GitHub Release. If the tag
+already exists (e.g. re-running the workflow), the release step is skipped
+and the existing release binary is deployed.
 
 CI (format, clippy, tests) runs separately via `ci.yml`. The CD pipeline
 trusts that CI has already passed on `main`.

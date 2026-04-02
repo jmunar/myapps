@@ -35,7 +35,24 @@ git merge origin/main
 
 If there are merge conflicts, resolve them, then commit the merge. If the merge is clean, proceed.
 
-## 6. Frontend tests & screenshots
+## 6. Bump version
+
+Determine the appropriate version bump by looking at the branch name prefix and commit messages on this branch (compared to `main`):
+
+- If the branch name starts with `feat-` or any commit contains `[FEAT`: **minor** bump
+- If any commit contains `[BREAKING`: **major** bump
+- Otherwise (bug fixes, chores, refactors): **patch** bump
+
+Run the corresponding Makefile target (`make bump-patch`, `make bump-minor`, or `make bump-major`). Then commit the change:
+
+```
+git add Cargo.toml
+git commit -m "Bump version to <new-version>"
+```
+
+Include the co-author trailer.
+
+## 7. Frontend tests & screenshots
 
 If any commits on this branch (compared to `main`) touch frontend code (routes, handlers, HTML templates, or CSS classes used in assertions):
 
@@ -52,18 +69,18 @@ If any commits on this branch (compared to `main`) touch frontend code (routes, 
 
 If no frontend code was changed, skip this step.
 
-## 7. Run checks
+## 8. Run checks
 
 Run `make check` (format, lint, and tests). If any check fails, fix the issue, commit the fix, and re-run until all checks pass. Stop and report to the user if a failure cannot be resolved automatically.
 
-## 8. Push
+## 9. Push
 
 Push the current branch to origin:
 ```
 git push -u origin HEAD
 ```
 
-## 9. Create PR
+## 10. Create PR
 
 Create a pull request targeting `main` using `gh pr create`. The PR title **must** start with the ticket name derived from the branch name in square brackets. Extract the ticket prefix (everything up to and including the first number) from the branch name, uppercase it, and prepend it. For example, branch `feat-12-feature-xyz` → title starts with `[FEAT-12]`. Write a clear title after the prefix summarizing all changes on the branch. Use this format for the body:
 

@@ -1,4 +1,4 @@
-.PHONY: fmt lint test check audit upgrade build run screenshots gh-env
+.PHONY: fmt lint test check audit upgrade build run screenshots gh-env bump-patch bump-minor bump-major
 
 # Development
 fmt:
@@ -24,6 +24,35 @@ upgrade:
 # Security
 audit:
 	cargo audit
+
+# Version bumping — reads version from [package] section of Cargo.toml
+define get_version
+$$(grep -A2 '^\[package\]' Cargo.toml | grep '^version' | cut -d'"' -f2)
+endef
+
+bump-patch:
+	@VERSION=$(get_version); \
+	IFS='.' read -r MAJOR MINOR PATCH <<< "$$VERSION"; \
+	PATCH=$$((PATCH + 1)); \
+	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
+	sed -i '' 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml; \
+	echo "$$VERSION → $$NEW"
+
+bump-minor:
+	@VERSION=$(get_version); \
+	IFS='.' read -r MAJOR MINOR PATCH <<< "$$VERSION"; \
+	MINOR=$$((MINOR + 1)); PATCH=0; \
+	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
+	sed -i '' 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml; \
+	echo "$$VERSION → $$NEW"
+
+bump-major:
+	@VERSION=$(get_version); \
+	IFS='.' read -r MAJOR MINOR PATCH <<< "$$VERSION"; \
+	MAJOR=$$((MAJOR + 1)); MINOR=0; PATCH=0; \
+	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
+	sed -i '' 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml; \
+	echo "$$VERSION → $$NEW"
 
 # Build & Run
 build:
