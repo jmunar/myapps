@@ -12,7 +12,7 @@ Usage: $0 <env> <command>
 Environments: ${ENVS:-none found}
 
 Commands:
-  release-deploy <binary>  Upload a pre-built binary + static files, install + restart
+  release-deploy <dir>     Upload pre-built binary + static from extracted tarball, install + restart
   build                    Build the release binary on the server
   deploy                   Sync source + build on server + install + restart
   install                  Sync source + install + restart (skip build; set DEPLOY_BINARY_DIR to use a pre-built binary)
@@ -67,10 +67,11 @@ sync_source() {
 }
 
 release_install() {
-    local local_binary="${1:?Usage: $0 <env> release-deploy <binary-path>}"
-    [[ -f "$local_binary" ]] || { echo "Error: binary not found: $local_binary"; exit 1; }
+    local release_dir="${1:?Usage: $0 <env> release-deploy <release-dir>}"
+    [[ -f "$release_dir/myapps" ]] || { echo "Error: binary not found: $release_dir/myapps"; exit 1; }
+    [[ -d "$release_dir/static" ]] || { echo "Error: static dir not found: $release_dir/static"; exit 1; }
     echo "▸ Uploading release binary to $SERVER..."
-    scp "$local_binary" "$SERVER:/tmp/myapps.new"
+    scp "$release_dir/myapps" "$SERVER:/tmp/myapps.new"
     echo "▸ Installing binary..."
     ssh_server DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" bash <<'INSTALL'
 set -euo pipefail
@@ -80,7 +81,7 @@ sudo chown myapps:myapps $DEPLOY_REMOTE_DIR/myapps
 sudo chmod +x $DEPLOY_REMOTE_DIR/myapps
 INSTALL
     echo "▸ Syncing static files..."
-    rsync -az --delete -e ssh static/ "$SERVER:/tmp/myapps-static/"
+    rsync -az --delete -e ssh "$release_dir/static/" "$SERVER:/tmp/myapps-static/"
     ssh_server DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'STATIC'
 set -euo pipefail
 sudo rsync -a --delete /tmp/myapps-static/ $DEPLOY_REMOTE_DIR/static/

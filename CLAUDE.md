@@ -51,7 +51,8 @@ make screenshots                    # Regenerate README screenshots (needs Node.
   `main` and on PRs: format check, clippy (warnings-as-errors), and tests.
 - **GitHub Actions CD** (`.github/workflows/cd.yml`) runs on every push to
   `main`: reads the version from `Cargo.toml`, creates a git tag and GitHub
-  Release with a cross-compiled aarch64 binary (using `cross`), then deploys
+  Release with a cross-compiled aarch64 tarball containing the binary and
+  static assets (using `cross`), then deploys
   to staging and production (with smoke tests). Version is bumped during
   development via `make bump-{patch,minor,major}` (automated in
   `/finish-development`). Uses `DEPLOY_CI=true` for non-interactive SSH.

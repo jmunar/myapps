@@ -13,7 +13,8 @@
 Release binaries are **cross-compiled in GitHub Actions** for
 `aarch64-unknown-linux-gnu` using [`cross`](https://github.com/cross-rs/cross).
 Each merge to `main` automatically bumps the version, creates a GitHub Release
-with the binary attached, and deploys it to staging then production.
+with a tarball (`myapps-<tag>-aarch64.tar.gz`) containing the binary and
+`static/` folder, and deploys it to staging then production.
 
 For local development deploys, `deploy.sh deploy` can still build natively on
 the Odroid if needed.
@@ -146,7 +147,7 @@ Usage: `./deploy.sh <env> <command>`
 
 | Command                      | Description                                              |
 |------------------------------|----------------------------------------------------------|
-| `release-deploy <binary>`   | Upload a pre-built binary + static files directly to target dir, restart (used by CD) |
+| `release-deploy <dir>`      | Upload pre-built binary + static from extracted tarball to target dir, restart (used by CD) |
 | `setup`                     | First-time server provisioning                           |
 | `deploy`                    | Rsync source + build on server + install + restart       |
 | `install`                   | Rsync source + install + restart (skip build)            |
@@ -155,10 +156,11 @@ Usage: `./deploy.sh <env> <command>`
 | `logs`                      | Tail the service logs (journalctl)                       |
 | `status`                    | Show service status                                      |
 
-The `release-deploy` command is used by the CD pipeline — it copies the
-cross-compiled binary and static files directly to the target directory
-(`DEPLOY_REMOTE_DIR`) via SCP/rsync, without needing a build directory on the
-server. The `deploy` and `install` commands are kept for local manual deploys.
+The `release-deploy` command is used by the CD pipeline — it takes a directory
+(extracted from the release tarball) containing the binary and `static/` folder,
+and copies them to the target directory (`DEPLOY_REMOTE_DIR`) via SCP/rsync,
+without needing a build directory on the server. The `deploy` and `install`
+commands are kept for local manual deploys.
 
 Available environments are defined by config files in `deploy/`:
 
@@ -182,17 +184,18 @@ push to main
   ├─ bump version in Cargo.toml
   ├─ commit + tag (v0.2.0)
   ├─ cross build --target aarch64
+  ├─ package tarball (binary + static/)
   ├─ create GitHub Release
   │
   ├─ [deploy-stage]
-  │    ├─ gh release download
-  │    ├─ scp binary + static ──▸  /opt/myapps-stage/
+  │    ├─ gh release download tarball
+  │    ├─ extract + scp binary + static ──▸  /opt/myapps-stage/
   │    ├─ ssh: restart
   │    └─ smoke test /login → 200
   │
   └─ [deploy-prod]
-       ├─ gh release download
-       ├─ scp binary + static ──▸  /opt/myapps/
+       ├─ gh release download tarball
+       ├─ extract + scp binary + static ──▸  /opt/myapps/
        ├─ ssh: restart
        └─ smoke test /login → 200
 ```
@@ -527,13 +530,13 @@ Merging to `main` triggers automatic deployment via `.github/workflows/cd.yml`:
 push to main
     │
     ▼
- [release]       ◄── auto-bump version, cross-compile aarch64, create GitHub Release
+ [release]       ◄── auto-bump version, cross-compile aarch64, package tarball, create GitHub Release
     │
     ▼
- [deploy-stage]  ◄── download release binary, upload to server, install + restart
+ [deploy-stage]  ◄── download release tarball, extract, upload to server, install + restart
     │ smoke test /login → 200
     ▼
- [deploy-prod]   ◄── download same release binary, upload to server, install + restart
+ [deploy-prod]   ◄── download same release tarball, extract, upload to server, install + restart
     │ smoke test /login → 200
     ▼
   Done
@@ -555,9 +558,10 @@ Makefile targets are available for manual use: `make bump-patch`,
 `make bump-minor`, `make bump-major`.
 
 When merged to `main`, the CD pipeline reads the version from `Cargo.toml`,
-creates a git tag (`v0.2.0`), and publishes a GitHub Release. If the tag
-already exists (e.g. re-running the workflow), the release step is skipped
-and the existing release binary is deployed.
+creates a git tag (`v0.2.0`), and publishes a GitHub Release with a tarball
+containing the binary and static assets. If the tag already exists (e.g.
+re-running the workflow), the release step is skipped and the existing
+release tarball is deployed.
 
 CI (format, clippy, tests) runs separately via `ci.yml`. The CD pipeline
 trusts that CI has already passed on `main`.
