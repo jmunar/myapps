@@ -378,8 +378,9 @@ Development machine and server are separate. The workflow is:
 
 1. Develop and test locally (using a local SQLite DB).
 2. Merging to `main` triggers the CD pipeline (`.github/workflows/cd.yml`),
-   which auto-bumps the version, cross-compiles for aarch64, creates a GitHub
-   Release, then deploys the binary to staging and production (with smoke tests).
+   which auto-bumps the version, cross-compiles for aarch64, packages a release
+   tarball (binary + static assets), creates a GitHub Release, then deploys to
+   staging and production (with smoke tests).
 3. Manual deploys are also possible via `./deploy.sh <env> deploy`, which
    rsyncs source to the Odroid, builds natively, and installs + restarts the
    service.
