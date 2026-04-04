@@ -272,8 +272,8 @@ fn downsample_expenses(series: &[ExpensePoint], days: i64) -> Vec<ExpensePoint> 
         };
         let (key, bucket_end) = if days <= 90 {
             let key = (d.iso_week().year(), d.iso_week().week(), p.label_id);
-            // Sunday = end of ISO week
-            let days_until_sunday = (7 - d.weekday().num_days_from_monday()) % 7;
+            // Sunday = end of ISO week (Mon=0 .. Sun=6)
+            let days_until_sunday = (6 - d.weekday().num_days_from_monday()) % 7;
             let end = d + chrono::Duration::days(days_until_sunday as i64);
             (key, end)
         } else {
@@ -317,10 +317,15 @@ fn generate_window_dates(days: i64) -> Vec<String> {
             d += chrono::Duration::days(1);
         }
     } else if days <= 90 {
-        // Weekly: find the first Sunday on or after start, then every 7 days
+        // Weekly: find the first Sunday on or after start, then every 7 days.
+        // Include the current (possibly incomplete) week's Sunday even if after today.
         let days_until_sunday = (6 - start.weekday().num_days_from_monday()) % 7;
         let mut d = start + chrono::Duration::days(days_until_sunday as i64);
-        while d <= today {
+        let end_sunday = {
+            let dts = (6 - today.weekday().num_days_from_monday()) % 7;
+            today + chrono::Duration::days(dts as i64)
+        };
+        while d <= end_sunday {
             dates.push(d.format("%Y-%m-%d").to_string());
             d += chrono::Duration::days(7);
         }
