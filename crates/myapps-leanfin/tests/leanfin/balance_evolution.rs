@@ -58,7 +58,7 @@ async fn balance_evolution_page_has_period_buttons() {
 }
 
 #[tokio::test]
-async fn data_endpoint_returns_chart_for_specific_account() {
+async fn data_endpoint_returns_script_calling_update_balance_chart() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -75,13 +75,13 @@ async fn data_endpoint_returns_chart_for_specific_account() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("balance-canvas"));
-    assert!(body.contains("chart-container"));
-    assert!(body.contains("new Chart("));
+    // Data endpoint returns a script tag calling updateBalanceChart with JSON arrays
+    assert!(body.contains("updateBalanceChart("));
+    assert!(body.contains("<script>"));
 }
 
 #[tokio::test]
-async fn data_endpoint_returns_chart_when_account_id_empty() {
+async fn data_endpoint_returns_script_when_account_id_empty() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -92,8 +92,8 @@ async fn data_endpoint_returns_chart_when_account_id_empty() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("chart-container"));
-    assert!(body.contains("new Chart("));
+    // Aggregated balance also returns updateBalanceChart script
+    assert!(body.contains("updateBalanceChart("));
 }
 
 #[tokio::test]
@@ -120,8 +120,9 @@ async fn data_endpoint_returns_empty_state_when_no_balance_data() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
+    // Empty state is now shown via showBalanceEmpty script call
+    assert!(body.contains("showBalanceEmpty("));
     assert!(body.contains("No balance data yet"));
-    assert!(body.contains("empty-state"));
 }
 
 #[tokio::test]
@@ -137,11 +138,13 @@ async fn data_endpoint_returns_not_found_for_other_users_account() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
+    // Not-found is shown via showBalanceEmpty script call
+    assert!(body.contains("showBalanceEmpty("));
     assert!(body.contains("Account not found"));
 }
 
 #[tokio::test]
-async fn data_endpoint_contains_balance_data_in_json() {
+async fn data_endpoint_contains_balance_data_as_json_arrays() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -158,14 +161,14 @@ async fn data_endpoint_contains_balance_data_in_json() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    // Chart data is embedded as JSON arrays in the script
-    assert!(body.contains("labels:"));
-    assert!(body.contains("values:"));
-    assert!(body.contains("type: 'line'"));
+    // Data is passed as JSON arrays to updateBalanceChart(dates, values, accountId)
+    assert!(body.contains("updateBalanceChart(["));
+    // Contains date strings in the first array
+    assert!(body.contains("\"20"));
 }
 
 #[tokio::test]
-async fn data_endpoint_renders_chart_container() {
+async fn data_endpoint_passes_account_id_to_chart_function() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -182,30 +185,18 @@ async fn data_endpoint_renders_chart_container() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("balance-canvas"));
-    assert!(body.contains("chart-container"));
-    assert!(body.contains("fill: true"));
+    // The account ID is passed as the third argument to updateBalanceChart
+    assert!(body.contains(&format!("'{account_id}'")));
 }
 
 #[tokio::test]
-async fn data_endpoint_uses_accent_color() {
+async fn balance_page_chart_config_uses_accent_color() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
-    let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
-
-    let response = app
-        .server
-        .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "90")
-        .await;
+    // The accent color is now in the page template (Chart.js config), not the data endpoint
+    let response = app.server.get("/leanfin/balance-evolution").await;
     let body = response.text();
-    // Chart uses the app's accent color
     assert!(body.contains("#1A6B5A"));
 }
 
@@ -285,8 +276,8 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
         .await;
     let body = response.text();
 
-    // Should contain the chart (not empty state)
-    assert!(body.contains("new Chart("), "should render chart");
+    // Should contain the chart update call (not empty state)
+    assert!(body.contains("updateBalanceChart("), "should render chart");
 
     // Should contain dates from at least 2 days ago (backward walk worked)
     assert!(
@@ -301,30 +292,16 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
 }
 
 #[tokio::test]
-async fn data_endpoint_chart_is_navigable_with_drill_down() {
+async fn balance_page_chart_has_click_drill_down() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
-    let (account_id,): (i64,) =
-        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
-
-    let response = app
-        .server
-        .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "90")
-        .await;
+    // The onClick handler and loadBalanceTxn are now in the page template
+    let response = app.server.get("/leanfin/balance-evolution").await;
     let body = response.text();
     assert!(
-        body.contains("isNavigable: true"),
-        "chart should be navigable"
-    );
-    assert!(
-        body.contains("data-select"),
-        "chart should have data-select event listener"
+        body.contains("onClick"),
+        "chart config should have onClick handler"
     );
     assert!(
         body.contains("loadBalanceTxn"),

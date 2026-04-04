@@ -59,14 +59,16 @@ async fn expenses_page_empty_state_when_no_labels() {
 }
 
 #[tokio::test]
-async fn expenses_page_has_chart_container() {
+async fn expenses_page_has_chart_canvas_and_empty_prompt() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
     let response = app.server.get("/leanfin/expenses").await;
     let body = response.text();
 
-    assert!(body.contains(r#"id="expenses-chart""#));
+    // Persistent canvas element inside chart-container
+    assert!(body.contains(r#"id="expenses-canvas""#));
+    assert!(body.contains("chart-container"));
     assert!(body.contains("Select one or more labels to view expenses"));
 }
 
@@ -98,6 +100,8 @@ async fn chart_endpoint_returns_empty_state_for_no_labels() {
         .await;
     let body = response.text();
 
+    // Empty state is now shown via showExpensesEmpty script call
+    assert!(body.contains("showExpensesEmpty("));
     assert!(body.contains("No labels selected."));
 }
 
@@ -114,11 +118,12 @@ async fn chart_endpoint_returns_empty_state_for_nonexistent_labels() {
         .await;
     let body = response.text();
 
+    assert!(body.contains("showExpensesEmpty("));
     assert!(body.contains("No expense data for the selected labels in this period."));
 }
 
 #[tokio::test]
-async fn chart_endpoint_returns_chart_data_for_valid_label() {
+async fn chart_endpoint_returns_script_calling_update_expenses_chart() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -137,9 +142,8 @@ async fn chart_endpoint_returns_chart_data_for_valid_label() {
         .await;
     let body = response.text();
 
-    // Should contain the chart canvas and script
-    assert!(body.contains("expenses-chart"));
-    assert!(body.contains("new Chart("));
+    // Data endpoint returns a script calling updateExpensesChart
+    assert!(body.contains("updateExpensesChart("));
     assert!(body.contains("Groceries"));
 }
 
