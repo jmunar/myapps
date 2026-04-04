@@ -74,39 +74,165 @@ pub async fn run(
     let txns: Vec<(String, f64, &str, &str, Option<&str>)> = vec![
         // Checking account — daily life
         (days_ago(1), -3.50, "EUR", "Coffee", Some("Starbucks")),
-        (days_ago(2), -42.30, "EUR", "Weekly groceries", Some("Mercadona")),
-        (days_ago(3), -12.99, "EUR", "Netflix subscription", Some("Netflix")),
+        (
+            days_ago(2),
+            -42.30,
+            "EUR",
+            "Weekly groceries",
+            Some("Mercadona"),
+        ),
+        (
+            days_ago(3),
+            -12.99,
+            "EUR",
+            "Netflix subscription",
+            Some("Netflix"),
+        ),
         (days_ago(4), -35.00, "EUR", "Fuel", Some("Repsol")),
         (days_ago(5), -8.50, "EUR", "Lunch", Some("Bar El Rincón")),
-        (days_ago(6), 2150.00, "EUR", "Salary March", Some("Acme Corp")),
-        (days_ago(7), -650.00, "EUR", "Rent March", Some("Inmobiliaria López")),
-        (days_ago(8), -29.99, "EUR", "Gym membership", Some("Basic-Fit")),
+        (
+            days_ago(6),
+            2150.00,
+            "EUR",
+            "Salary March",
+            Some("Acme Corp"),
+        ),
+        (
+            days_ago(7),
+            -650.00,
+            "EUR",
+            "Rent March",
+            Some("Inmobiliaria López"),
+        ),
+        (
+            days_ago(8),
+            -29.99,
+            "EUR",
+            "Gym membership",
+            Some("Basic-Fit"),
+        ),
         (days_ago(9), -15.00, "EUR", "Parking", Some("EasyPark")),
         (days_ago(10), -55.80, "EUR", "Groceries", Some("Carrefour")),
         (days_ago(11), -4.20, "EUR", "Coffee", Some("Starbucks")),
-        (days_ago(13), -120.00, "EUR", "Electricity bill", Some("Iberdrola")),
-        (days_ago(15), -45.00, "EUR", "Internet + phone", Some("Movistar")),
-        (days_ago(16), -22.50, "EUR", "Dinner out", Some("Restaurante La Plaza")),
-        (days_ago(17), -9.99, "EUR", "Spotify subscription", Some("Spotify")),
+        (
+            days_ago(13),
+            -120.00,
+            "EUR",
+            "Electricity bill",
+            Some("Iberdrola"),
+        ),
+        (
+            days_ago(15),
+            -45.00,
+            "EUR",
+            "Internet + phone",
+            Some("Movistar"),
+        ),
+        (
+            days_ago(16),
+            -22.50,
+            "EUR",
+            "Dinner out",
+            Some("Restaurante La Plaza"),
+        ),
+        (
+            days_ago(17),
+            -9.99,
+            "EUR",
+            "Spotify subscription",
+            Some("Spotify"),
+        ),
         (days_ago(18), -67.30, "EUR", "Groceries", Some("Mercadona")),
-        (days_ago(19), -18.00, "EUR", "Cinema tickets", Some("Yelmo Cines")),
+        (
+            days_ago(19),
+            -18.00,
+            "EUR",
+            "Cinema tickets",
+            Some("Yelmo Cines"),
+        ),
         (days_ago(20), -35.00, "EUR", "Fuel", Some("Cepsa")),
-        (days_ago(22), -250.00, "EUR", "Insurance payment", Some("Mapfre")),
-        (days_ago(24), -14.50, "EUR", "Pharmacy", Some("Farmacia García")),
+        (
+            days_ago(22),
+            -250.00,
+            "EUR",
+            "Insurance payment",
+            Some("Mapfre"),
+        ),
+        (
+            days_ago(24),
+            -14.50,
+            "EUR",
+            "Pharmacy",
+            Some("Farmacia García"),
+        ),
         (days_ago(27), -38.90, "EUR", "Clothing", Some("Zara")),
-        (days_ago(28), -32.00, "EUR", "Valentine dinner", Some("Restaurante La Estrella")),
+        (
+            days_ago(28),
+            -32.00,
+            "EUR",
+            "Valentine dinner",
+            Some("Restaurante La Estrella"),
+        ),
         (days_ago(30), -4.50, "EUR", "Coffee", Some("Starbucks")),
         (days_ago(32), -48.20, "EUR", "Groceries", Some("Mercadona")),
-        (days_ago(36), 2150.00, "EUR", "Salary February", Some("Acme Corp")),
-        (days_ago(37), -650.00, "EUR", "Rent February", Some("Inmobiliaria López")),
-        (days_ago(38), -29.99, "EUR", "Gym membership", Some("Basic-Fit")),
-        (days_ago(41), -120.00, "EUR", "Electricity bill", Some("Iberdrola")),
-        (days_ago(43), -45.00, "EUR", "Internet + phone", Some("Movistar")),
+        (
+            days_ago(36),
+            2150.00,
+            "EUR",
+            "Salary February",
+            Some("Acme Corp"),
+        ),
+        (
+            days_ago(37),
+            -650.00,
+            "EUR",
+            "Rent February",
+            Some("Inmobiliaria López"),
+        ),
+        (
+            days_ago(38),
+            -29.99,
+            "EUR",
+            "Gym membership",
+            Some("Basic-Fit"),
+        ),
+        (
+            days_ago(41),
+            -120.00,
+            "EUR",
+            "Electricity bill",
+            Some("Iberdrola"),
+        ),
+        (
+            days_ago(43),
+            -45.00,
+            "EUR",
+            "Internet + phone",
+            Some("Movistar"),
+        ),
         (days_ago(45), -52.00, "EUR", "Groceries", Some("Carrefour")),
-        (days_ago(48), -9.99, "EUR", "Spotify subscription", Some("Spotify")),
+        (
+            days_ago(48),
+            -9.99,
+            "EUR",
+            "Spotify subscription",
+            Some("Spotify"),
+        ),
         (days_ago(53), -35.00, "EUR", "Fuel", Some("Repsol")),
-        (days_ago(58), -12.99, "EUR", "Netflix subscription", Some("Netflix")),
-        (days_ago(63), -75.00, "EUR", "Doctor visit copay", Some("Sanitas")),
+        (
+            days_ago(58),
+            -12.99,
+            "EUR",
+            "Netflix subscription",
+            Some("Netflix"),
+        ),
+        (
+            days_ago(63),
+            -75.00,
+            "EUR",
+            "Doctor visit copay",
+            Some("Sanitas"),
+        ),
     ];
 
     // Convert to borrowed slices for the seeding functions
@@ -116,17 +242,46 @@ pub async fn run(
         .collect();
 
     // Seed bank account transactions with snapshot linking.
-    let count =
-        seed_bank_txns_with_snapshots(pool, acct1, &txns_ref, "seed_chk", 3245.67).await?;
+    let count = seed_bank_txns_with_snapshots(pool, acct1, &txns_ref, "seed_chk", 3245.67).await?;
     seed_api_payloads(pool, acct1, &txns_ref, "seed_chk", 3245.67).await?;
 
     // Savings account — fewer, larger movements
     let savings_txns: Vec<(String, f64, &str, &str, Option<&str>)> = vec![
-        (days_ago(6), 500.00, "EUR", "Transfer from checking", Some("Self transfer")),
-        (days_ago(36), 500.00, "EUR", "Transfer from checking", Some("Self transfer")),
-        (days_ago(58), -2000.00, "EUR", "Investment fund", Some("MyInvestor")),
-        (days_ago(67), 500.00, "EUR", "Transfer from checking", Some("Self transfer")),
-        (days_ago(71), 0.85, "EUR", "Interest payment", Some("ING Direct")),
+        (
+            days_ago(6),
+            500.00,
+            "EUR",
+            "Transfer from checking",
+            Some("Self transfer"),
+        ),
+        (
+            days_ago(36),
+            500.00,
+            "EUR",
+            "Transfer from checking",
+            Some("Self transfer"),
+        ),
+        (
+            days_ago(58),
+            -2000.00,
+            "EUR",
+            "Investment fund",
+            Some("MyInvestor"),
+        ),
+        (
+            days_ago(67),
+            500.00,
+            "EUR",
+            "Transfer from checking",
+            Some("Self transfer"),
+        ),
+        (
+            days_ago(71),
+            0.85,
+            "EUR",
+            "Interest payment",
+            Some("ING Direct"),
+        ),
     ];
     let savings_ref: Vec<(&str, f64, &str, &str, Option<&str>)> = savings_txns
         .iter()
@@ -139,25 +294,78 @@ pub async fn run(
 
     // Archived BBVA account — old transactions (closed ~4 months ago)
     let bbva_txns: Vec<(String, f64, &str, &str, Option<&str>)> = vec![
-        (days_ago(130), -650.00, "EUR", "Rent November", Some("Inmobiliaria López")),
-        (days_ago(133), -38.70, "EUR", "Weekly groceries", Some("Mercadona")),
-        (days_ago(138), -12.99, "EUR", "Netflix subscription", Some("Netflix")),
-        (days_ago(143), -45.00, "EUR", "Internet + phone", Some("Movistar")),
-        (days_ago(148), 2100.00, "EUR", "Salary November", Some("Acme Corp")),
+        (
+            days_ago(130),
+            -650.00,
+            "EUR",
+            "Rent November",
+            Some("Inmobiliaria López"),
+        ),
+        (
+            days_ago(133),
+            -38.70,
+            "EUR",
+            "Weekly groceries",
+            Some("Mercadona"),
+        ),
+        (
+            days_ago(138),
+            -12.99,
+            "EUR",
+            "Netflix subscription",
+            Some("Netflix"),
+        ),
+        (
+            days_ago(143),
+            -45.00,
+            "EUR",
+            "Internet + phone",
+            Some("Movistar"),
+        ),
+        (
+            days_ago(148),
+            2100.00,
+            "EUR",
+            "Salary November",
+            Some("Acme Corp"),
+        ),
         (days_ago(153), -35.00, "EUR", "Fuel", Some("Repsol")),
-        (days_ago(157), -120.00, "EUR", "Electricity bill", Some("Iberdrola")),
-        (days_ago(160), -650.00, "EUR", "Rent October", Some("Inmobiliaria López")),
+        (
+            days_ago(157),
+            -120.00,
+            "EUR",
+            "Electricity bill",
+            Some("Iberdrola"),
+        ),
+        (
+            days_ago(160),
+            -650.00,
+            "EUR",
+            "Rent October",
+            Some("Inmobiliaria López"),
+        ),
         (days_ago(168), -52.40, "EUR", "Groceries", Some("Carrefour")),
-        (days_ago(173), -9.99, "EUR", "Spotify subscription", Some("Spotify")),
-        (days_ago(178), 2100.00, "EUR", "Salary October", Some("Acme Corp")),
+        (
+            days_ago(173),
+            -9.99,
+            "EUR",
+            "Spotify subscription",
+            Some("Spotify"),
+        ),
+        (
+            days_ago(178),
+            2100.00,
+            "EUR",
+            "Salary October",
+            Some("Acme Corp"),
+        ),
     ];
     let bbva_ref: Vec<(&str, f64, &str, &str, Option<&str>)> = bbva_txns
         .iter()
         .map(|(d, a, c, desc, cp)| (d.as_str(), *a, *c, *desc, *cp))
         .collect();
 
-    let count3 =
-        seed_bank_txns_with_snapshots(pool, acct4, &bbva_ref, "seed_bbva", 585.92).await?;
+    let count3 = seed_bank_txns_with_snapshots(pool, acct4, &bbva_ref, "seed_bbva", 585.92).await?;
     seed_api_payloads(pool, acct4, &bbva_ref, "seed_bbva", 585.92).await?;
     let count = count + count2 + count3;
 
