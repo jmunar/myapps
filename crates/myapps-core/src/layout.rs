@@ -309,7 +309,7 @@ pub fn render_page(
     <link rel="icon" type="image/svg+xml" href="{base_path}/static/icon.svg?v={sv}">
     <link rel="apple-touch-icon" href="{base_path}/static/icon.svg?v={sv}">
     <script src="{base_path}/static/htmx.min.js?v={sv}"></script>
-    <script src="{base_path}/static/frappe-charts.min.umd.js?v={sv}"></script>
+    <script src="{base_path}/static/chart.min.js?v={sv}"></script>
 </head>
 <body>
     <script>

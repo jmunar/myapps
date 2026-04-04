@@ -137,9 +137,9 @@ async fn chart_endpoint_returns_chart_data_for_valid_label() {
         .await;
     let body = response.text();
 
-    // Should contain the frappe chart container and script
-    assert!(body.contains("expenses-frappe-chart"));
-    assert!(body.contains("frappe.Chart"));
+    // Should contain the chart canvas and script
+    assert!(body.contains("expenses-chart"));
+    assert!(body.contains("new Chart("));
     assert!(body.contains("Groceries"));
 }
 

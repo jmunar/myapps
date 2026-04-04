@@ -62,6 +62,7 @@ sync_source() {
         --exclude target \
         --exclude .git \
         --exclude data \
+        --exclude models \
         --exclude '.env' \
         ./ "$SERVER:$DEPLOY_REMOTE_BUILD_DIR/"
 }

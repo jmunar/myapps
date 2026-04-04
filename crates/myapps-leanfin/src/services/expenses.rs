@@ -3,7 +3,7 @@ use chrono::{Duration, Utc};
 use sqlx::SqlitePool;
 
 /// A single data point: one label on one date.
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, Clone)]
 pub struct ExpensePoint {
     pub date: String,
     pub label_id: i64,
@@ -30,7 +30,7 @@ pub async fn get_expense_series(
     let placeholders = label_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
         r#"SELECT t.date, l.id as label_id, l.name as label_name, l.color as label_color,
-                  SUM(al.amount) as total
+                  SUM(al.amount * CASE WHEN t.amount < 0 THEN 1 ELSE -1 END) as total
            FROM leanfin_allocations al
            JOIN leanfin_transactions t ON al.transaction_id = t.id
            JOIN leanfin_labels l ON al.label_id = l.id

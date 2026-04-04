@@ -861,9 +861,19 @@ tr.txn-misallocated .txn-date {
 .balance-controls {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.75rem;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--border-light);
+}
+
+.balance-controls .txn-filter-select {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.balance-controls .period-selector {
+    flex-shrink: 0;
 }
 
 .period-selector {
@@ -906,25 +916,11 @@ tr.txn-misallocated .txn-date {
     color: #FFFFFF;
 }
 
-/* ── Frappe Charts overrides ────────────────────────────────── */
-.frappe-chart-container {
+/* ── Chart container ───────────────────────────────────────── */
+.chart-container {
+    position: relative;
     padding: 1rem;
-}
-
-.frappe-chart-container .chart-legend {
-    font-family: var(--font-body);
-    font-size: 0.8rem;
-}
-
-.frappe-chart-container .axis text,
-.frappe-chart-container .chart-label {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    fill: var(--text-secondary);
-}
-
-.frappe-chart-container .title {
-    display: none;
+    height: 300px;
 }
 
 /* ── Expenses page ─────────────────────────────────────────── */

@@ -58,7 +58,7 @@ async fn balance_evolution_page_has_period_buttons() {
 }
 
 #[tokio::test]
-async fn data_endpoint_returns_frappe_chart_for_specific_account() {
+async fn data_endpoint_returns_chart_for_specific_account() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -75,9 +75,9 @@ async fn data_endpoint_returns_frappe_chart_for_specific_account() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("balance-chart"));
-    assert!(body.contains("frappe-chart-container"));
-    assert!(body.contains("frappe.Chart"));
+    assert!(body.contains("balance-canvas"));
+    assert!(body.contains("chart-container"));
+    assert!(body.contains("new Chart("));
 }
 
 #[tokio::test]
@@ -92,8 +92,8 @@ async fn data_endpoint_returns_chart_when_account_id_empty() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("frappe-chart-container"));
-    assert!(body.contains("frappe.Chart"));
+    assert!(body.contains("chart-container"));
+    assert!(body.contains("new Chart("));
 }
 
 #[tokio::test]
@@ -165,7 +165,7 @@ async fn data_endpoint_contains_balance_data_in_json() {
 }
 
 #[tokio::test]
-async fn data_endpoint_renders_frappe_chart_container() {
+async fn data_endpoint_renders_chart_container() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -182,9 +182,9 @@ async fn data_endpoint_renders_frappe_chart_container() {
         .add_query_param("days", "90")
         .await;
     let body = response.text();
-    assert!(body.contains("balance-chart"));
-    assert!(body.contains("frappe-chart-container"));
-    assert!(body.contains("regionFill"));
+    assert!(body.contains("balance-canvas"));
+    assert!(body.contains("chart-container"));
+    assert!(body.contains("fill: true"));
 }
 
 #[tokio::test]
@@ -286,7 +286,7 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
     let body = response.text();
 
     // Should contain the chart (not empty state)
-    assert!(body.contains("frappe.Chart"), "should render chart");
+    assert!(body.contains("new Chart("), "should render chart");
 
     // Should contain dates from at least 2 days ago (backward walk worked)
     assert!(
