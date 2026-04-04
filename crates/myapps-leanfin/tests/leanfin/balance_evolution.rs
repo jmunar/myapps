@@ -353,3 +353,50 @@ async fn data_endpoint_requires_authentication() {
         .await;
     assert_eq!(response.status_code(), 303);
 }
+
+#[tokio::test]
+async fn balance_evolution_page_has_persistent_canvas_in_chart_container() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let response = app.server.get("/leanfin/balance-evolution").await;
+    let body = response.text();
+
+    // Canvas is persistent in the page template
+    assert!(body.contains("<canvas"));
+    assert!(body.contains(r#"id="balance-canvas""#));
+    assert!(body.contains("chart-container"));
+    // The updateBalanceChart function is defined in the page
+    assert!(body.contains("updateBalanceChart"));
+    // The showBalanceEmpty function is defined in the page
+    assert!(body.contains("showBalanceEmpty"));
+}
+
+#[tokio::test]
+async fn balance_evolution_page_chart_config_uses_line_type() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let response = app.server.get("/leanfin/balance-evolution").await;
+    let body = response.text();
+
+    // Chart.js line chart configuration in the page template
+    assert!(body.contains("type: 'line'"));
+    assert!(body.contains("fill: true"));
+}
+
+#[tokio::test]
+async fn data_endpoint_returns_empty_account_id_for_aggregated() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let response = app
+        .server
+        .get("/leanfin/balance-evolution/data")
+        .add_query_param("account_id", "")
+        .add_query_param("days", "90")
+        .await;
+    let body = response.text();
+    // When aggregated (no account_id), the third param should be empty string
+    assert!(body.contains("''"));
+}
