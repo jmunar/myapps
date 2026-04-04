@@ -32,6 +32,7 @@ pub async fn run(
         "sess_fake_1",
         "uid_checking_001",
         &expires_in_6m,
+        Some("#EC0000"), // Santander red
     )
     .await?;
 
@@ -44,12 +45,14 @@ pub async fn run(
         "sess_fake_2",
         "uid_savings_001",
         &expires_in_6m,
+        Some("#FF6200"), // ING orange
     )
     .await?;
 
     // Create a manual account (investment portfolio)
     let acct3 =
-        insert_manual_account(pool, user_id, "Stock Portfolio", "investment", "EUR").await?;
+        insert_manual_account(pool, user_id, "Stock Portfolio", "investment", "EUR", Some("#4CAF50"))
+            .await?;
 
     // Create an archived bank account (old account, no longer in use)
     let acct4 = insert_bank_account(
@@ -61,6 +64,7 @@ pub async fn run(
         "sess_fake_3",
         "uid_old_001",
         &expires_in_6m,
+        Some("#004481"), // BBVA blue
     )
     .await?;
     sqlx::query("UPDATE leanfin_accounts SET archived = 1 WHERE id = ?")
@@ -402,12 +406,13 @@ async fn insert_bank_account(
     session_id: &str,
     account_uid: &str,
     expires: &str,
+    color: Option<&str>,
 ) -> Result<i64> {
     let result = sqlx::query(
-        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank')"
+        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type, color) VALUES (?, ?, ?, ?, ?, ?, ?, 'bank', ?)"
     )
     .bind(user_id).bind(bank_name).bind(country).bind(iban)
-    .bind(session_id).bind(account_uid).bind(expires)
+    .bind(session_id).bind(account_uid).bind(expires).bind(color)
     .execute(pool).await?;
 
     Ok(result.last_insert_rowid())
@@ -419,12 +424,13 @@ async fn insert_manual_account(
     name: &str,
     category: &str,
     currency: &str,
+    color: Option<&str>,
 ) -> Result<i64> {
     let uid = format!("manual_{name}");
     let result = sqlx::query(
-        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_currency) VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?)"
+        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, asset_category, balance_currency, color) VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, ?, ?)"
     )
-    .bind(user_id).bind(name).bind(&uid).bind(name).bind(category).bind(currency)
+    .bind(user_id).bind(name).bind(&uid).bind(name).bind(category).bind(currency).bind(color)
     .execute(pool).await?;
 
     Ok(result.last_insert_rowid())
