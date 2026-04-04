@@ -15,6 +15,7 @@ pub struct Account {
     pub account_type: String,
     pub account_name: Option<String>,
     pub asset_category: Option<String>,
+    pub color: Option<String>,
     pub archived: bool,
     pub created_at: NaiveDateTime,
 }

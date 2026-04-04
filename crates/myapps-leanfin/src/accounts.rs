@@ -29,6 +29,7 @@ pub fn routes() -> Router<AppState> {
             "/accounts/manual/new",
             get(manual_new_form).post(manual_new_submit),
         )
+        .route("/accounts/{id}/color", post(update_color))
         .route(
             "/accounts/manual/{id}/edit",
             get(manual_edit_form).post(manual_edit_submit),
@@ -71,7 +72,7 @@ async fn list_accounts(
     };
 
     let accounts: Vec<AccountRow> = sqlx::query_as(
-        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived FROM leanfin_accounts WHERE user_id = ?",
+        "SELECT id, bank_name, iban, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, color, archived FROM leanfin_accounts WHERE user_id = ?",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -151,15 +152,19 @@ async fn list_accounts(
                 String::new()
             };
 
+            let color_val = a.color.as_deref().unwrap_or("#6B6B6B");
             bank_items.push_str(&format!(
-                r#"<div class="account-item">
-                    <div>
-                        <div class="account-bank">{}</div>
+                r##"<div class="account-item" style="--account-color:{color_val}">
+                    <div class="account-color-stripe"></div>
+                    <div style="flex:1">
+                        <div class="account-bank">{bank}</div>
                         <div class="account-iban">{iban}</div>
                         {balance_html}
                     </div>
                     <div class="account-actions">
                         <span class="account-expiry {expiry_class}">{expiry_label} — {expires}</span>
+                        <input type="color" class="account-color-picker" value="{color_val}"
+                               onchange="fetch('{base}/leanfin/accounts/{id}/color',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'color='+encodeURIComponent(this.value)}}).then(function(){{var el=event.target.closest('.account-item');el.style.setProperty('--account-color',event.target.value)}})">
                         {reauth_btn}
                         <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
                             <button type="submit" class="btn-icon">{archive}</button>
@@ -169,8 +174,8 @@ async fn list_accounts(
                             <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
                         </form>
                     </div>
-                </div>"#,
-                a.bank_name,
+                </div>"##,
+                bank = a.bank_name,
                 id = a.id,
                 archive = t.acc_archive,
                 delete = t.acc_delete,
@@ -218,14 +223,18 @@ async fn list_accounts(
                 delete_confirm_manual = t.acc_delete_confirm_manual,
             ));
         } else {
+            let color_val = a.color.as_deref().unwrap_or("#6B6B6B");
             manual_items.push_str(&format!(
-                r#"<div class="account-item">
-                    <div>
+                r##"<div class="account-item" style="--account-color:{color_val}">
+                    <div class="account-color-stripe"></div>
+                    <div style="flex:1">
                         <div class="account-bank">{name}</div>
                         {category_badge}
                         {balance_html}
                     </div>
                     <div class="account-actions">
+                        <input type="color" class="account-color-picker" value="{color_val}"
+                               onchange="fetch('{base}/leanfin/accounts/{id}/color',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'color='+encodeURIComponent(this.value)}}).then(function(){{var el=event.target.closest('.account-item');el.style.setProperty('--account-color',event.target.value)}})">
                         <a href="{base}/leanfin/accounts/manual/{id}/value" class="btn-icon">{update_value}</a>
                         <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn-icon">{import_csv}</a>
                         <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">{edit}</a>
@@ -237,7 +246,7 @@ async fn list_accounts(
                             <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
                         </form>
                     </div>
-                </div>"#,
+                </div>"##,
                 id = a.id,
                 update_value = t.acc_update_value,
                 import_csv = t.acc_import_csv,
@@ -351,7 +360,33 @@ struct AccountRow {
     account_type: String,
     account_name: Option<String>,
     asset_category: Option<String>,
+    color: Option<String>,
     archived: bool,
+}
+
+// ── Update account color ─────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ColorForm {
+    color: String,
+}
+
+async fn update_color(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(account_id): Path<i64>,
+    Form(form): Form<ColorForm>,
+) -> Html<String> {
+    let _ = sqlx::query(
+        "UPDATE leanfin_accounts SET color = ? WHERE id = ? AND user_id = ?",
+    )
+    .bind(&form.color)
+    .bind(account_id)
+    .bind(user_id.0)
+    .execute(&state.pool)
+    .await;
+
+    Html(String::new())
 }
 
 // ── Manual account: new ──────────────────────────────────────────

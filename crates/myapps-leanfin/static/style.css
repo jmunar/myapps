@@ -124,10 +124,30 @@
     align-items: center;
     justify-content: space-between;
     transition: box-shadow 0.15s var(--ease);
+    gap: 0.75rem;
 }
 
 .account-item:hover {
     box-shadow: var(--shadow-md);
+}
+
+.account-color-stripe {
+    width: 4px;
+    align-self: stretch;
+    border-radius: 2px;
+    background: var(--account-color, #6B6B6B);
+    flex-shrink: 0;
+}
+
+.account-color-picker {
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.15rem;
+    cursor: pointer;
+    background: var(--bg-card);
+    flex-shrink: 0;
 }
 
 .account-bank {
@@ -284,25 +304,23 @@
         margin-bottom: 0.2rem;
     }
 
-    /* Allocation status borders on card edges */
+    /* Account color on card edges */
+    tbody tr {
+        border-left: 3px solid var(--account-color, var(--border-light));
+    }
+
+    tbody tr .txn-date {
+        border-left: none;
+        padding-left: 0;
+    }
+
+    /* Allocation status — background only */
     tbody tr.txn-unallocated {
-        border-left: 3px solid var(--warning);
         background: color-mix(in srgb, var(--warning) 5%, transparent);
     }
 
-    tbody tr.txn-unallocated .txn-date {
-        border-left: none;
-        padding-left: 0;
-    }
-
     tbody tr.txn-misallocated {
-        border-left: 3px solid var(--negative);
         background: color-mix(in srgb, var(--negative) 5%, transparent);
-    }
-
-    tbody tr.txn-misallocated .txn-date {
-        border-left: none;
-        padding-left: 0;
     }
 
     /* Allocation editor row — full width card */
@@ -650,6 +668,12 @@
     background: var(--bg-card);
 }
 
+/* ── Transaction account color ─────────────────────────────── */
+tbody tr .txn-date {
+    border-left: 3px solid var(--account-color, transparent);
+    padding-left: calc(1rem - 3px);
+}
+
 /* ── Transaction allocation status ──────────────────────────── */
 tr.txn-unallocated {
     background: color-mix(in srgb, var(--warning) 5%, transparent);
@@ -659,22 +683,12 @@ tr.txn-unallocated:hover {
     background: color-mix(in srgb, var(--warning) 10%, transparent);
 }
 
-tr.txn-unallocated .txn-date {
-    border-left: 3px solid var(--warning);
-    padding-left: calc(1rem - 3px);
-}
-
 tr.txn-misallocated {
     background: color-mix(in srgb, var(--negative) 5%, transparent);
 }
 
 tr.txn-misallocated:hover {
     background: color-mix(in srgb, var(--negative) 10%, transparent);
-}
-
-tr.txn-misallocated .txn-date {
-    border-left: 3px solid var(--negative);
-    padding-left: calc(1rem - 3px);
 }
 
 /* ── Allocation editor ──────────────────────────────────────── */

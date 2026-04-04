@@ -112,6 +112,26 @@ async fn page(
             var expensesChart = null;
             var selectLabelsMsg = '{select_labels_js}';
 
+            function windowStart(endDate) {{
+                var d = new Date(endDate + 'T00:00:00');
+                if (currentDays <= 30) return endDate;
+                if (currentDays <= 90) {{
+                    d.setDate(d.getDate() - 6);
+                }} else {{
+                    d.setDate(1);
+                }}
+                return d.toISOString().slice(0, 10);
+            }}
+
+            function onBarClick(dates, labelIds) {{
+                return function(evt, elems) {{
+                    if (elems.length > 0) {{
+                        var end = dates[elems[0].index];
+                        window.loadTransactions(labelIds, windowStart(end), end);
+                    }}
+                }};
+            }}
+
             window.updateExpensesChart = function(dates, datasets, labelIds) {{
                 var canvas = document.getElementById('expenses-canvas');
                 var emptyEl = document.getElementById('expenses-empty');
@@ -120,12 +140,7 @@ async fn page(
                 if (expensesChart) {{
                     expensesChart.data.labels = dates;
                     expensesChart.data.datasets = datasets;
-                    expensesChart.options.onClick = function(evt, elems) {{
-                        if (elems.length > 0) {{
-                            var d = dates[elems[0].index];
-                            window.loadTransactions(labelIds, d, d);
-                        }}
-                    }};
+                    expensesChart.options.onClick = onBarClick(dates, labelIds);
                     expensesChart.update();
                 }} else {{
                     expensesChart = new Chart(canvas, {{
@@ -146,12 +161,7 @@ async fn page(
                                 x: {{ stacked: true, ticks: {{ maxRotation: 45, font: {{ size: 11 }} }} }},
                                 y: {{ stacked: true, ticks: {{ callback: function(v) {{ return v.toLocaleString(); }} }} }}
                             }},
-                            onClick: function(evt, elems) {{
-                                if (elems.length > 0) {{
-                                    var d = dates[elems[0].index];
-                                    window.loadTransactions(labelIds, d, d);
-                                }}
-                            }}
+                            onClick: onBarClick(dates, labelIds)
                         }}
                     }});
                 }}
@@ -245,7 +255,7 @@ fn default_days() -> i64 {
 
 /// Downsample expense data points to weekly or monthly intervals.
 /// For expenses, amounts within each interval are summed. The date used is the
-/// last day of the interval that has data.
+/// canonical end of the interval (Sunday for weekly, last day of month for monthly).
 fn downsample_expenses(series: &[ExpensePoint], days: i64) -> Vec<ExpensePoint> {
     if days <= 30 || series.is_empty() {
         return series.to_vec();
@@ -260,21 +270,33 @@ fn downsample_expenses(series: &[ExpensePoint], days: i64) -> Vec<ExpensePoint> 
         let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") else {
             continue;
         };
-        let key = if days <= 90 {
-            (d.iso_week().year(), d.iso_week().week(), p.label_id)
+        let (key, bucket_end) = if days <= 90 {
+            let key = (d.iso_week().year(), d.iso_week().week(), p.label_id);
+            // Sunday = end of ISO week
+            let days_until_sunday = (7 - d.weekday().num_days_from_monday()) % 7;
+            let end = d + chrono::Duration::days(days_until_sunday as i64);
+            (key, end)
         } else {
-            (d.year(), d.month(), p.label_id)
+            let key = (d.year(), d.month(), p.label_id);
+            // Last day of the month
+            let end = if d.month() == 12 {
+                NaiveDate::from_ymd_opt(d.year() + 1, 1, 1).unwrap()
+            } else {
+                NaiveDate::from_ymd_opt(d.year(), d.month() + 1, 1).unwrap()
+            } - chrono::Duration::days(1);
+            (key, end)
         };
+        let end_str = bucket_end.format("%Y-%m-%d").to_string();
         buckets
             .entry(key)
             .and_modify(|e| {
                 e.total += p.total;
-                // Keep the latest date in the bucket
-                if p.date > e.date {
-                    e.date.clone_from(&p.date);
-                }
             })
-            .or_insert_with(|| p.clone());
+            .or_insert_with(|| {
+                let mut pt = p.clone();
+                pt.date = end_str;
+                pt
+            });
     }
 
     buckets.into_values().collect()
