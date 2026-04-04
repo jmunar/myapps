@@ -1,9 +1,10 @@
 use axum::{Extension, Router, response::Html, routing::get};
+use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::dashboard::leanfin_nav;
-use super::services::expenses;
+use super::services::expenses::{self, ExpensePoint};
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -92,9 +93,9 @@ async fn page(
                             onclick="selectExpensePeriod(this, 365)">365d</button>
                 </div>
             </div>
-            <div id="expenses-chart">
-                <div class="empty-state"><p>{select_labels}</p></div>
-            </div>
+            <div class="chart-container"><canvas id="expenses-canvas" style="display:none"></canvas></div>
+            <div id="expenses-empty" class="empty-state"><p>{select_labels}</p></div>
+            <div id="expenses-data"></div>
         </div>
         <div class="card mt-2" id="expenses-txn-card" style="display:none">
             <div class="card-header">
@@ -108,8 +109,60 @@ async fn page(
             var basePath = '{base}';
             var selectedLabels = new Set();
             var currentDays = 90;
-            var currentChart = null;
+            var expensesChart = null;
             var selectLabelsMsg = '{select_labels_js}';
+
+            window.updateExpensesChart = function(dates, datasets, labelIds) {{
+                var canvas = document.getElementById('expenses-canvas');
+                var emptyEl = document.getElementById('expenses-empty');
+                canvas.style.display = '';
+                emptyEl.style.display = 'none';
+                if (expensesChart) {{
+                    expensesChart.data.labels = dates;
+                    expensesChart.data.datasets = datasets;
+                    expensesChart.options.onClick = function(evt, elems) {{
+                        if (elems.length > 0) {{
+                            var d = dates[elems[0].index];
+                            window.loadTransactions(labelIds, d, d);
+                        }}
+                    }};
+                    expensesChart.update();
+                }} else {{
+                    expensesChart = new Chart(canvas, {{
+                        type: 'bar',
+                        data: {{ labels: dates, datasets: datasets }},
+                        options: {{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {{
+                                legend: {{ position: 'bottom', labels: {{ font: {{ size: 12 }}, usePointStyle: true }} }},
+                                tooltip: {{
+                                    callbacks: {{
+                                        label: function(ctx) {{ return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString(undefined, {{minimumFractionDigits: 2, maximumFractionDigits: 2}}); }}
+                                    }}
+                                }}
+                            }},
+                            scales: {{
+                                x: {{ stacked: true, ticks: {{ maxRotation: 45, font: {{ size: 11 }} }} }},
+                                y: {{ stacked: true, ticks: {{ callback: function(v) {{ return v.toLocaleString(); }} }} }}
+                            }},
+                            onClick: function(evt, elems) {{
+                                if (elems.length > 0) {{
+                                    var d = dates[elems[0].index];
+                                    window.loadTransactions(labelIds, d, d);
+                                }}
+                            }}
+                        }}
+                    }});
+                }}
+            }};
+
+            window.showExpensesEmpty = function(msg) {{
+                document.getElementById('expenses-canvas').style.display = 'none';
+                var el = document.getElementById('expenses-empty');
+                el.innerHTML = '<p>' + msg + '</p>';
+                el.style.display = '';
+            }};
 
             window.toggleLabel = function(btn) {{
                 var id = btn.dataset.labelId;
@@ -133,24 +186,17 @@ async fn page(
 
             function loadChart() {{
                 if (selectedLabels.size === 0) {{
-                    document.getElementById('expenses-chart').innerHTML =
-                        '<div class="empty-state"><p>' + selectLabelsMsg + '</p></div>';
+                    document.getElementById('expenses-canvas').style.display = 'none';
+                    document.getElementById('expenses-empty').innerHTML =
+                        '<p>' + selectLabelsMsg + '</p>';
+                    document.getElementById('expenses-empty').style.display = '';
                     document.getElementById('expenses-txn-card').style.display = 'none';
+                    if (expensesChart) {{ expensesChart.destroy(); expensesChart = null; }}
                     return;
                 }}
                 var ids = Array.from(selectedLabels).join(',');
                 var url = basePath + '/leanfin/expenses/chart?label_ids=' + ids + '&days=' + currentDays;
-                fetch(url).then(function(r) {{ return r.text(); }}).then(function(html) {{
-                    document.getElementById('expenses-chart').innerHTML = html;
-                    // Execute scripts in the response
-                    var scripts = document.getElementById('expenses-chart').querySelectorAll('script');
-                    scripts.forEach(function(s) {{
-                        var ns = document.createElement('script');
-                        ns.textContent = s.textContent;
-                        s.parentNode.replaceChild(ns, s);
-                    }});
-                }});
-                // Load transactions filtered by the selected labels
+                htmx.ajax('GET', url, '#expenses-data');
                 loadTransactions(ids, null, null);
             }}
 
@@ -197,6 +243,43 @@ fn default_days() -> i64 {
     90
 }
 
+/// Downsample expense data points to weekly or monthly intervals.
+/// For expenses, amounts within each interval are summed. The date used is the
+/// last day of the interval that has data.
+fn downsample_expenses(series: &[ExpensePoint], days: i64) -> Vec<ExpensePoint> {
+    if days <= 30 || series.is_empty() {
+        return series.to_vec();
+    }
+
+    // Key: bucket identifier + label_id → aggregated point
+    // For weekly: (iso_year, iso_week, label_id)
+    // For monthly: (year, month, label_id)
+    let mut buckets: BTreeMap<(i32, u32, i64), ExpensePoint> = BTreeMap::new();
+
+    for p in series {
+        let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") else {
+            continue;
+        };
+        let key = if days <= 90 {
+            (d.iso_week().year(), d.iso_week().week(), p.label_id)
+        } else {
+            (d.year(), d.month(), p.label_id)
+        };
+        buckets
+            .entry(key)
+            .and_modify(|e| {
+                e.total += p.total;
+                // Keep the latest date in the bucket
+                if p.date > e.date {
+                    e.date.clone_from(&p.date);
+                }
+            })
+            .or_insert_with(|| p.clone());
+    }
+
+    buckets.into_values().collect()
+}
+
 async fn chart_data(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
@@ -213,18 +296,19 @@ async fn chart_data(
 
     if label_ids.is_empty() {
         return Html(format!(
-            "<div class=\"empty-state\"><p>{}</p></div>",
+            "<script>window.showExpensesEmpty({:?});</script>",
             t.exp_no_selected
         ));
     }
 
-    let series = expenses::get_expense_series(&state.pool, user_id.0, &label_ids, params.days)
+    let raw = expenses::get_expense_series(&state.pool, user_id.0, &label_ids, params.days)
         .await
         .unwrap_or_default();
+    let series = downsample_expenses(&raw, params.days);
 
     if series.is_empty() {
         return Html(format!(
-            "<div class=\"empty-state\"><p>{}</p></div>",
+            "<script>window.showExpensesEmpty({:?});</script>",
             t.exp_no_data
         ));
     }
@@ -254,9 +338,9 @@ async fn chart_data(
     // Build JSON labels (dates)
     let dates_json: Vec<String> = all_dates.iter().map(|d| format!("\"{d}\"")).collect();
 
-    // Build datasets: one per label
+    // Build Chart.js datasets: one per label
     let mut datasets_json = Vec::new();
-    for (lid, name, _) in &label_info {
+    for (lid, name, color) in &label_info {
         let values: Vec<String> = all_dates
             .iter()
             .map(|d| {
@@ -265,35 +349,9 @@ async fn chart_data(
             })
             .collect();
         datasets_json.push(format!(
-            r#"{{ name: "{name}", values: [{vals}] }}"#,
+            r#"{{ label: "{name}", data: [{vals}], backgroundColor: '{color}' }}"#,
             vals = values.join(","),
         ));
-    }
-
-    // Add a "Total" dataset when multiple labels are selected
-    if label_info.len() > 1 {
-        let values: Vec<String> = all_dates
-            .iter()
-            .map(|d| {
-                let total: f64 = label_info
-                    .iter()
-                    .map(|(lid, _, _)| data_map.get(&(*d, *lid)).copied().unwrap_or(0.0))
-                    .sum();
-                format!("{total:.2}")
-            })
-            .collect();
-        datasets_json.push(format!(
-            r#"{{ name: "Total", values: [{vals}] }}"#,
-            vals = values.join(","),
-        ));
-    }
-
-    let mut colors: Vec<String> = label_info
-        .iter()
-        .map(|(_, _, c)| format!("'{c}'"))
-        .collect();
-    if label_info.len() > 1 {
-        colors.push("'#000000'".to_string());
     }
 
     let label_ids_str = label_ids
@@ -302,48 +360,9 @@ async fn chart_data(
         .collect::<Vec<_>>()
         .join(",");
 
-    let html = format!(
-        r##"<div id="expenses-frappe-chart" class="frappe-chart-container"></div>
-        <script>
-        (function() {{
-            var el = document.getElementById('expenses-frappe-chart');
-            if (!el) return;
-            el.innerHTML = '';
-            var chart = new frappe.Chart(el, {{
-                data: {{
-                    labels: [{dates}],
-                    datasets: [{datasets}]
-                }},
-                type: 'line',
-                height: 300,
-                colors: [{colors}],
-                lineOptions: {{
-                    regionFill: 1,
-                    hideDots: 0
-                }},
-                axisOptions: {{
-                    xIsSeries: true,
-                    xAxisMode: 'tick'
-                }},
-                tooltipOptions: {{
-                    formatTooltipY: function(d) {{ return d.toLocaleString(undefined, {{minimumFractionDigits: 2, maximumFractionDigits: 2}}); }}
-                }},
-                isNavigable: true
-            }});
-            var dates = [{dates}];
-            chart.parent.addEventListener('data-select', function(e) {{
-                var idx = e.index;
-                if (idx != null && dates[idx]) {{
-                    var d = dates[idx];
-                    window.loadTransactions('{label_ids_str}', d, d);
-                }}
-            }});
-        }})();
-        </script>"##,
+    Html(format!(
+        r#"<script>window.updateExpensesChart([{dates}],[{datasets}],'{label_ids_str}');</script>"#,
         dates = dates_json.join(","),
         datasets = datasets_json.join(","),
-        colors = colors.join(","),
-    );
-
-    Html(html)
+    ))
 }

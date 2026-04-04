@@ -453,6 +453,8 @@ async fn alloc_editor_inner(
         String::new()
     };
 
+    let min_amount = if abs_total < 0.01 { "0.00" } else { "0.01" };
+
     Html(format!(
         r##"<tr id="alloc-editor-{txn_id}" class="alloc-editor-row">
             <td colspan="6">
@@ -468,7 +470,7 @@ async fn alloc_editor_inner(
                           hx-target="#alloc-editor-{txn_id}"
                           hx-swap="outerHTML">
                         <select name="label_id" required>{options}</select>
-                        <input type="number" name="amount" step="0.01" min="0.01"
+                        <input type="number" name="amount" step="0.01" min="{min_amount}"
                                value="{remaining:.2}" placeholder="{alloc_amount}" required
                                class="alloc-amount-input mono">
                         <button type="submit" class="btn btn-primary btn-sm">{alloc_add}</button>
@@ -557,6 +559,20 @@ async fn alloc_add(
             .unwrap_or(None);
 
     if owns.is_some() {
+        // Reject zero-amount allocations unless the transaction itself is zero
+        let is_zero_amount = form.amount.abs() < 0.01;
+        let txn_total: Option<(f64,)> =
+            sqlx::query_as("SELECT amount FROM leanfin_transactions WHERE id = ?")
+                .bind(txn_id)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
+        let txn_is_zero = txn_total.is_some_and(|(a,)| a.abs() < 0.01);
+
+        if is_zero_amount && !txn_is_zero {
+            return alloc_editor_inner(&state, user_id, lang, txn_id, None).await;
+        }
+
         sqlx::query(
             "INSERT INTO leanfin_allocations (transaction_id, label_id, amount) VALUES (?, ?, ?)",
         )

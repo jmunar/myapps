@@ -3,7 +3,7 @@ const CACHE_NAME = "myapps-" + STATIC_VERSION;
 const STATIC_ASSETS = [
   BASE_PATH + "/static/style.css",
   BASE_PATH + "/static/htmx.min.js",
-  BASE_PATH + "/static/frappe-charts.min.umd.js",
+  BASE_PATH + "/static/chart.min.js",
   BASE_PATH + "/static/icon.svg",
 ];
 

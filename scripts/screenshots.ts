@@ -68,7 +68,11 @@ test.describe("README screenshots", () => {
     await snap(page, "leanfin-balance");
 
     await page.goto(`${BASE_URL}/leanfin/expenses`);
-    await page.waitForTimeout(1000);
+    // Select a couple of labels so the chart is visible in the screenshot.
+    const pills = page.locator(".label-pill");
+    await pills.nth(0).click();
+    await pills.nth(2).click();
+    await page.waitForTimeout(1500);
     await snap(page, "leanfin-expenses");
 
     await page.goto(`${BASE_URL}/leanfin/labels`);

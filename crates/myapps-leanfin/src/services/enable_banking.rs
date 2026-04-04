@@ -147,8 +147,7 @@ impl BankTransaction {
     pub fn description(&self) -> String {
         self.remittance_information
             .as_ref()
-            .and_then(|v| v.first())
-            .cloned()
+            .map(|v| v.join(" "))
             .unwrap_or_default()
     }
 
