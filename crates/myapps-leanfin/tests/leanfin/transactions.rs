@@ -774,15 +774,17 @@ async fn alloc_add_allows_zero_amount_on_zero_transaction() {
         .await;
 
     // Verify the allocation was created
-    let (alloc_count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM leanfin_allocations WHERE transaction_id = ?",
-    )
-    .bind(txn_id)
-    .fetch_one(&app.pool)
-    .await
-    .unwrap();
+    let (alloc_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
 
-    assert_eq!(alloc_count, 1, "zero-amount allocation should be created on zero-amount transaction");
+    assert_eq!(
+        alloc_count, 1,
+        "zero-amount allocation should be created on zero-amount transaction"
+    );
 }
 
 #[tokio::test]
@@ -791,12 +793,11 @@ async fn alloc_add_rejects_zero_amount_on_nonzero_transaction() {
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
     // Pick a non-zero transaction from seed data
-    let (txn_id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM leanfin_transactions WHERE ABS(amount) > 0.01 LIMIT 1",
-    )
-    .fetch_one(&app.pool)
-    .await
-    .unwrap();
+    let (txn_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_transactions WHERE ABS(amount) > 0.01 LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
 
     let (label_id,): (i64,) =
         sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Entertainment'")
@@ -830,7 +831,10 @@ async fn alloc_add_rejects_zero_amount_on_nonzero_transaction() {
     .await
     .unwrap();
 
-    assert_eq!(alloc_count, 0, "zero-amount allocation should be rejected on non-zero transaction");
+    assert_eq!(
+        alloc_count, 0,
+        "zero-amount allocation should be rejected on non-zero transaction"
+    );
 }
 
 #[tokio::test]
@@ -865,7 +869,10 @@ async fn alloc_editor_shows_min_amount_zero_for_zero_transaction() {
     let body = response.text();
 
     // For zero-amount transactions, the min attribute on the amount input should be "0.00"
-    assert!(body.contains(r#"min="0.00""#), "min amount should be 0.00 for zero transactions");
+    assert!(
+        body.contains(r#"min="0.00""#),
+        "min amount should be 0.00 for zero transactions"
+    );
     // The total should show 0.00
     assert!(body.contains("0.00</span>"));
 }
@@ -876,12 +883,11 @@ async fn alloc_editor_shows_min_amount_positive_for_nonzero_transaction() {
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
     // Pick a non-zero transaction
-    let (txn_id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM leanfin_transactions WHERE ABS(amount) > 0.01 LIMIT 1",
-    )
-    .fetch_one(&app.pool)
-    .await
-    .unwrap();
+    let (txn_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_transactions WHERE ABS(amount) > 0.01 LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
 
     let response = app
         .server
@@ -890,5 +896,8 @@ async fn alloc_editor_shows_min_amount_positive_for_nonzero_transaction() {
     let body = response.text();
 
     // For non-zero transactions, the min attribute should be "0.01"
-    assert!(body.contains(r#"min="0.01""#), "min amount should be 0.01 for non-zero transactions");
+    assert!(
+        body.contains(r#"min="0.01""#),
+        "min amount should be 0.01 for non-zero transactions"
+    );
 }
