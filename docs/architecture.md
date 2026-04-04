@@ -8,7 +8,7 @@
 | HTTP framework   | Axum                            |
 | Database         | SQLite (via sqlx, runtime-checked queries, per-app authorizer isolation) |
 | Frontend         | HTMX + server-rendered HTML     |
-| Charts           | Frappe Charts 1.6.2 (client-side)|
+| Charts           | Chart.js 4.x (client-side)      |
 | Auth             | Argon2 + server-side sessions   |
 | Bank aggregator  | Enable Banking PSD2 API         |
 | Notifications    | Web Push API (VAPID)            |
@@ -96,7 +96,7 @@ myapps/
 │   ├── harness/mod.rs       # Root test harness (uses all apps)
 │   └── auth_tests.rs        # Platform auth, launcher, settings, invite tests
 ├── models/                  # Whisper GGML model files (gitignored)
-├── static/                  # core.css, JS (htmx, frappe-charts, d3), PWA assets
+├── static/                  # core.css, JS (htmx, chart.js, d3), PWA assets
 ├── .claude/agents/          # Claude Code agent prompts
 ├── .github/
 │   ├── workflows/           # CI, CD, audit
@@ -138,7 +138,7 @@ After login, the top-level router serves:
   - `/leanfin/accounts/manual/{id}/value` — Record a new value for a manual account (GET form, POST submit)
   - `/leanfin/accounts/manual/{id}/import-csv` — Bulk-import balance history from CSV (GET form, POST multipart upload)
   - `POST /leanfin/sync` — Trigger transaction sync for the user (HTMX partial)
-  - `/leanfin/balance-evolution` — Balance evolution page (Frappe Charts line chart)
+  - `/leanfin/balance-evolution` — Balance evolution page (Chart.js line chart)
   - `/leanfin/balance-evolution/data?account_id=&days=90` — Balance chart data (HTMX)
   - `/leanfin/expenses` — Expenses page (multi-label selector + chart + transaction list)
   - `/leanfin/expenses/chart?label_ids=1,2&days=90` — Expense chart data (HTMX)

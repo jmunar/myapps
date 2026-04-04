@@ -196,7 +196,7 @@ visibility into spending patterns.
   real-time status feedback: spinning icon during sync, success/error pill badge
   on completion. The transaction list auto-refreshes after sync.
 - **Balance evolution tracking** — a dedicated Balance page shows an interactive
-  Frappe Charts line chart with period selectors (30d/90d/180d/365d) and an
+  Chart.js line chart with period selectors (30d/90d/180d/365d) and an
   account dropdown including an "All accounts" aggregated view. Each sync
   fetches balances first, records a snapshot, then fetches transactions and
   links them to that snapshot via `snapshot_id`. Bank account balances between
@@ -220,12 +220,12 @@ visibility into spending patterns.
   bulk-import historical balance data from CSV files (two-column format:
   date + value) with all-or-nothing validation and idempotent upserts.
 - **Expense visualization** — a dedicated Expenses page with multi-label
-  selection (toggle pills), a Frappe Charts time series showing daily totals per
-  selected label (both credit and debit transactions), and a transaction list
-  below the chart. When multiple labels are selected, a black "Total" line shows
-  the aggregate. Clicking a data point on the chart filters the transaction list
-  to that date. The transaction list reuses the same endpoint as the Transactions
-  page with label_ids and date range filters.
+  selection (toggle pills), a Chart.js stacked bar chart showing totals per
+  selected label with period-appropriate intervals (daily for 30d, weekly for
+  90d, monthly for 180d/365d). Positive expenses stack upward, negative
+  (income/refunds) stack downward from zero. Clicking a bar filters the
+  transaction list to that date. The transaction list reuses the same endpoint
+  as the Transactions page with label_ids and date range filters.
 
 - **Account archiving** — accounts (bank or manual) can be archived to make them
   read-only. Archived bank accounts are skipped during sync; archived manual
