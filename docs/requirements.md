@@ -222,11 +222,19 @@ visibility into spending patterns.
 - **Expense visualization** — a dedicated Expenses page with multi-label
   selection (toggle pills), a Chart.js stacked bar chart showing totals per
   selected label with period-appropriate intervals (daily for 30d, weekly for
-  90d, monthly for 180d/365d). Positive expenses stack upward, negative
-  (income/refunds) stack downward from zero. Clicking a bar filters the
-  transaction list to that date. The transaction list reuses the same endpoint
-  as the Transactions page with label_ids and date range filters.
+  90d, monthly for 180d/365d). Intervals use canonical end dates (Sunday for
+  weekly, last day of month for monthly) so bars align across labels. Positive
+  expenses stack upward, negative (income/refunds) stack downward from zero.
+  Clicking a bar filters the transaction list to the full time window
+  represented by that bar. The transaction list reuses the same endpoint as
+  the Transactions page with label_ids and date range filters.
 
+- **Account coloring** — each account (bank or manual) can be assigned a custom
+  color via an inline color picker on the accounts page. The color appears as a
+  left-side stripe on account cards and as a left border on transaction rows,
+  providing quick visual identification of which account a transaction belongs
+  to. Allocation status (unallocated/misallocated) is shown via background
+  color on the transaction row rather than the left border.
 - **Account archiving** — accounts (bank or manual) can be archived to make them
   read-only. Archived bank accounts are skipped during sync; archived manual
   accounts cannot be edited or have their value updated. Archiving is blocked

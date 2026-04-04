@@ -1,7 +1,7 @@
 use axum::{Extension, Router, response::Html, routing::get};
 use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use super::dashboard::leanfin_nav;
 use super::services::expenses::{self, ExpensePoint};
@@ -112,6 +112,26 @@ async fn page(
             var expensesChart = null;
             var selectLabelsMsg = '{select_labels_js}';
 
+            function windowStart(endDate) {{
+                var d = new Date(endDate + 'T00:00:00');
+                if (currentDays <= 30) return endDate;
+                if (currentDays <= 90) {{
+                    d.setDate(d.getDate() - 6);
+                }} else {{
+                    d.setDate(1);
+                }}
+                return d.toISOString().slice(0, 10);
+            }}
+
+            function onBarClick(dates, labelIds) {{
+                return function(evt, elems) {{
+                    if (elems.length > 0) {{
+                        var end = dates[elems[0].index];
+                        window.loadTransactions(labelIds, windowStart(end), end);
+                    }}
+                }};
+            }}
+
             window.updateExpensesChart = function(dates, datasets, labelIds) {{
                 var canvas = document.getElementById('expenses-canvas');
                 var emptyEl = document.getElementById('expenses-empty');
@@ -120,12 +140,7 @@ async fn page(
                 if (expensesChart) {{
                     expensesChart.data.labels = dates;
                     expensesChart.data.datasets = datasets;
-                    expensesChart.options.onClick = function(evt, elems) {{
-                        if (elems.length > 0) {{
-                            var d = dates[elems[0].index];
-                            window.loadTransactions(labelIds, d, d);
-                        }}
-                    }};
+                    expensesChart.options.onClick = onBarClick(dates, labelIds);
                     expensesChart.update();
                 }} else {{
                     expensesChart = new Chart(canvas, {{
@@ -146,12 +161,7 @@ async fn page(
                                 x: {{ stacked: true, ticks: {{ maxRotation: 45, font: {{ size: 11 }} }} }},
                                 y: {{ stacked: true, ticks: {{ callback: function(v) {{ return v.toLocaleString(); }} }} }}
                             }},
-                            onClick: function(evt, elems) {{
-                                if (elems.length > 0) {{
-                                    var d = dates[elems[0].index];
-                                    window.loadTransactions(labelIds, d, d);
-                                }}
-                            }}
+                            onClick: onBarClick(dates, labelIds)
                         }}
                     }});
                 }}
@@ -245,7 +255,7 @@ fn default_days() -> i64 {
 
 /// Downsample expense data points to weekly or monthly intervals.
 /// For expenses, amounts within each interval are summed. The date used is the
-/// last day of the interval that has data.
+/// canonical end of the interval (Sunday for weekly, last day of month for monthly).
 fn downsample_expenses(series: &[ExpensePoint], days: i64) -> Vec<ExpensePoint> {
     if days <= 30 || series.is_empty() {
         return series.to_vec();
@@ -260,24 +270,88 @@ fn downsample_expenses(series: &[ExpensePoint], days: i64) -> Vec<ExpensePoint> 
         let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") else {
             continue;
         };
-        let key = if days <= 90 {
-            (d.iso_week().year(), d.iso_week().week(), p.label_id)
+        let (key, bucket_end) = if days <= 90 {
+            let key = (d.iso_week().year(), d.iso_week().week(), p.label_id);
+            // Sunday = end of ISO week (Mon=0 .. Sun=6)
+            let days_until_sunday = (6 - d.weekday().num_days_from_monday()) % 7;
+            let end = d + chrono::Duration::days(days_until_sunday as i64);
+            (key, end)
         } else {
-            (d.year(), d.month(), p.label_id)
+            let key = (d.year(), d.month(), p.label_id);
+            // Last day of the month
+            let end = if d.month() == 12 {
+                NaiveDate::from_ymd_opt(d.year() + 1, 1, 1).unwrap()
+            } else {
+                NaiveDate::from_ymd_opt(d.year(), d.month() + 1, 1).unwrap()
+            } - chrono::Duration::days(1);
+            (key, end)
         };
+        let end_str = bucket_end.format("%Y-%m-%d").to_string();
         buckets
             .entry(key)
             .and_modify(|e| {
                 e.total += p.total;
-                // Keep the latest date in the bucket
-                if p.date > e.date {
-                    e.date.clone_from(&p.date);
-                }
             })
-            .or_insert_with(|| p.clone());
+            .or_insert_with(|| {
+                let mut pt = p.clone();
+                pt.date = end_str;
+                pt
+            });
     }
 
     buckets.into_values().collect()
+}
+
+/// Generate all time window end-dates covering the last `days` days.
+/// Daily for <=30d, weekly (ending Sunday) for <=90d, monthly (last day) for longer.
+fn generate_window_dates(days: i64) -> Vec<String> {
+    let today = chrono::Utc::now().date_naive();
+    let start = today - chrono::Duration::days(days);
+    let mut dates = Vec::new();
+
+    if days <= 30 {
+        // Daily: every day from start to today
+        let mut d = start;
+        while d <= today {
+            dates.push(d.format("%Y-%m-%d").to_string());
+            d += chrono::Duration::days(1);
+        }
+    } else if days <= 90 {
+        // Weekly: find the first Sunday on or after start, then every 7 days.
+        // Include the current (possibly incomplete) week's Sunday even if after today.
+        let days_until_sunday = (6 - start.weekday().num_days_from_monday()) % 7;
+        let mut d = start + chrono::Duration::days(days_until_sunday as i64);
+        let end_sunday = {
+            let dts = (6 - today.weekday().num_days_from_monday()) % 7;
+            today + chrono::Duration::days(dts as i64)
+        };
+        while d <= end_sunday {
+            dates.push(d.format("%Y-%m-%d").to_string());
+            d += chrono::Duration::days(7);
+        }
+    } else {
+        // Monthly: last day of each month from start's month to today's month
+        let mut year = start.year();
+        let mut month = start.month();
+        loop {
+            let last_day = if month == 12 {
+                NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
+            } else {
+                NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
+            } - chrono::Duration::days(1);
+            dates.push(last_day.format("%Y-%m-%d").to_string());
+            if year > today.year() || (year == today.year() && month >= today.month()) {
+                break;
+            }
+            month += 1;
+            if month > 12 {
+                month = 1;
+                year += 1;
+            }
+        }
+    }
+
+    dates
 }
 
 async fn chart_data(
@@ -313,8 +387,10 @@ async fn chart_data(
         ));
     }
 
-    // Collect all unique dates and label info
-    let all_dates: BTreeSet<&str> = series.iter().map(|p| p.date.as_str()).collect();
+    // Generate the full sequence of time window end-dates for the period
+    let all_dates = generate_window_dates(params.days);
+
+    // Collect label info
     let mut label_info: Vec<(i64, String, String)> = Vec::new(); // (id, name, color)
     let mut seen_labels = std::collections::HashSet::new();
     for p in &series {
@@ -330,9 +406,9 @@ async fn chart_data(
     }
 
     // Build a map: (date, label_id) -> total
-    let mut data_map: HashMap<(&str, i64), f64> = HashMap::new();
+    let mut data_map: HashMap<(String, i64), f64> = HashMap::new();
     for p in &series {
-        data_map.insert((p.date.as_str(), p.label_id), p.total);
+        *data_map.entry((p.date.clone(), p.label_id)).or_default() += p.total;
     }
 
     // Build JSON labels (dates)
@@ -344,7 +420,7 @@ async fn chart_data(
         let values: Vec<String> = all_dates
             .iter()
             .map(|d| {
-                let v = data_map.get(&(*d, *lid)).copied().unwrap_or(0.0);
+                let v = data_map.get(&(d.clone(), *lid)).copied().unwrap_or(0.0);
                 format!("{v:.2}")
             })
             .collect();

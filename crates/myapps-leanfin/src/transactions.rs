@@ -45,6 +45,13 @@ struct LabelInfo {
     color: Option<String>,
 }
 
+#[derive(sqlx::FromRow)]
+struct TransactionWithColor {
+    #[sqlx(flatten)]
+    txn: Transaction,
+    account_color: Option<String>,
+}
+
 // ── Render helpers ───────────────────────────────────────────
 
 fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
@@ -72,7 +79,12 @@ fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
     html
 }
 
-fn render_row(t: &Transaction, txn_allocs: &[&AllocRow], base: &str) -> String {
+fn render_row(
+    t: &Transaction,
+    txn_allocs: &[&AllocRow],
+    base: &str,
+    account_color: Option<&str>,
+) -> String {
     let counterparty = t.counterparty.as_deref().unwrap_or("—");
     let sign = if t.amount < 0.0 {
         "negative"
@@ -94,8 +106,13 @@ fn render_row(t: &Transaction, txn_allocs: &[&AllocRow], base: &str) -> String {
         "txn-misallocated"
     };
 
+    let color_style = match account_color {
+        Some(c) => format!(" style=\"--account-color:{c}\""),
+        None => String::new(),
+    };
+
     format!(
-        r#"<tr id="txn-{id}" class="{alloc_class}">
+        r#"<tr id="txn-{id}" class="{alloc_class}"{color_style}>
             <td class="txn-date">{date}</td>
             <td class="txn-counterparty">{counterparty}</td>
             <td class="txn-description">{desc}</td>
@@ -234,24 +251,25 @@ async fn list(
     let total_pages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
     let page = page.min(total_pages);
 
-    // Fetch page of transactions
+    // Fetch page of transactions (with account color)
     let data_sql = format!(
         r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
-               t.created_at, t.snapshot_id
+               t.created_at, t.snapshot_id, a.color AS account_color
         FROM leanfin_transactions t
         JOIN leanfin_accounts a ON t.account_id = a.id{where_clause}
         ORDER BY t.date DESC LIMIT ? OFFSET ?"#
     );
-    let transactions: Vec<Transaction> = bind_filters!(sqlx::query_as::<_, Transaction>(&data_sql))
-        .bind(PAGE_SIZE)
-        .bind(offset)
-        .fetch_all(&state.pool)
-        .await
-        .unwrap_or_default();
+    let transactions: Vec<TransactionWithColor> =
+        bind_filters!(sqlx::query_as::<_, TransactionWithColor>(&data_sql))
+            .bind(PAGE_SIZE)
+            .bind(offset)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
 
     // Fetch all allocations for these transactions
-    let txn_ids: Vec<i64> = transactions.iter().map(|t| t.id).collect();
+    let txn_ids: Vec<i64> = transactions.iter().map(|t| t.txn.id).collect();
     let placeholders = txn_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let query_str = format!(
         r#"SELECT a.id, a.transaction_id, a.label_id, a.amount,
@@ -269,9 +287,16 @@ async fn list(
 
     let mut rows = String::new();
     for t in &transactions {
-        let txn_allocs: Vec<&AllocRow> =
-            allocs.iter().filter(|a| a.transaction_id == t.id).collect();
-        rows.push_str(&render_row(t, &txn_allocs, base));
+        let txn_allocs: Vec<&AllocRow> = allocs
+            .iter()
+            .filter(|a| a.transaction_id == t.txn.id)
+            .collect();
+        rows.push_str(&render_row(
+            &t.txn,
+            &txn_allocs,
+            base,
+            t.account_color.as_deref(),
+        ));
     }
 
     // Pagination controls
@@ -678,10 +703,10 @@ async fn txn_row(
 ) -> Html<String> {
     let base = &state.config.base_path;
 
-    let txn: Option<Transaction> = sqlx::query_as(
+    let txn: Option<TransactionWithColor> = sqlx::query_as(
         r#"SELECT t.id, t.account_id, t.external_id, t.date, t.amount,
                t.currency, t.description, t.counterparty, t.balance_after,
-               t.created_at, t.snapshot_id
+               t.created_at, t.snapshot_id, a.color AS account_color
         FROM leanfin_transactions t
         JOIN leanfin_accounts a ON t.account_id = a.id
         WHERE t.id = ? AND a.user_id = ?"#,
@@ -710,7 +735,7 @@ async fn txn_row(
     .unwrap_or_default();
 
     let refs: Vec<&AllocRow> = allocs.iter().collect();
-    Html(render_row(&t, &refs, base))
+    Html(render_row(&t.txn, &refs, base, t.account_color.as_deref()))
 }
 
 // ── Transaction details (raw API payload) ───────────────────
