@@ -50,9 +50,15 @@ pub async fn run(
     .await?;
 
     // Create a manual account (investment portfolio)
-    let acct3 =
-        insert_manual_account(pool, user_id, "Stock Portfolio", "investment", "EUR", Some("#4CAF50"))
-            .await?;
+    let acct3 = insert_manual_account(
+        pool,
+        user_id,
+        "Stock Portfolio",
+        "investment",
+        "EUR",
+        Some("#4CAF50"),
+    )
+    .await?;
 
     // Create an archived bank account (old account, no longer in use)
     let acct4 = insert_bank_account(

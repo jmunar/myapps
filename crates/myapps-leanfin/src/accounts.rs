@@ -377,14 +377,12 @@ async fn update_color(
     Path(account_id): Path<i64>,
     Form(form): Form<ColorForm>,
 ) -> Html<String> {
-    let _ = sqlx::query(
-        "UPDATE leanfin_accounts SET color = ? WHERE id = ? AND user_id = ?",
-    )
-    .bind(&form.color)
-    .bind(account_id)
-    .bind(user_id.0)
-    .execute(&state.pool)
-    .await;
+    let _ = sqlx::query("UPDATE leanfin_accounts SET color = ? WHERE id = ? AND user_id = ?")
+        .bind(&form.color)
+        .bind(account_id)
+        .bind(user_id.0)
+        .execute(&state.pool)
+        .await;
 
     Html(String::new())
 }
