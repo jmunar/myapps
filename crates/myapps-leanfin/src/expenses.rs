@@ -1,7 +1,7 @@
 use axum::{Extension, Router, response::Html, routing::get};
 use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use super::dashboard::leanfin_nav;
 use super::services::expenses::{self, ExpensePoint};
@@ -302,6 +302,53 @@ fn downsample_expenses(series: &[ExpensePoint], days: i64) -> Vec<ExpensePoint> 
     buckets.into_values().collect()
 }
 
+/// Generate all time window end-dates covering the last `days` days.
+/// Daily for <=30d, weekly (ending Sunday) for <=90d, monthly (last day) for longer.
+fn generate_window_dates(days: i64) -> Vec<String> {
+    let today = chrono::Utc::now().date_naive();
+    let start = today - chrono::Duration::days(days);
+    let mut dates = Vec::new();
+
+    if days <= 30 {
+        // Daily: every day from start to today
+        let mut d = start;
+        while d <= today {
+            dates.push(d.format("%Y-%m-%d").to_string());
+            d += chrono::Duration::days(1);
+        }
+    } else if days <= 90 {
+        // Weekly: find the first Sunday on or after start, then every 7 days
+        let days_until_sunday = (6 - start.weekday().num_days_from_monday()) % 7;
+        let mut d = start + chrono::Duration::days(days_until_sunday as i64);
+        while d <= today {
+            dates.push(d.format("%Y-%m-%d").to_string());
+            d += chrono::Duration::days(7);
+        }
+    } else {
+        // Monthly: last day of each month from start's month to today's month
+        let mut year = start.year();
+        let mut month = start.month();
+        loop {
+            let last_day = if month == 12 {
+                NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
+            } else {
+                NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
+            } - chrono::Duration::days(1);
+            dates.push(last_day.format("%Y-%m-%d").to_string());
+            if year > today.year() || (year == today.year() && month >= today.month()) {
+                break;
+            }
+            month += 1;
+            if month > 12 {
+                month = 1;
+                year += 1;
+            }
+        }
+    }
+
+    dates
+}
+
 async fn chart_data(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
@@ -335,8 +382,10 @@ async fn chart_data(
         ));
     }
 
-    // Collect all unique dates and label info
-    let all_dates: BTreeSet<&str> = series.iter().map(|p| p.date.as_str()).collect();
+    // Generate the full sequence of time window end-dates for the period
+    let all_dates = generate_window_dates(params.days);
+
+    // Collect label info
     let mut label_info: Vec<(i64, String, String)> = Vec::new(); // (id, name, color)
     let mut seen_labels = std::collections::HashSet::new();
     for p in &series {
@@ -352,9 +401,9 @@ async fn chart_data(
     }
 
     // Build a map: (date, label_id) -> total
-    let mut data_map: HashMap<(&str, i64), f64> = HashMap::new();
+    let mut data_map: HashMap<(String, i64), f64> = HashMap::new();
     for p in &series {
-        data_map.insert((p.date.as_str(), p.label_id), p.total);
+        *data_map.entry((p.date.clone(), p.label_id)).or_default() += p.total;
     }
 
     // Build JSON labels (dates)
@@ -366,7 +415,7 @@ async fn chart_data(
         let values: Vec<String> = all_dates
             .iter()
             .map(|d| {
-                let v = data_map.get(&(*d, *lid)).copied().unwrap_or(0.0);
+                let v = data_map.get(&(d.clone(), *lid)).copied().unwrap_or(0.0);
                 format!("{v:.2}")
             })
             .collect();
