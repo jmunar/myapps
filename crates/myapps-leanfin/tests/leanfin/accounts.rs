@@ -319,6 +319,76 @@ async fn archived_account_not_synced() {
     );
 }
 
+// ── Account coloring tests ──────────────────────────────────────
+
+#[tokio::test]
+async fn update_account_color_persists() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let (account_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let response = app
+        .server
+        .post(&format!("/leanfin/accounts/{account_id}/color"))
+        .form(&serde_json::json!({"color": "#ff5733"}))
+        .await;
+    assert_eq!(response.status_code(), 200);
+
+    // Verify the color was persisted in the database
+    let (color,): (Option<String>,) =
+        sqlx::query_as("SELECT color FROM leanfin_accounts WHERE id = ?")
+            .bind(account_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(color.as_deref(), Some("#ff5733"));
+}
+
+#[tokio::test]
+async fn accounts_page_shows_color_stripe_and_picker() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let response = app.server.get("/leanfin/accounts").await;
+    let body = response.text();
+    assert!(
+        body.contains("account-color-stripe"),
+        "missing account-color-stripe element"
+    );
+    assert!(
+        body.contains("account-color-picker"),
+        "missing account-color-picker element"
+    );
+}
+
+#[tokio::test]
+async fn accounts_page_shows_custom_color_in_style() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Set a specific color on an account
+    sqlx::query("UPDATE leanfin_accounts SET color = '#abcdef' WHERE bank_name = 'Santander'")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let response = app.server.get("/leanfin/accounts").await;
+    let body = response.text();
+    assert!(
+        body.contains("--account-color:#abcdef"),
+        "account item should include --account-color CSS variable"
+    );
+    assert!(
+        body.contains(r##"value="#abcdef""##),
+        "color picker should have the account color as value"
+    );
+}
+
 // ── Existing tests ──────────────────────────────────────────────
 
 #[tokio::test]

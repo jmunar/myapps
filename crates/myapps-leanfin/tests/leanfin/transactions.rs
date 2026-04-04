@@ -901,3 +901,102 @@ async fn alloc_editor_shows_min_amount_positive_for_nonzero_transaction() {
         "min amount should be 0.01 for non-zero transactions"
     );
 }
+
+// ── Account color on transaction rows ───────────────────────
+
+#[tokio::test]
+async fn transaction_row_includes_account_color_style() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Set a color on Santander account
+    sqlx::query("UPDATE leanfin_accounts SET color = '#e74c3c' WHERE bank_name = 'Santander'")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+    assert!(
+        body.contains("--account-color:#e74c3c"),
+        "transaction rows should include --account-color CSS variable from account"
+    );
+}
+
+#[tokio::test]
+async fn transaction_row_omits_color_style_when_no_account_color() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Ensure no accounts have a color set
+    sqlx::query("UPDATE leanfin_accounts SET color = NULL")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+    assert!(
+        !body.contains("--account-color"),
+        "transaction rows should not include --account-color when account has no color"
+    );
+}
+
+#[tokio::test]
+async fn transaction_row_has_unallocated_class() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Ensure at least one transaction is unallocated
+    let (txn_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_transactions LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM leanfin_allocations WHERE transaction_id = ?")
+        .bind(txn_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let response = app.server.get("/leanfin/transactions").await;
+    let body = response.text();
+    assert!(
+        body.contains("txn-unallocated"),
+        "unallocated transactions should have txn-unallocated class"
+    );
+}
+
+#[tokio::test]
+async fn single_transaction_row_refresh_includes_account_color() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Set color on an account and get a transaction from it
+    let (account_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE leanfin_accounts SET color = '#2ecc71' WHERE id = ?")
+        .bind(account_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (txn_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_transactions WHERE account_id = ? LIMIT 1")
+            .bind(account_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let response = app
+        .server
+        .get(&format!("/leanfin/transactions/{txn_id}/row"))
+        .await;
+    let body = response.text();
+    assert!(
+        body.contains("--account-color:#2ecc71"),
+        "single row refresh should include --account-color CSS variable"
+    );
+}
