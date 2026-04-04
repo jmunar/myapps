@@ -193,6 +193,61 @@ async fn chart_endpoint_supports_multiple_labels() {
         .await;
     let body = response.text();
 
+    // Each label becomes a dataset in the stacked bar chart
+    assert!(body.contains("updateExpensesChart("));
     assert!(body.contains("Groceries"));
     assert!(body.contains("Subscriptions"));
+}
+
+#[tokio::test]
+async fn expenses_page_has_persistent_canvas_in_chart_container() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let response = app.server.get("/leanfin/expenses").await;
+    let body = response.text();
+
+    // Canvas is persistent in the page template (not created by data endpoint)
+    assert!(body.contains("<canvas"));
+    assert!(body.contains(r#"id="expenses-canvas""#));
+    // The updateExpensesChart function is defined in the page
+    assert!(body.contains("updateExpensesChart"));
+    // The showExpensesEmpty function is defined in the page
+    assert!(body.contains("showExpensesEmpty"));
+}
+
+#[tokio::test]
+async fn expenses_page_chart_config_uses_stacked_bar() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let response = app.server.get("/leanfin/expenses").await;
+    let body = response.text();
+
+    // Chart.js stacked bar configuration
+    assert!(body.contains("type: 'bar'"));
+    assert!(body.contains("stacked: true"));
+}
+
+#[tokio::test]
+async fn chart_endpoint_passes_label_ids_to_chart_function() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let (label_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let response = app
+        .server
+        .get("/leanfin/expenses/chart")
+        .add_query_param("label_ids", &label_id.to_string())
+        .add_query_param("days", "365")
+        .await;
+    let body = response.text();
+
+    // The label_ids are passed as the third argument for drill-down
+    assert!(body.contains(&format!("'{label_id}'")));
 }
