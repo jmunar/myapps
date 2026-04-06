@@ -56,7 +56,10 @@ async fn list_labels(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let lbl_rules = t.lbl_rules;
     let lbl_edit = t.lbl_edit;
@@ -356,7 +359,10 @@ async fn list_rules(
     .bind(label_id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     Html(render_rules_panel(base, label_id, &rules, lang))
 }
@@ -417,7 +423,10 @@ async fn create_rule(
     .bind(label_id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     Html(render_rules_panel(base, label_id, &rules, lang))
 }
@@ -449,7 +458,10 @@ async fn delete_rule(
     .bind(label_id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     Html(render_rules_panel(base, label_id, &rules, lang))
 }

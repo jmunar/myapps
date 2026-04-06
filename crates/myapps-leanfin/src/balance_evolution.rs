@@ -38,7 +38,10 @@ async fn page(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     if accounts.is_empty() {
         let body = format!(
@@ -319,11 +322,17 @@ async fn data(
 
         balance::get_balance_series(&state.pool, account_id, params.days)
             .await
-            .unwrap_or_default()
+            .unwrap_or_else(|e| {
+                tracing::error!("DB query failed: {e:#}");
+                Default::default()
+            })
     } else {
         balance::get_aggregated_balance_series(&state.pool, user_id.0, params.days)
             .await
-            .unwrap_or_default()
+            .unwrap_or_else(|e| {
+                tracing::error!("DB query failed: {e:#}");
+                Default::default()
+            })
     };
 
     let series = downsample_balance(&series, params.days);

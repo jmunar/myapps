@@ -64,7 +64,10 @@ async fn list(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     // Pre-fetch classrooms and form types for labels
     let classrooms: Vec<ClassroomRow> = sqlx::query_as(
@@ -73,7 +76,10 @@ async fn list(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
         "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ?",
@@ -81,7 +87,10 @@ async fn list(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let delete_label = t.inp_delete;
     let delete_confirm = t.inp_delete_confirm;
@@ -180,7 +189,10 @@ async fn new_input_page(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
         "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ? ORDER BY name ASC",
@@ -188,7 +200,10 @@ async fn new_input_page(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     if classrooms.is_empty() || form_types.is_empty() {
         let msg = if classrooms.is_empty() && form_types.is_empty() {

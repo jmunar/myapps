@@ -20,7 +20,7 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
     tracing::info!("Starting transaction sync");
 
     let accounts: Vec<Account> = sqlx::query_as(
-        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived, created_at FROM leanfin_accounts WHERE account_type = 'bank' AND archived = 0",
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, color, archived, created_at FROM leanfin_accounts WHERE account_type = 'bank' AND archived = 0",
     )
     .fetch_all(pool)
     .await?;
@@ -297,12 +297,15 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
     };
 
     let accounts: Vec<Account> = sqlx::query_as(
-        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, archived, created_at FROM leanfin_accounts WHERE user_id = ? AND account_type = 'bank' AND archived = 0",
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, color, archived, created_at FROM leanfin_accounts WHERE user_id = ? AND account_type = 'bank' AND archived = 0",
     )
     .bind(user_id)
     .fetch_all(pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let now = Utc::now().naive_utc();
 

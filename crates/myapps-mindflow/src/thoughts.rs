@@ -143,7 +143,10 @@ async fn detail(
     .bind(id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let actions: Vec<ActionRow> = sqlx::query_as(
         "SELECT id, title, due_date, priority, status FROM mindflow_actions WHERE thought_id = ? ORDER BY status ASC, priority DESC",
@@ -151,7 +154,10 @@ async fn detail(
     .bind(id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let categories: Vec<CategoryOption> = sqlx::query_as(
         "SELECT id, name FROM mindflow_categories WHERE user_id = ? AND archived = 0 ORDER BY name",
@@ -159,7 +165,10 @@ async fn detail(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     // All descendants via recursive CTE (full tree under this thought)
     let descendants: Vec<DescendantThought> = sqlx::query_as(
@@ -180,7 +189,10 @@ async fn detail(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     // Category badge
     let cat_badge = match (&th.category_name, &th.category_color) {
@@ -458,7 +470,10 @@ async fn add_comment(
     .bind(id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let mut html = String::new();
     for c in &comments {

@@ -53,7 +53,10 @@ async fn list(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let mut items = String::new();
     for c in &categories {
