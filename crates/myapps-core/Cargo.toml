@@ -29,3 +29,4 @@ url = "2"
 clap = { version = "4", features = ["derive"] }
 libsqlite3-sys = "0.30"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-journald = "0.3"

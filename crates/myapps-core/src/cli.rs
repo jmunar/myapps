@@ -69,12 +69,26 @@ pub fn init() {
         }
     }
     dotenvy::dotenv().ok();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "myapps=info".parse().unwrap());
+
+    use std::io::IsTerminal;
+
+    // Use journald when running as a service (no TTY + socket available),
+    // fall back to human-readable stderr for interactive/debug sessions.
+    if !std::io::stderr().is_terminal() {
+        if let Ok(journald) = tracing_journald::layer() {
+            use tracing_subscriber::layer::SubscriberExt;
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::registry().with(env_filter).with(journald),
+            )
+            .expect("failed to set tracing subscriber");
+            return;
+        }
+    }
     tracing_subscriber::fmt()
         .with_ansi(should_use_ansi())
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "myapps=info".parse().unwrap()),
-        )
+        .with_env_filter(env_filter)
         .init();
 }
 
