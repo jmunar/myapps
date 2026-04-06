@@ -80,7 +80,9 @@ pub fn init() {
         if let Ok(journald) = tracing_journald::layer() {
             use tracing_subscriber::layer::SubscriberExt;
             tracing::subscriber::set_global_default(
-                tracing_subscriber::registry().with(env_filter).with(journald),
+                tracing_subscriber::registry()
+                    .with(env_filter)
+                    .with(journald),
             )
             .expect("failed to set tracing subscriber");
             return;

@@ -118,9 +118,15 @@ pub async fn require_auth(
         }
         None => {
             if has_cookie {
-                tracing::warn!("Auth failed for {} (expired/invalid session)", request.uri());
+                tracing::warn!(
+                    "Auth failed for {} (expired/invalid session)",
+                    request.uri()
+                );
             } else {
-                tracing::debug!("Unauthenticated request to {}, redirecting to login", request.uri());
+                tracing::debug!(
+                    "Unauthenticated request to {}, redirecting to login",
+                    request.uri()
+                );
             }
             let login_url = format!("{}/login", state.config.base_path);
             Redirect::to(&login_url).into_response()
