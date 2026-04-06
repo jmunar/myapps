@@ -70,6 +70,7 @@ pub fn init() {
     }
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt()
+        .with_ansi(should_use_ansi())
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "myapps=info".parse().unwrap()),
@@ -239,6 +240,13 @@ async fn run_delete_app_data(
     Ok(())
 }
 
+/// Returns `true` when ANSI escape codes should be used in log output.
+/// Respects the [NO_COLOR](https://no-color.org/) convention: if the
+/// `NO_COLOR` environment variable is set (to any value), ANSI is disabled.
+fn should_use_ansi() -> bool {
+    std::env::var_os("NO_COLOR").is_none()
+}
+
 fn generate_vapid_keys() {
     use base64::Engine;
     use web_push::VapidSignatureBuilder;
@@ -255,4 +263,44 @@ fn generate_vapid_keys() {
     println!("VAPID_PRIVATE_KEY={private_b64}");
     println!("VAPID_PUBLIC_KEY={public_b64}");
     println!("VAPID_SUBJECT=mailto:you@example.com");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Env-var mutations are process-global, so serialise these tests.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    // SAFETY: tests are serialised via ENV_LOCK so no concurrent access.
+    unsafe fn set_no_color(val: &str) {
+        unsafe { std::env::set_var("NO_COLOR", val) };
+    }
+    unsafe fn unset_no_color() {
+        unsafe { std::env::remove_var("NO_COLOR") };
+    }
+
+    #[test]
+    fn ansi_enabled_when_no_color_unset() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        unsafe { unset_no_color() };
+        assert!(should_use_ansi());
+    }
+
+    #[test]
+    fn ansi_disabled_when_no_color_set_empty() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        unsafe { set_no_color("") };
+        assert!(!should_use_ansi());
+        unsafe { unset_no_color() };
+    }
+
+    #[test]
+    fn ansi_disabled_when_no_color_set_non_empty() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        unsafe { set_no_color("1") };
+        assert!(!should_use_ansi());
+        unsafe { unset_no_color() };
+    }
 }
