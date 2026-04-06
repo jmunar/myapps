@@ -275,10 +275,10 @@ mod tests {
 
     // SAFETY: tests are serialised via ENV_LOCK so no concurrent access.
     unsafe fn set_no_color(val: &str) {
-        std::env::set_var("NO_COLOR", val);
+        unsafe { std::env::set_var("NO_COLOR", val) };
     }
     unsafe fn unset_no_color() {
-        std::env::remove_var("NO_COLOR");
+        unsafe { std::env::remove_var("NO_COLOR") };
     }
 
     #[test]
