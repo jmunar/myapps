@@ -94,7 +94,10 @@ async fn index(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
     for a in &accounts {
@@ -116,7 +119,10 @@ async fn index(
             .bind(user_id.0)
             .fetch_all(&state.pool)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!("DB query failed: {e:#}");
+                Default::default()
+            });
 
     let mut label_options = format!(r#"<option value="">{}</option>"#, t.txn_all_labels);
     for l in &labels {

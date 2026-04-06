@@ -77,7 +77,10 @@ async fn list_accounts(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let today = chrono::Utc::now().naive_utc();
     let warn_threshold = today + chrono::Duration::days(14);

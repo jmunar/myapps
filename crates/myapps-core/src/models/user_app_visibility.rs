@@ -8,7 +8,10 @@ pub async fn get_visibility(pool: &SqlitePool, user_id: i64) -> HashMap<String, 
             .bind(user_id)
             .fetch_all(pool)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!("DB query failed: {e:#}");
+                Default::default()
+            });
 
     rows.into_iter().map(|(k, v)| (k, v != 0)).collect()
 }

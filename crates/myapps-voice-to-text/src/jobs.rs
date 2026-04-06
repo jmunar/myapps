@@ -288,7 +288,10 @@ async fn render_jobs_tbody(
     .bind(user_id.0)
     .fetch_all(pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let mut rows = String::new();
     for j in &jobs {

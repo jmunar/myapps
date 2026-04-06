@@ -266,7 +266,10 @@ async fn list(
             .bind(offset)
             .fetch_all(&state.pool)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::error!("DB query failed: {e:#}");
+                Default::default()
+            });
 
     // Fetch all allocations for these transactions
     let txn_ids: Vec<i64> = transactions.iter().map(|t| t.txn.id).collect();
@@ -283,7 +286,13 @@ async fn list(
     for id in &txn_ids {
         alloc_query = alloc_query.bind(id);
     }
-    let allocs: Vec<AllocRow> = alloc_query.fetch_all(&state.pool).await.unwrap_or_default();
+    let allocs: Vec<AllocRow> = alloc_query
+        .fetch_all(&state.pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("DB query failed: {e:#}");
+            Default::default()
+        });
 
     let mut rows = String::new();
     for t in &transactions {
@@ -404,7 +413,10 @@ async fn alloc_editor_inner(
     .bind(txn_id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     // All labels for picker
     let labels: Vec<LabelInfo> = sqlx::query_as(
@@ -413,7 +425,10 @@ async fn alloc_editor_inner(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let allocated: f64 = allocs.iter().map(|a| a.amount).sum();
     let remaining = abs_total - allocated;
@@ -732,7 +747,10 @@ async fn txn_row(
     .bind(txn_id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let refs: Vec<&AllocRow> = allocs.iter().collect();
     Html(render_row(&t.txn, &refs, base, t.account_color.as_deref()))
@@ -774,7 +792,10 @@ async fn txn_details(
     .bind(account_id)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let mut raw_txn: Option<serde_json::Value> = None;
     for (body,) in &payloads {

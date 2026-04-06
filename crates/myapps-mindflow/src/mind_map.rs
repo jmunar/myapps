@@ -37,7 +37,10 @@ async fn page(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let mut cat_options = format!(r#"<option value="">{}</option>"#, t.map_inbox_uncategorized);
     for c in &categories {
@@ -387,7 +390,10 @@ async fn map_data(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let thoughts: Vec<ThoughtForMap> = sqlx::query_as(
         "SELECT id, category_id, parent_thought_id, content FROM mindflow_thoughts WHERE user_id = ? AND status = 'active'",
@@ -395,7 +401,10 @@ async fn map_data(
     .bind(user_id.0)
     .fetch_all(&state.pool)
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
 
     let mut nodes = Vec::new();
     let mut links = Vec::new();
