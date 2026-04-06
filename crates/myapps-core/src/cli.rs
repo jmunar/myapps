@@ -76,17 +76,17 @@ pub fn init() {
 
     // Use journald when running as a service (no TTY + socket available),
     // fall back to human-readable stderr for interactive/debug sessions.
-    if !std::io::stderr().is_terminal() {
-        if let Ok(journald) = tracing_journald::layer() {
-            use tracing_subscriber::layer::SubscriberExt;
-            tracing::subscriber::set_global_default(
-                tracing_subscriber::registry()
-                    .with(env_filter)
-                    .with(journald),
-            )
-            .expect("failed to set tracing subscriber");
-            return;
-        }
+    if !std::io::stderr().is_terminal()
+        && let Ok(journald) = tracing_journald::layer()
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        tracing::subscriber::set_global_default(
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(journald),
+        )
+        .expect("failed to set tracing subscriber");
+        return;
     }
     tracing_subscriber::fmt()
         .with_ansi(should_use_ansi())
