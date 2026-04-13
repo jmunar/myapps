@@ -8,13 +8,11 @@ use crate::config::Config;
 
 /// Send a push notification to all subscribed browsers. Logs errors but does not fail.
 pub async fn send(pool: &SqlitePool, config: &Config, title: &str, body: &str) {
-    if let Err(e) = sqlx::query(
-        "INSERT INTO push_notifications (title, body) VALUES (?, ?)",
-    )
-    .bind(title)
-    .bind(body)
-    .execute(pool)
-    .await
+    if let Err(e) = sqlx::query("INSERT INTO push_notifications (title, body) VALUES (?, ?)")
+        .bind(title)
+        .bind(body)
+        .execute(pool)
+        .await
     {
         tracing::warn!("Failed to persist push notification: {e}");
     }
