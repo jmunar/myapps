@@ -35,6 +35,13 @@ visibility into spending patterns.
   Users can edit the transcription before the LLM processes it. Swiping left
   while recording discards the input. Per-app `ops.rs` modules provide shared
   action functions used by both the command bar and web handlers.
+- **External app shortcuts** — the `EXTERNAL_APPS` environment variable adds
+  shortcut tiles to the launcher for services running outside MyApps (e.g.
+  Vaultwarden, Cockpit). Each entry specifies a key, name, description, icon,
+  and URL. External tiles open in a new browser tab with a visual ↗ badge.
+  Users can hide/show external app tiles through the existing edit mode.
+- **Version footer** — the launcher page displays the build version and
+  timestamp at the bottom, embedded at compile time.
 - **Multilingual support (i18n)** — English and Spanish. Users select their
   language on the login page (toggle link) or from a dropdown on the launcher.
   Preference is stored per-user in the database and propagated through the auth
