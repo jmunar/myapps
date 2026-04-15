@@ -81,14 +81,14 @@ jobs:
         run: |
           sed -i '/rustc-wrapper/d' .cargo/config.toml
           SCCACHE_PATH=$(which sccache)
-          # Probe sccache — skip if GHA cache backend is unreachable
-          if "$SCCACHE_PATH" --show-stats >/dev/null 2>&1; then
-            echo "sccache: GHA cache backend available"
-            export CROSS_CONTAINER_OPTS="-e RUSTC_WRAPPER=sccache -e SCCACHE_GHA_ENABLED=true -e ACTIONS_CACHE_URL -e ACTIONS_RUNTIME_TOKEN -v $SCCACHE_PATH:/usr/local/bin/sccache:ro"
-          else
-            echo "::warning::sccache unavailable — building without compilation cache"
-          fi
-          cross build --release --target aarch64-unknown-linux-gnu --features vendored-openssl
+          export CROSS_CONTAINER_OPTS="-e RUSTC_WRAPPER=sccache -e SCCACHE_GHA_ENABLED=true -e ACTIONS_CACHE_URL -e ACTIONS_RUNTIME_TOKEN -v $SCCACHE_PATH:/usr/local/bin/sccache:ro"
+          # Try with sccache; fall back to plain build if cache backend is unavailable
+          cross build --release --target aarch64-unknown-linux-gnu --features vendored-openssl \
+            || {
+              echo "::warning::Build with sccache failed, retrying without compilation cache"
+              unset CROSS_CONTAINER_OPTS
+              cross build --release --target aarch64-unknown-linux-gnu --features vendored-openssl
+            }
 
       - name: Create tag and GitHub Release
         if: steps.tag_check.outputs.exists == 'false'
