@@ -531,3 +531,235 @@ async fn invite_page_has_language_toggle() {
     let body = response.text();
     assert!(body.contains("Español") || body.contains("English"));
 }
+
+// --- External app tests (FEAT-75) ---
+
+fn test_external_apps() -> Vec<myapps::config::ExternalApp> {
+    vec![
+        myapps::config::ExternalApp {
+            key: "vault".into(),
+            name: "Vaultwarden".into(),
+            description: "Password manager".into(),
+            icon: "🔐".into(),
+            url: "https://vault.example.com".into(),
+        },
+        myapps::config::ExternalApp {
+            key: "cockpit".into(),
+            name: "Cockpit".into(),
+            description: "Server management".into(),
+            icon: "🖥️".into(),
+            url: "https://cockpit.example.com:9090".into(),
+        },
+    ]
+}
+
+#[tokio::test]
+async fn external_apps_appear_on_launcher() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("Vaultwarden"));
+    assert!(body.contains("Cockpit"));
+    assert!(body.contains("Password manager"));
+    assert!(body.contains("Server management"));
+}
+
+#[tokio::test]
+async fn external_app_cards_open_in_new_tab() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains(r#"href="https://vault.example.com""#));
+    assert!(body.contains(r#"target="_blank""#));
+    assert!(body.contains(r#"rel="noopener noreferrer""#));
+}
+
+#[tokio::test]
+async fn external_app_cards_have_external_badge() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("external-badge"));
+    assert!(body.contains("launcher-card-external"));
+}
+
+#[tokio::test]
+async fn external_apps_appear_in_edit_mode() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/launcher/edit").await.text();
+    assert!(body.contains("Vaultwarden"));
+    assert!(body.contains("Cockpit"));
+    assert!(body.contains(r#"id="card-vault""#));
+    assert!(body.contains(r#"id="card-cockpit""#));
+    assert!(body.contains("launcher-toggle"));
+}
+
+#[tokio::test]
+async fn hiding_external_app_removes_it_from_launcher() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    // Hide Vaultwarden
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({"app_key": "vault", "visible": "0"}))
+        .await;
+
+    // Launcher should not show Vaultwarden
+    let body = app.server.get("/").await.text();
+    assert!(!body.contains("Vaultwarden"));
+    assert!(body.contains("Cockpit"));
+}
+
+#[tokio::test]
+async fn showing_hidden_external_app_restores_it() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    // Hide then show
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({"app_key": "vault", "visible": "0"}))
+        .await;
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({"app_key": "vault", "visible": "1"}))
+        .await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("Vaultwarden"));
+    assert!(body.contains(r#"href="https://vault.example.com""#));
+}
+
+#[tokio::test]
+async fn no_external_apps_configured_shows_normal_launcher() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(!body.contains("launcher-card-external"));
+    assert!(!body.contains("external-badge"));
+    assert!(body.contains("LeanFin"));
+}
+
+#[tokio::test]
+async fn edit_mode_shows_hidden_external_app_with_hidden_class() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    // Hide Vaultwarden
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({"app_key": "vault", "visible": "0"}))
+        .await;
+
+    let body = app.server.get("/launcher/edit").await.text();
+    // Vault card should have the "hidden" class
+    assert!(body.contains(r#"launcher-card-edit launcher-card-external hidden"#));
+    // Cockpit should still be visible (no hidden class)
+    assert!(body.contains(r#"id="card-cockpit""#));
+    assert!(body.contains(r#"id="card-vault""#));
+}
+
+#[tokio::test]
+async fn grid_fragment_includes_external_apps() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/launcher/grid").await.text();
+    assert!(body.contains("Vaultwarden"));
+    assert!(body.contains("Cockpit"));
+    assert!(body.contains("launcher-card-external"));
+}
+
+#[tokio::test]
+async fn hiding_all_internal_and_external_apps_shows_empty_state() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    // Hide all internal apps
+    for key in &[
+        "leanfin",
+        "mindflow",
+        "voice_to_text",
+        "classroom_input",
+        "notes",
+    ] {
+        app.server
+            .post("/launcher/visibility")
+            .form(&serde_json::json!({"app_key": key, "visible": "0"}))
+            .await;
+    }
+    // Hide all external apps
+    for key in &["vault", "cockpit"] {
+        app.server
+            .post("/launcher/visibility")
+            .form(&serde_json::json!({"app_key": key, "visible": "0"}))
+            .await;
+    }
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("No apps visible"));
+}
+
+#[tokio::test]
+async fn hiding_all_internal_but_not_external_does_not_show_empty_state() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    // Hide all internal apps only
+    for key in &[
+        "leanfin",
+        "mindflow",
+        "voice_to_text",
+        "classroom_input",
+        "notes",
+    ] {
+        app.server
+            .post("/launcher/visibility")
+            .form(&serde_json::json!({"app_key": key, "visible": "0"}))
+            .await;
+    }
+
+    let body = app.server.get("/").await.text();
+    // External apps still visible, so no empty state
+    assert!(!body.contains("No apps visible"));
+    assert!(body.contains("Vaultwarden"));
+    assert!(body.contains("Cockpit"));
+}
+
+// --- Version footer tests (FEAT-75) ---
+
+#[tokio::test]
+async fn version_footer_shown_when_version_set() {
+    let app = harness::spawn_app_with_version("1.2.3", "").await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("version-footer"));
+    assert!(body.contains("v1.2.3"));
+}
+
+#[tokio::test]
+async fn version_footer_includes_build_timestamp() {
+    let app = harness::spawn_app_with_version("1.2.3", "2025-01-15 10:30").await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("v1.2.3"));
+    assert!(body.contains("2025-01-15 10:30"));
+}
+
+#[tokio::test]
+async fn version_footer_hidden_when_version_empty() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(!body.contains("version-footer"));
+}

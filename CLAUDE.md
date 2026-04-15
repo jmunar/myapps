@@ -109,7 +109,8 @@ assembles all crates.
   provides hooks for migrations, routing, CSS, commands, seeding, scheduled
   tasks (`cron`), and background workers (`on_serve`). To add a new app, run
   `/add-app <AppName>` which scaffolds the crate and wires it into the
-  workspace.
+  workspace. External app shortcuts (services outside MyApps) are configured
+  via the `EXTERNAL_APPS` env var, not the `App` trait.
 - The command bar module (`crates/myapps-core/src/command/`) handles LLM-powered
   natural-language command interpretation and execution via a llama.cpp server.
 - Each app exposes an `ops.rs` module with shared action functions callable from

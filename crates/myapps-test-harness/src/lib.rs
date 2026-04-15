@@ -65,6 +65,9 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         seed: false,
         cleanup_inactive_days: 0,
         static_version: String::new(),
+        external_apps: Vec::new(),
+        version: String::new(),
+        build_timestamp: String::new(),
     };
 
     let app = myapps_core::routes::build_router(pool.clone(), app_pools, config, apps);

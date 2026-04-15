@@ -40,6 +40,7 @@ pub const ES: Translations = Translations {
     launcher_notif_blocked: "Notificaciones bloqueadas",
     launcher_notif_blocked_settings: "Notificaciones bloqueadas (revisa la configuración del navegador)",
     launcher_notif_enable: "Activar notificaciones",
+    launcher_external_badge: "Abre en nueva pesta\u{f1}a",
 
     // ── Language selector ────────────────────────────────────
     language_label: "Idioma",

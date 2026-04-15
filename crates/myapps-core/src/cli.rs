@@ -111,8 +111,15 @@ async fn create_app_pools(
 }
 
 /// Run the CLI command with the given app instances.
-pub async fn run(cli: Cli, apps: Vec<Box<dyn App>>) -> anyhow::Result<()> {
+pub async fn run(
+    cli: Cli,
+    apps: Vec<Box<dyn App>>,
+    version: &str,
+    build_timestamp: &str,
+) -> anyhow::Result<()> {
     let mut config = Config::from_env()?;
+    config.version = version.to_string();
+    config.build_timestamp = build_timestamp.to_string();
     let migrators: Vec<_> = apps.iter().map(|a| a.migrations()).collect();
     let pool = crate::db::init(&config.database_url, &migrators).await?;
 

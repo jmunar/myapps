@@ -29,7 +29,7 @@ myapps-test-harness = { path = "crates/myapps-test-harness" }
 
 [package]
 name = "myapps"
-version = "0.3.4"
+version = "0.4.0"
 edition.workspace = true
 
 [features]
@@ -47,6 +47,9 @@ myapps-notes.workspace = true
 clap = { version = "4", features = ["derive"] }
 tokio.workspace = true
 anyhow.workspace = true
+
+[build-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 axum-test.workspace = true

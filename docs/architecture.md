@@ -110,7 +110,7 @@ myapps/
 
 After login, the top-level router serves:
 
-- `/` — App launcher (grid of visible apps, configurable per user)
+- `/` — App launcher (grid of visible apps + external app shortcuts, configurable per user)
 - `/launcher/edit` — Edit mode: toggle app visibility (HTMX partial)
 - `/launcher/grid` — Normal mode grid fragment (HTMX partial)
 - `POST /launcher/visibility` — Set app visibility preference (HTMX partial)
@@ -233,7 +233,7 @@ App-specific table schemas live alongside their migrations in each crate's
 | Column  | Type    | Notes                                          |
 |---------|---------|-------------------------------------------------|
 | user_id | INTEGER | FK → users, part of PK                          |
-| app_key | TEXT    | 'leanfin', 'mindflow', 'voice_to_text', 'notes', etc., part of PK |
+| app_key | TEXT    | Internal ('leanfin', 'mindflow', etc.) or external app key, part of PK |
 | visible | INTEGER | 1 = shown, 0 = hidden, default 1               |
 
 Missing rows default to visible — existing users see no change.

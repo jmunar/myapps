@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use super::AppState;
 use crate::auth::UserId;
+use crate::config::{Config, ExternalApp};
 use crate::i18n::{self, Lang};
 use crate::layout::{NavItem, render_page};
 use crate::models::user_app_visibility;
@@ -85,6 +86,7 @@ fn push_script(base: &str, lang: Lang) -> String {
 
 fn render_grid_normal(
     apps: &[Box<dyn App>],
+    external_apps: &[ExternalApp],
     visibility: &HashMap<String, bool>,
     base: &str,
     lang: Lang,
@@ -94,8 +96,12 @@ fn render_grid_normal(
         .iter()
         .filter(|app| *visibility.get(app.info().key).unwrap_or(&true))
         .collect();
+    let visible_external: Vec<&ExternalApp> = external_apps
+        .iter()
+        .filter(|ext| *visibility.get(&ext.key).unwrap_or(&true))
+        .collect();
 
-    if visible_apps.is_empty() {
+    if visible_apps.is_empty() && visible_external.is_empty() {
         return format!(
             r#"<div class="empty-state">
                 <p>{prefix}<button class="launcher-edit-btn"
@@ -107,7 +113,7 @@ fn render_grid_normal(
         );
     }
 
-    let cards: String = visible_apps
+    let internal_cards: String = visible_apps
         .iter()
         .map(|app| {
             let info = app.info();
@@ -127,17 +133,39 @@ fn render_grid_normal(
         })
         .collect();
 
-    format!(r#"<div class="launcher-grid">{cards}</div>"#)
+    let external_badge = t.launcher_external_badge;
+    let external_cards: String = visible_external
+        .iter()
+        .map(|ext| {
+            format!(
+                r#"<a href="{url}" target="_blank" rel="noopener noreferrer" class="launcher-card launcher-card-external" title="{badge}">
+                    <div class="launcher-icon">{icon}</div>
+                    <div class="launcher-info">
+                        <h2>{name} <span class="external-badge">&#8599;</span></h2>
+                        <p>{desc}</p>
+                    </div>
+                </a>"#,
+                url = ext.url,
+                icon = ext.icon,
+                name = ext.name,
+                desc = ext.description,
+                badge = external_badge,
+            )
+        })
+        .collect();
+
+    format!(r#"<div class="launcher-grid">{internal_cards}{external_cards}</div>"#)
 }
 
 fn render_grid_edit(
     apps: &[Box<dyn App>],
+    external_apps: &[ExternalApp],
     visibility: &HashMap<String, bool>,
     base: &str,
     lang: Lang,
 ) -> String {
     let t = i18n::t(lang);
-    let cards: String = apps
+    let internal_cards: String = apps
         .iter()
         .map(|app| {
             let info = app.info();
@@ -177,7 +205,46 @@ fn render_grid_edit(
         })
         .collect();
 
-    format!(r#"<div class="launcher-grid">{cards}</div>"#)
+    let external_cards: String = external_apps
+        .iter()
+        .map(|ext| {
+            let visible = *visibility.get(&ext.key).unwrap_or(&true);
+            let hidden_class = if visible { "" } else { " hidden" };
+            let toggle_val = if visible { "0" } else { "1" };
+            let eye = if visible {
+                "&#128065;"
+            } else {
+                "&#128065;&#8205;&#128488;"
+            };
+            let title = if visible {
+                t.launcher_hide
+            } else {
+                t.launcher_show
+            };
+            format!(
+                r#"<div class="launcher-card launcher-card-edit launcher-card-external{hidden_class}" id="card-{key}">
+                    <div class="launcher-icon">{icon}</div>
+                    <div class="launcher-info">
+                        <h2>{name} <span class="external-badge">&#8599;</span></h2>
+                        <p>{desc}</p>
+                    </div>
+                    <button class="launcher-toggle"
+                        hx-post="{base}/launcher/visibility"
+                        hx-vals='{{"app_key":"{key}","visible":"{toggle_val}"}}'
+                        hx-target="{target}"
+                        hx-swap="innerHTML"
+                        title="{title}">{eye}</button>
+                </div>"#,
+                key = ext.key,
+                icon = ext.icon,
+                name = ext.name,
+                desc = ext.description,
+                target = TARGET,
+            )
+        })
+        .collect();
+
+    format!(r#"<div class="launcher-grid">{internal_cards}{external_cards}</div>"#)
 }
 
 fn render_header_normal(base: &str, lang: Lang) -> String {
@@ -232,6 +299,21 @@ fn render_lang_selector(base: &str, lang: Lang) -> String {
     )
 }
 
+fn render_version_footer(config: &Config) -> String {
+    if config.version.is_empty() {
+        return String::new();
+    }
+    let ts = if config.build_timestamp.is_empty() {
+        String::new()
+    } else {
+        format!(" &middot; {}", config.build_timestamp)
+    };
+    format!(
+        r#"<p class="version-footer">v{version}{ts}</p>"#,
+        version = config.version,
+    )
+}
+
 async fn index(
     state: axum::extract::State<AppState>,
     Extension(UserId(user_id)): Extension<UserId>,
@@ -248,13 +330,16 @@ async fn index(
 
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
     let apps = &*state.apps;
+    let external_apps = &state.config.external_apps;
 
     let header = render_header_normal(base, lang);
-    let grid = render_grid_normal(apps, &visibility, base, lang);
+    let grid = render_grid_normal(apps, external_apps, &visibility, base, lang);
     let push = push_script(base, lang);
     let lang_sel = render_lang_selector(base, lang);
+    let version_footer = render_version_footer(&state.config);
 
-    let body = format!(r#"<div id="launcher-area">{header}{grid}</div>{lang_sel}{push}"#);
+    let body =
+        format!(r#"<div id="launcher-area">{header}{grid}</div>{lang_sel}{push}{version_footer}"#);
     Html(render_page("MyApps", &nav, &body, &state.config, lang))
 }
 
@@ -266,9 +351,10 @@ async fn edit_mode(
     let base = &state.config.base_path;
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
     let apps = &*state.apps;
+    let external_apps = &state.config.external_apps;
 
     let header = render_header_edit(base, lang);
-    let grid = render_grid_edit(apps, &visibility, base, lang);
+    let grid = render_grid_edit(apps, external_apps, &visibility, base, lang);
 
     Html(format!("{header}{grid}"))
 }
@@ -281,9 +367,10 @@ async fn grid_fragment(
     let base = &state.config.base_path;
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;
     let apps = &*state.apps;
+    let external_apps = &state.config.external_apps;
 
     let header = render_header_normal(base, lang);
-    let grid = render_grid_normal(apps, &visibility, base, lang);
+    let grid = render_grid_normal(apps, external_apps, &visibility, base, lang);
 
     Html(format!("{header}{grid}"))
 }
@@ -302,9 +389,12 @@ async fn set_visibility(
 ) -> Html<String> {
     let visible = form.visible != "0";
 
-    // Validate app_key against registry
+    // Validate app_key against internal and external app registries
     let apps = &*state.apps;
-    if apps.iter().any(|a| a.info().key == form.app_key) {
+    let external_apps = &state.config.external_apps;
+    let is_internal = apps.iter().any(|a| a.info().key == form.app_key);
+    let is_external = external_apps.iter().any(|e| e.key == form.app_key);
+    if is_internal || is_external {
         let _ =
             user_app_visibility::set_visibility(&state.pool, user_id, &form.app_key, visible).await;
     }
@@ -314,7 +404,7 @@ async fn set_visibility(
 
     // Return edit mode view so user can keep toggling
     let header = render_header_edit(base, lang);
-    let grid = render_grid_edit(apps, &visibility, base, lang);
+    let grid = render_grid_edit(apps, external_apps, &visibility, base, lang);
 
     Html(format!("{header}{grid}"))
 }
