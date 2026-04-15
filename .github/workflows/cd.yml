@@ -72,11 +72,16 @@ jobs:
         if: steps.tag_check.outputs.exists == 'false'
         uses: taiki-e/install-action@cross
 
+      - name: Set up sccache
+        if: steps.tag_check.outputs.exists == 'false'
+        uses: mozilla-actions/sccache-action@v0.0.6
+
       - name: Cross-compile for aarch64
         if: steps.tag_check.outputs.exists == 'false'
         run: |
-          # Remove sccache wrapper — not available inside cross's Docker container
+          SCCACHE_PATH=$(which sccache)
           sed -i '/rustc-wrapper/d' .cargo/config.toml
+          export CROSS_CONTAINER_OPTS="-e RUSTC_WRAPPER=sccache -e SCCACHE_GHA_ENABLED=true -e ACTIONS_CACHE_URL -e ACTIONS_RUNTIME_TOKEN -v $SCCACHE_PATH:/usr/local/bin/sccache:ro"
           cross build --release --target aarch64-unknown-linux-gnu --features vendored-openssl
 
       - name: Create tag and GitHub Release
