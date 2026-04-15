@@ -1,4 +1,5 @@
 use axum_test::TestServer;
+use myapps::config::ExternalApp;
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::collections::HashMap;
@@ -20,6 +21,18 @@ pub async fn spawn_app() -> TestApp {
 
 /// Spin up a fresh app instance limited to a subset of apps.
 pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> TestApp {
+    spawn_app_custom(deploy_apps, Vec::new()).await
+}
+
+/// Spin up a fresh app instance with external app shortcuts.
+pub async fn spawn_app_with_external_apps(external_apps: Vec<ExternalApp>) -> TestApp {
+    spawn_app_custom(None, external_apps).await
+}
+
+async fn spawn_app_custom(
+    deploy_apps: Option<Vec<String>>,
+    external_apps: Vec<ExternalApp>,
+) -> TestApp {
     let db_id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
     let db_url = format!("sqlite:file:test_{db_id}?mode=memory&cache=shared");
 
@@ -55,6 +68,9 @@ pub async fn spawn_app_with_deploy_apps(deploy_apps: Option<Vec<String>>) -> Tes
         seed: false,
         cleanup_inactive_days: 0,
         static_version: String::new(),
+        external_apps,
+        version: String::new(),
+        build_timestamp: String::new(),
     };
 
     let apps = myapps::deployed_app_instances(&config);

@@ -76,6 +76,7 @@ pub struct Translations {
     pub launcher_notif_blocked: &'static str,
     pub launcher_notif_blocked_settings: &'static str,
     pub launcher_notif_enable: &'static str,
+    pub launcher_external_badge: &'static str,
 
     // ── Language selector ────────────────────────────────────
     pub language_label: &'static str,

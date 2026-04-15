@@ -531,3 +531,118 @@ async fn invite_page_has_language_toggle() {
     let body = response.text();
     assert!(body.contains("Español") || body.contains("English"));
 }
+
+// --- External app tests (FEAT-75) ---
+
+fn test_external_apps() -> Vec<myapps::config::ExternalApp> {
+    vec![
+        myapps::config::ExternalApp {
+            key: "vault".into(),
+            name: "Vaultwarden".into(),
+            description: "Password manager".into(),
+            icon: "🔐".into(),
+            url: "https://vault.example.com".into(),
+        },
+        myapps::config::ExternalApp {
+            key: "cockpit".into(),
+            name: "Cockpit".into(),
+            description: "Server management".into(),
+            icon: "🖥️".into(),
+            url: "https://cockpit.example.com:9090".into(),
+        },
+    ]
+}
+
+#[tokio::test]
+async fn external_apps_appear_on_launcher() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("Vaultwarden"));
+    assert!(body.contains("Cockpit"));
+    assert!(body.contains("Password manager"));
+    assert!(body.contains("Server management"));
+}
+
+#[tokio::test]
+async fn external_app_cards_open_in_new_tab() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains(r#"href="https://vault.example.com""#));
+    assert!(body.contains(r#"target="_blank""#));
+    assert!(body.contains(r#"rel="noopener noreferrer""#));
+}
+
+#[tokio::test]
+async fn external_app_cards_have_external_badge() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("external-badge"));
+    assert!(body.contains("launcher-card-external"));
+}
+
+#[tokio::test]
+async fn external_apps_appear_in_edit_mode() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/launcher/edit").await.text();
+    assert!(body.contains("Vaultwarden"));
+    assert!(body.contains("Cockpit"));
+    assert!(body.contains(r#"id="card-vault""#));
+    assert!(body.contains(r#"id="card-cockpit""#));
+    assert!(body.contains("launcher-toggle"));
+}
+
+#[tokio::test]
+async fn hiding_external_app_removes_it_from_launcher() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    // Hide Vaultwarden
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({"app_key": "vault", "visible": "0"}))
+        .await;
+
+    // Launcher should not show Vaultwarden
+    let body = app.server.get("/").await.text();
+    assert!(!body.contains("Vaultwarden"));
+    assert!(body.contains("Cockpit"));
+}
+
+#[tokio::test]
+async fn showing_hidden_external_app_restores_it() {
+    let app = harness::spawn_app_with_external_apps(test_external_apps()).await;
+    app.login_as("test", "pass").await;
+
+    // Hide then show
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({"app_key": "vault", "visible": "0"}))
+        .await;
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({"app_key": "vault", "visible": "1"}))
+        .await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains("Vaultwarden"));
+    assert!(body.contains(r#"href="https://vault.example.com""#));
+}
+
+#[tokio::test]
+async fn no_external_apps_configured_shows_normal_launcher() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(!body.contains("launcher-card-external"));
+    assert!(!body.contains("external-badge"));
+    assert!(body.contains("LeanFin"));
+}

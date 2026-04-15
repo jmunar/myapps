@@ -2,6 +2,41 @@ use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::hash::{Hash, Hasher};
 
+/// An external app shortcut displayed on the launcher (e.g. Vaultwarden, Cockpit).
+/// Configured via the `EXTERNAL_APPS` environment variable.
+#[derive(Clone, Debug)]
+pub struct ExternalApp {
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    pub icon: String,
+    pub url: String,
+}
+
+/// Parse `EXTERNAL_APPS` env var. Format: `key|name|desc|icon|url;...`
+fn parse_external_apps(raw: &str) -> Vec<ExternalApp> {
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    raw.split(';')
+        .filter_map(|entry| {
+            let parts: Vec<&str> = entry.splitn(5, '|').collect();
+            if parts.len() == 5 {
+                Some(ExternalApp {
+                    key: parts[0].trim().to_string(),
+                    name: parts[1].trim().to_string(),
+                    description: parts[2].trim().to_string(),
+                    icon: parts[3].trim().to_string(),
+                    url: parts[4].trim().to_string(),
+                })
+            } else {
+                tracing::warn!("Ignoring malformed EXTERNAL_APPS entry: {entry}");
+                None
+            }
+        })
+        .collect()
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub database_url: String,
@@ -28,6 +63,12 @@ pub struct Config {
     pub cleanup_inactive_days: i64,
     /// Hash of static assets for cache-busting (computed at startup).
     pub static_version: String,
+    /// External app shortcuts shown on the launcher.
+    pub external_apps: Vec<ExternalApp>,
+    /// Application version (e.g. "0.3.4"), set by the binary crate.
+    pub version: String,
+    /// Build timestamp (e.g. "2026-04-15 12:00 UTC"), set by the binary crate.
+    pub build_timestamp: String,
 }
 
 impl Config {
@@ -67,6 +108,13 @@ impl Config {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0),
             static_version: Self::compute_static_version(),
+            external_apps: env::var("EXTERNAL_APPS")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|s| parse_external_apps(&s))
+                .unwrap_or_default(),
+            version: String::new(),
+            build_timestamp: String::new(),
         })
     }
 
@@ -164,6 +212,9 @@ mod tests {
             seed: false,
             cleanup_inactive_days: 0,
             static_version: String::new(),
+            external_apps: Vec::new(),
+            version: String::new(),
+            build_timestamp: String::new(),
         }
     }
 
@@ -189,5 +240,51 @@ mod tests {
         let config = config_with_deploy_apps(Some(vec![]));
         assert!(!config.is_app_deployed("leanfin"));
         assert!(!config.is_app_deployed("mindflow"));
+    }
+
+    #[test]
+    fn parse_external_apps_empty() {
+        let apps = parse_external_apps("");
+        assert!(apps.is_empty());
+    }
+
+    #[test]
+    fn parse_external_apps_single() {
+        let apps =
+            parse_external_apps("vault|Vaultwarden|Password manager|🔐|https://vault.example.com");
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].key, "vault");
+        assert_eq!(apps[0].name, "Vaultwarden");
+        assert_eq!(apps[0].description, "Password manager");
+        assert_eq!(apps[0].icon, "🔐");
+        assert_eq!(apps[0].url, "https://vault.example.com");
+    }
+
+    #[test]
+    fn parse_external_apps_multiple() {
+        let apps = parse_external_apps(
+            "vault|Vaultwarden|Passwords|🔐|https://vault.example.com;cockpit|Cockpit|Server|🖥️|https://cockpit.example.com:9090",
+        );
+        assert_eq!(apps.len(), 2);
+        assert_eq!(apps[0].key, "vault");
+        assert_eq!(apps[1].key, "cockpit");
+    }
+
+    #[test]
+    fn parse_external_apps_skips_malformed() {
+        let apps = parse_external_apps("good|App|Desc|🔐|https://example.com;bad|only-two-fields");
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].key, "good");
+    }
+
+    #[test]
+    fn parse_external_apps_trims_whitespace() {
+        let apps = parse_external_apps(
+            " vault | Vaultwarden | Passwords | 🔐 | https://vault.example.com ",
+        );
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].key, "vault");
+        assert_eq!(apps[0].name, "Vaultwarden");
+        assert_eq!(apps[0].url, "https://vault.example.com");
     }
 }

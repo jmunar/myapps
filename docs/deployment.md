@@ -273,6 +273,7 @@ WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 LLAMA_SERVER_URL=                                         # llama.cpp server URL (optional)
 BIND_ADDR=127.0.0.1:3000
 DEPLOY_APPS=                                              # Comma-separated app keys (blank = all)
+EXTERNAL_APPS=                                            # External app shortcuts (key|name|desc|icon|url;...)
 SEED=false                                                # Auto-seed on invite registration (true/false)
 CLEANUP_INACTIVE_DAYS=0                                   # Delete inactive users after N days (0 = off)
 ```
@@ -283,8 +284,11 @@ When set, myapps sends requests to a running llama.cpp server
 
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
 `DEPLOY_APPS` limits which apps are mounted and shown in the launcher. Valid
-keys: `leanfin`, `mindflow`, `voice_to_text`, `classroom_input`. When empty or
-unset, all apps are available.
+keys: `leanfin`, `mindflow`, `voice_to_text`, `classroom_input`, `notes`. When
+empty or unset, all apps are available.
+`EXTERNAL_APPS` adds shortcut tiles to the launcher that open external services
+in a new tab. Format: `key|name|description|icon|url` entries separated by `;`.
+Example: `vault|Vaultwarden|Password manager|🔐|https://vault.example.com`.
 `BASE_URL` is the public URL of the application. `ENCRYPTION_KEY` is needed for
 storing Enable Banking credentials (per-user encrypted settings).
 

@@ -522,6 +522,23 @@ button:active, .btn:active {
     margin-top: 0.15rem;
 }
 
+/* Version footer */
+.version-footer {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    margin-top: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+/* External app cards */
+.external-badge {
+    font-size: 0.75em;
+    opacity: 0.5;
+    vertical-align: super;
+}
+
 /* Launcher edit mode */
 .launcher-card-edit {
     position: relative;
