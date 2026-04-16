@@ -76,6 +76,7 @@ async fn spawn_app_custom(
         cleanup_inactive_days: 0,
         static_version: String::new(),
         external_apps,
+        auth_sso_header: None,
         version,
         build_timestamp,
     };
