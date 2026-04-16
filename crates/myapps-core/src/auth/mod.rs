@@ -5,6 +5,7 @@ use argon2::{
 };
 use axum::{
     extract::Request,
+    http::HeaderName,
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
 };
@@ -97,6 +98,33 @@ pub async fn require_auth(
     mut request: Request,
     next: Next,
 ) -> Response {
+    // SSO: check trusted header from reverse proxy.
+    // Extract the username synchronously (no borrow of `request` across await).
+    let sso_username = state
+        .config
+        .auth_sso_header
+        .as_deref()
+        .and_then(|h| HeaderName::try_from(h).ok())
+        .and_then(|h| request.headers().get(&h).cloned())
+        .and_then(|v| v.to_str().ok().map(|s| s.to_string()))
+        .filter(|u| !u.is_empty());
+
+    if let Some(username) = sso_username {
+        match get_or_create_sso_user(&state.pool, &username).await {
+            Ok(user_id) => {
+                touch_last_active(&state.pool, user_id).await;
+                let lang = user_settings::get_language(&state.pool, user_id).await;
+                request.extensions_mut().insert(UserId(user_id));
+                request.extensions_mut().insert(lang);
+                return next.run(request).await;
+            }
+            Err(e) => {
+                tracing::error!("SSO user lookup/create failed for {username:?}: {e}");
+            }
+        }
+    }
+
+    // Cookie-based session authentication
     let has_cookie = cookies.get(SESSION_COOKIE).is_some();
     let authenticated = async {
         let cookie = cookies.get(SESSION_COOKIE)?;
@@ -132,6 +160,33 @@ pub async fn require_auth(
             Redirect::to(&login_url).into_response()
         }
     }
+}
+
+/// Look up a user by username, creating them if they don't exist.
+/// SSO-created users get a placeholder password hash that can never match,
+/// so password login is impossible for them.
+async fn get_or_create_sso_user(pool: &SqlitePool, username: &str) -> Result<i64> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+        .bind(username)
+        .fetch_optional(pool)
+        .await?;
+
+    if let Some((id,)) = row {
+        return Ok(id);
+    }
+
+    // Create with a placeholder hash that Argon2 verification will never accept
+    let result =
+        sqlx::query("INSERT INTO users (username, password_hash) VALUES (?, ?) RETURNING id")
+            .bind(username)
+            .bind("!sso")
+            .fetch_one(pool)
+            .await
+            .context("failed to create SSO user")?;
+
+    let user_id: i64 = sqlx::Row::get(&result, "id");
+    tracing::info!("Auto-created SSO user {username:?} (id={user_id})");
+    Ok(user_id)
 }
 
 #[derive(Clone, Copy)]

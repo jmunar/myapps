@@ -66,6 +66,7 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         cleanup_inactive_days: 0,
         static_version: String::new(),
         external_apps: Vec::new(),
+        auth_sso_header: None,
         version: String::new(),
         build_timestamp: String::new(),
     };

@@ -25,6 +25,19 @@ async fn login_page(
     state: axum::extract::State<AppState>,
     cookies: Cookies,
     Query(query): Query<LangQuery>,
+) -> impl IntoResponse {
+    // When SSO is enabled, the reverse proxy handles login — redirect to the app.
+    if state.config.sso_enabled() {
+        return Redirect::to(&format!("{}/", state.config.base_path)).into_response();
+    }
+
+    login_page_html(&state, &cookies, &query).into_response()
+}
+
+fn login_page_html(
+    state: &axum::extract::State<AppState>,
+    cookies: &Cookies,
+    query: &LangQuery,
 ) -> Html<String> {
     let base = &state.config.base_path;
 
@@ -118,6 +131,10 @@ async fn login_submit(
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
     let base = state.config.base_path.clone();
+
+    if state.config.sso_enabled() {
+        return Redirect::to(&format!("{base}/")).into_response();
+    }
 
     // Determine language from cookie for error messages
     let lang = cookies

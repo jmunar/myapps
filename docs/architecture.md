@@ -308,11 +308,22 @@ User uploads audio (or records via browser mic)
 
 ## Authentication Flow
 
+### Username/Password (default)
+
 1. User submits username + password to `POST /login`.
 2. Server verifies password against Argon2 hash.
 3. Server creates a session row and returns a `Set-Cookie: session=<token>; HttpOnly; Secure; SameSite=Lax`.
 4. Subsequent requests include the cookie. Axum middleware validates the session.
 5. `GET /logout` deletes the session row and clears the cookie.
+
+### Reverse-Proxy SSO (optional)
+
+When `AUTH_SSO_HEADER` is set (e.g. `Remote-User` for Authelia), the `require_auth`
+middleware checks the trusted header before falling back to cookie auth. If the
+header is present, the user is looked up by username (or auto-created with a
+placeholder password hash that blocks password login). The login page redirects
+to the app root when SSO is active. Both modes can coexist: SSO takes precedence
+when the header is present, cookie auth is used otherwise.
 
 ## Enable Banking Integration
 

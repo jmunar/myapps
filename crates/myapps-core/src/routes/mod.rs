@@ -68,6 +68,10 @@ pub fn build_router(
         protected = protected.nest_service(info.path, resolved);
     }
 
+    if let Some(ref header) = state.config.auth_sso_header {
+        tracing::info!("SSO auth enabled (trusted header: {header})");
+    }
+
     if state.config.llm_enabled() {
         tracing::info!(
             "Command bar enabled (llama server: {})",

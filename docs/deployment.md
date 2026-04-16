@@ -273,6 +273,7 @@ WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 LLAMA_SERVER_URL=                                         # llama.cpp server URL (optional)
 BIND_ADDR=127.0.0.1:3000
 DEPLOY_APPS=                                              # Comma-separated app keys (blank = all)
+AUTH_SSO_HEADER=                                          # Trusted SSO header (e.g. Remote-User for Authelia)
 EXTERNAL_APPS=                                            # External app shortcuts (key|name|desc|icon|url;...)
 SEED=false                                                # Auto-seed on invite registration (true/false)
 CLEANUP_INACTIVE_DAYS=0                                   # Delete inactive users after N days (0 = off)
@@ -286,6 +287,12 @@ Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
 `DEPLOY_APPS` limits which apps are mounted and shown in the launcher. Valid
 keys: `leanfin`, `mindflow`, `voice_to_text`, `classroom_input`, `notes`. When
 empty or unset, all apps are available.
+`AUTH_SSO_HEADER` enables reverse-proxy SSO authentication (e.g. Authelia). When
+set to the header name that carries the authenticated username (typically
+`Remote-User`), myapps trusts that header and auto-creates users on first visit.
+The login page is bypassed. When empty, only username/password login is used.
+Ensure your reverse proxy strips client-sent values for this header before
+setting the authenticated value.
 `EXTERNAL_APPS` adds shortcut tiles to the launcher that open external services
 in a new tab. Format: `key|name|description|icon|url` entries separated by `;`.
 Example: `vault|Vaultwarden|Password manager|🔐|https://vault.example.com`.

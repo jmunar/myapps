@@ -763,3 +763,70 @@ async fn version_footer_hidden_when_version_empty() {
     let body = app.server.get("/").await.text();
     assert!(!body.contains("version-footer"));
 }
+
+// --- SSO authentication tests (FEAT-77) ---
+
+#[tokio::test]
+async fn sso_login_page_redirects_to_root() {
+    let app = harness::spawn_app_with_sso().await;
+
+    let response = app.server.get("/login").expect_failure().await;
+    assert_eq!(response.status_code(), 303);
+}
+
+#[tokio::test]
+async fn sso_login_submit_redirects_to_root() {
+    let app = harness::spawn_app_with_sso().await;
+
+    let response = app
+        .server
+        .post("/login")
+        .form(&serde_json::json!({"username": "test", "password": "pass"}))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+}
+
+#[tokio::test]
+async fn sso_header_authenticates_user() {
+    let app = harness::spawn_app_with_sso().await;
+
+    let response = app
+        .server
+        .get("/")
+        .add_header("remote-user", "testuser")
+        .await;
+    assert_eq!(response.status_code(), 200);
+
+    let body = response.text();
+    assert!(body.contains("LeanFin") || body.contains("Choose an application"));
+}
+
+#[tokio::test]
+async fn sso_header_auto_creates_user() {
+    let app = harness::spawn_app_with_sso().await;
+
+    // Access a protected route with an SSO header for a user that doesn't exist yet
+    let response = app
+        .server
+        .get("/")
+        .add_header("remote-user", "newuser")
+        .await;
+    assert_eq!(response.status_code(), 200);
+
+    // Verify the user was created in the database
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE username = 'newuser'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn sso_missing_header_falls_back_to_cookie_auth() {
+    let app = harness::spawn_app_with_sso().await;
+
+    // Without the SSO header and without a session cookie, should redirect to login
+    let response = app.server.get("/").expect_failure().await;
+    assert_eq!(response.status_code(), 303);
+}

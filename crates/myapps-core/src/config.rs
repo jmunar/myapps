@@ -65,6 +65,10 @@ pub struct Config {
     pub static_version: String,
     /// External app shortcuts shown on the launcher.
     pub external_apps: Vec<ExternalApp>,
+    /// HTTP header containing the authenticated username from a reverse-proxy SSO
+    /// (e.g. Authelia). When set, the middleware trusts this header and skips
+    /// cookie-based authentication. When unset, only username/password login is used.
+    pub auth_sso_header: Option<String>,
     /// Application version (e.g. "0.3.4"), set by the binary crate.
     pub version: String,
     /// Build timestamp (e.g. "2026-04-15 12:00 UTC"), set by the binary crate.
@@ -80,7 +84,7 @@ impl Config {
             .map(|u| u.path().trim_end_matches('/').to_string())
             .unwrap_or_default();
 
-        Ok(Self {
+        let config = Self {
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "sqlite://data/myapps.db".to_string()),
             base_url,
@@ -113,9 +117,18 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .map(|s| parse_external_apps(&s))
                 .unwrap_or_default(),
+            auth_sso_header: env::var("AUTH_SSO_HEADER").ok().filter(|s| !s.is_empty()),
             version: String::new(),
             build_timestamp: String::new(),
-        })
+        };
+
+        if config.seed && config.sso_enabled() {
+            return Err(ConfigError::Conflict(
+                "SEED and AUTH_SSO_HEADER cannot both be set — seed is for testing, SSO is for production",
+            ));
+        }
+
+        Ok(config)
     }
 
     /// Returns true if the given app key is enabled for this deployment.
@@ -129,6 +142,11 @@ impl Config {
     /// Returns true if the LLM command bar is available.
     pub fn llm_enabled(&self) -> bool {
         !self.llama_server_url.is_empty()
+    }
+
+    /// Returns true if reverse-proxy SSO authentication is enabled.
+    pub fn sso_enabled(&self) -> bool {
+        self.auth_sso_header.is_some()
     }
 
     /// Returns true if whisper transcription is available.
@@ -189,6 +207,8 @@ impl Config {
 pub enum ConfigError {
     #[error("missing environment variable: {0}")]
     Missing(&'static str),
+    #[error("invalid configuration: {0}")]
+    Conflict(&'static str),
 }
 
 #[cfg(test)]
@@ -213,6 +233,7 @@ mod tests {
             cleanup_inactive_days: 0,
             static_version: String::new(),
             external_apps: Vec::new(),
+            auth_sso_header: None,
             version: String::new(),
             build_timestamp: String::new(),
         }
