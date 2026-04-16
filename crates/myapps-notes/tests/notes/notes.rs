@@ -546,3 +546,97 @@ async fn toggle_pin_then_check_edit_shows_unpin() {
     let body = r.text();
     assert!(body.contains(">Unpin<"));
 }
+
+#[tokio::test]
+async fn edit_note_renders_task_checkboxes_as_inputs() {
+    let app = app().await;
+    app.seed_and_login(&NotesApp).await;
+
+    // "Shopping List" has a mix of checked and unchecked task items.
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Shopping List' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let r = app.server.get(&format!("/notes/{id}/edit")).await;
+    let body = r.text();
+
+    // Task items are rendered with the .notes-task-item class.
+    assert!(body.contains(r#"<li class="notes-task-item">"#));
+    // Both checked and unchecked variants are emitted as real checkbox inputs.
+    assert!(body.contains(r#"<input type="checkbox" checked contenteditable="false">"#));
+    assert!(body.contains(r#"<input type="checkbox" contenteditable="false">"#));
+    // The old Unicode-glyph rendering should be gone.
+    assert!(!body.contains("&#9745;"));
+    assert!(!body.contains("&#9744;"));
+}
+
+#[tokio::test]
+async fn edit_note_task_checkbox_pairs_with_its_text() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    // Write a minimal note we fully control so we can assert exact HTML.
+    sqlx::query(
+        "INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Tasks', '- [x] Done item\n- [ ] Todo item')",
+    )
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Tasks' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let r = app.server.get(&format!("/notes/{id}/edit")).await;
+    let body = r.text();
+
+    assert!(body.contains(
+        r#"<li class="notes-task-item"><input type="checkbox" checked contenteditable="false">Done item</li>"#,
+    ));
+    assert!(body.contains(
+        r#"<li class="notes-task-item"><input type="checkbox" contenteditable="false">Todo item</li>"#,
+    ));
+}
+
+#[tokio::test]
+async fn edit_note_task_checkbox_markdown_round_trips_through_save() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    sqlx::query("INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Tasks', '')")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Tasks' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    // Simulate the form the JS would submit after a checkbox toggle:
+    // the textarea carries the markdown with [x]/[ ] preserved.
+    app.server
+        .post(&format!("/notes/{id}/save"))
+        .form(&serde_json::json!({
+            "title": "Tasks",
+            "body": "- [x] First\n- [ ] Second",
+        }))
+        .expect_failure()
+        .await;
+
+    let (body,): (String,) = sqlx::query_as("SELECT body FROM notes_notes WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(body, "- [x] First\n- [ ] Second");
+
+    // And re-rendering produces the expected HTML.
+    let r = app.server.get(&format!("/notes/{id}/edit")).await;
+    let html = r.text();
+    assert!(html.contains(r#"<input type="checkbox" checked contenteditable="false">First"#));
+    assert!(html.contains(r#"<input type="checkbox" contenteditable="false">Second"#));
+}
