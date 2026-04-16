@@ -36,7 +36,13 @@
                 case 'hr': md += '---\n'; break;
                 case 'ul':
                     for (var li = 0; li < node.children.length; li++) {
-                        md += '- ' + getInlineText(node.children[li]) + '\n';
+                        var liEl = node.children[li];
+                        var cb = liEl.querySelector('input[type="checkbox"]');
+                        if (cb) {
+                            md += (cb.checked ? '- [x] ' : '- [ ] ') + getInlineText(liEl) + '\n';
+                        } else {
+                            md += '- ' + getInlineText(liEl) + '\n';
+                        }
                     }
                     break;
                 case 'ol':
@@ -63,6 +69,7 @@
             if (ch.nodeType === 3) { text += ch.textContent; continue; }
             if (ch.nodeType !== 1) continue;
             var tag = ch.tagName.toLowerCase();
+            if (tag === 'input') continue;
             if (tag === 'strong' || tag === 'b') text += '**' + getInlineText(ch) + '**';
             else if (tag === 'em' || tag === 'i') text += '*' + getInlineText(ch) + '*';
             else if (tag === 'code') text += '`' + ch.textContent + '`';
@@ -141,6 +148,37 @@
                 setCursorAt(li, 0);
                 syncToTextarea();
                 return;
+            }
+        }
+
+        // Task checkbox: user typed "[ ] " or "[x] " at the start of a plain <li>
+        // (typically right after "- " created the list). Convert the li into
+        // a task item with a real checkbox input.
+        if (block && block.tagName === 'LI' && !block.classList.contains('notes-task-item')) {
+            var firstChild = block.firstChild;
+            if (firstChild && firstChild.nodeType === 3) {
+                var firstText = norm(firstChild.textContent);
+                var cbMatch = firstText.match(/^\[([ xX])\] /);
+                if (cbMatch) {
+                    firstChild.textContent = firstChild.textContent.substring(cbMatch[0].length);
+                    block.classList.add('notes-task-item');
+                    var cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.setAttribute('contenteditable', 'false');
+                    if (cbMatch[1] === 'x' || cbMatch[1] === 'X') {
+                        cb.checked = true;
+                        cb.setAttribute('checked', '');
+                    }
+                    block.insertBefore(cb, firstChild);
+                    var range = document.createRange();
+                    range.setStart(firstChild, 0);
+                    range.collapse(true);
+                    var sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    syncToTextarea();
+                    return;
+                }
             }
         }
 
@@ -328,6 +366,41 @@
                     syncToTextarea();
                     return;
                 }
+                // Non-empty task item: create a new (empty) task item below,
+                // carrying any content that was after the cursor. Without
+                // this, the browser's default Enter produces a plain <li>
+                // with no checkbox and places the cursor awkwardly.
+                if (block.classList.contains('notes-task-item')) {
+                    e.preventDefault();
+                    var sel = window.getSelection();
+                    var range = sel.getRangeAt(0);
+                    var tailRange = document.createRange();
+                    tailRange.setStart(range.endContainer, range.endOffset);
+                    tailRange.setEnd(block, block.childNodes.length);
+                    var tail = tailRange.extractContents();
+
+                    var newLi = document.createElement('li');
+                    newLi.className = 'notes-task-item';
+                    var newCb = document.createElement('input');
+                    newCb.type = 'checkbox';
+                    newCb.setAttribute('contenteditable', 'false');
+                    newLi.appendChild(newCb);
+                    newLi.appendChild(tail);
+                    // Make sure there's a text node right after the checkbox
+                    // so the cursor has a valid offset-0 landing spot.
+                    if (!newLi.childNodes[1] || newLi.childNodes[1].nodeType !== 3) {
+                        newLi.insertBefore(document.createTextNode(''), newLi.childNodes[1] || null);
+                    }
+                    block.insertAdjacentElement('afterend', newLi);
+
+                    var newRange = document.createRange();
+                    newRange.setStart(newLi.childNodes[1], 0);
+                    newRange.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(newRange);
+                    syncToTextarea();
+                    return;
+                }
             }
         }
 
@@ -394,6 +467,22 @@
         sel.removeAllRanges();
         sel.addRange(range);
     }
+
+    // ── Task checkbox toggle ─────────────────────────────
+    // Clicking a checkbox toggles it natively; mirror the checked property
+    // to the attribute so the serialized HTML reflects the new state, then
+    // sync to markdown and save immediately (before the 30s auto-save).
+    editor.addEventListener('change', function(e) {
+        var t = e.target;
+        if (!t || t.tagName !== 'INPUT' || t.type !== 'checkbox') return;
+        if (t.checked) t.setAttribute('checked', ''); else t.removeAttribute('checked');
+        syncToTextarea();
+        var formData = new FormData(form);
+        fetch(form.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData)
+        }).catch(function() {});
+    });
 
     // Sync before submit
     form.addEventListener('submit', function() {
