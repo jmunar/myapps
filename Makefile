@@ -80,23 +80,23 @@ gh-env:
 		fi; \
 	done
 	@for f in deploy/*.env; do \
-		GH_ENV=""; \
+		GH_ENV=$$(grep '^DEPLOY_GH_ENVIRONMENT=' "$$f" | head -1 | cut -d= -f2-); \
+		if [ -z "$$GH_ENV" ]; then \
+			echo "ERROR: DEPLOY_GH_ENVIRONMENT not set in $$f"; \
+			exit 1; \
+		fi; \
+		echo "==> Creating environment: $$GH_ENV"; \
+		gh api "repos/{owner}/{repo}/environments/$$GH_ENV" -X PUT --silent; \
 		while IFS='=' read -r key value; do \
 			case "$$key" in \
-				''|\#*) continue ;; \
+				''|\#*|DEPLOY_GH_ENVIRONMENT) continue ;; \
 			esac; \
 			value=$$(echo "$$value" | sed 's/^"//;s/"$$//'); \
-			if [ "$$key" = "DEPLOY_GH_ENVIRONMENT" ]; then \
-				GH_ENV="$$value"; \
-				echo "==> Creating environment: $$GH_ENV"; \
-				gh api "repos/{owner}/{repo}/environments/$$GH_ENV" -X PUT --silent; \
+			if [ -z "$$value" ]; then \
+				echo "  Skipping $$key (empty)"; \
 			else \
-				if [ -z "$$value" ]; then \
-					echo "  Skipping $$key (empty)"; \
-				else \
-					echo "  Setting $$key=$$value"; \
-					gh variable set "$$key" --env "$$GH_ENV" --body "$$value"; \
-				fi; \
+				echo "  Setting $$key=$$value"; \
+				gh variable set "$$key" --env "$$GH_ENV" --body "$$value"; \
 			fi; \
 		done < "$$f"; \
 	done
