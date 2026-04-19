@@ -392,6 +392,11 @@ and voice dictation support.
   horizontal rule, triple backticks open a code block, `- ` starts a list,
   `> ` starts a blockquote. Bold, italic, inline code, and links are rendered
   in the editor. Server-side Markdown→HTML pre-rendering for initial page load.
+- **Task checkboxes** — Markdown task items (`- [ ]` / `- [x]`) render as real
+  `<input type="checkbox">` elements. Clicking a checkbox toggles the task and
+  saves immediately. Typing `[ ] ` or `[x] ` at the start of a list item
+  converts it to a task item; pressing Enter inside a task item continues the
+  task list.
 - **Note CRUD** — create, edit, save, and delete notes. Title and body stored
   separately; untitled notes show a placeholder.
 - **Auto-save** — notes auto-save every 30 seconds via background fetch. Cmd/Ctrl+S

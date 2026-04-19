@@ -442,10 +442,10 @@ fn markdown_to_editor_html(md: &str) -> String {
             }
             let checked = trimmed.starts_with("- [x]") || trimmed.starts_with("* [x]");
             let rest = &trimmed[6..];
-            let check = if checked { "&#9745; " } else { "&#9744; " };
+            let checked_attr = if checked { " checked" } else { "" };
             html.push_str(&format!(
-                "<li>{}{}</li>",
-                check,
+                r#"<li class="notes-task-item"><input type="checkbox"{} contenteditable="false">{}</li>"#,
+                checked_attr,
                 inline_md(&html_escape(rest))
             ));
             continue;
