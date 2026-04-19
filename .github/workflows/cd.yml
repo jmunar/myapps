@@ -68,22 +68,19 @@ jobs:
         with:
           key: aarch64
 
-      - name: Install cross
+      - name: Install cross and sccache
         if: steps.tag_check.outputs.exists == 'false'
-        uses: taiki-e/install-action@cross
-
-      - name: Set up sccache
-        id: sccache
-        if: steps.tag_check.outputs.exists == 'false'
-        uses: mozilla-actions/sccache-action@v0.0.6
-        continue-on-error: true
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross,sccache
 
       - name: Cross-compile for aarch64
         if: steps.tag_check.outputs.exists == 'false'
         run: |
           sed -i '/rustc-wrapper/d' .cargo/config.toml
 
-          if [[ "${{ steps.sccache.outcome }}" == "success" ]] && command -v sccache &>/dev/null && sccache --show-stats &>/dev/null; then
+          export SCCACHE_GHA_ENABLED=true
+          if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null; then
             echo "sccache backend is available — building with compilation cache"
             SCCACHE_PATH=$(which sccache)
             export CROSS_CONTAINER_OPTS="-e RUSTC_WRAPPER=sccache -e SCCACHE_GHA_ENABLED=true -e ACTIONS_CACHE_URL -e ACTIONS_RUNTIME_TOKEN -v $SCCACHE_PATH:/usr/local/bin/sccache:ro"
@@ -143,6 +140,7 @@ jobs:
       - name: Mask sensitive values
         run: |
           echo "::add-mask::${{ vars.DEPLOY_SERVER }}"
+          echo "::add-mask::${{ vars.DEPLOY_SSH_PORT }}"
           echo "::add-mask::$(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)"
           echo "::add-mask::${{ vars.DEPLOY_DOMAIN }}"
           echo "::add-mask::${{ vars.DEPLOY_REMOTE_DIR }}"
@@ -159,6 +157,7 @@ jobs:
             HostName $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)
             User $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f1)
             IdentityFile ~/.ssh/deploy_key
+            Port ${{ vars.DEPLOY_SSH_PORT }}
             StrictHostKeyChecking yes
           EOF
 
@@ -172,6 +171,7 @@ jobs:
           DEPLOY_SERVICE_NAME=${{ vars.DEPLOY_SERVICE_NAME }}
           DEPLOY_NGINX_SITE=${{ vars.DEPLOY_NGINX_SITE }}
           DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
+          DEPLOY_SSH_PORT=${{ vars.DEPLOY_SSH_PORT }}
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
           DEPLOY_SEED=${{ vars.DEPLOY_SEED }}
@@ -218,6 +218,7 @@ jobs:
       - name: Mask sensitive values
         run: |
           echo "::add-mask::${{ vars.DEPLOY_SERVER }}"
+          echo "::add-mask::${{ vars.DEPLOY_SSH_PORT }}"
           echo "::add-mask::$(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)"
           echo "::add-mask::${{ vars.DEPLOY_DOMAIN }}"
           echo "::add-mask::${{ vars.DEPLOY_REMOTE_DIR }}"
@@ -234,6 +235,7 @@ jobs:
             HostName $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)
             User $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f1)
             IdentityFile ~/.ssh/deploy_key
+            Port ${{ vars.DEPLOY_SSH_PORT }}
             StrictHostKeyChecking yes
           EOF
 
@@ -247,6 +249,7 @@ jobs:
           DEPLOY_SERVICE_NAME=${{ vars.DEPLOY_SERVICE_NAME }}
           DEPLOY_NGINX_SITE=${{ vars.DEPLOY_NGINX_SITE }}
           DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
+          DEPLOY_SSH_PORT=${{ vars.DEPLOY_SSH_PORT }}
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
           DEPLOY_SEED=${{ vars.DEPLOY_SEED }}
