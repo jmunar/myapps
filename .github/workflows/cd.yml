@@ -140,6 +140,7 @@ jobs:
       - name: Mask sensitive values
         run: |
           echo "::add-mask::${{ vars.DEPLOY_SERVER }}"
+          echo "::add-mask::${{ vars.DEPLOY_SSH_PORT }}"
           echo "::add-mask::$(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)"
           echo "::add-mask::${{ vars.DEPLOY_DOMAIN }}"
           echo "::add-mask::${{ vars.DEPLOY_REMOTE_DIR }}"
@@ -217,6 +218,7 @@ jobs:
       - name: Mask sensitive values
         run: |
           echo "::add-mask::${{ vars.DEPLOY_SERVER }}"
+          echo "::add-mask::${{ vars.DEPLOY_SSH_PORT }}"
           echo "::add-mask::$(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)"
           echo "::add-mask::${{ vars.DEPLOY_DOMAIN }}"
           echo "::add-mask::${{ vars.DEPLOY_REMOTE_DIR }}"
