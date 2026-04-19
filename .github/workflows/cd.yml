@@ -156,6 +156,7 @@ jobs:
             HostName $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)
             User $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f1)
             IdentityFile ~/.ssh/deploy_key
+            Port ${{ vars.DEPLOY_SSH_PORT }}
             StrictHostKeyChecking yes
           EOF
 
@@ -169,6 +170,7 @@ jobs:
           DEPLOY_SERVICE_NAME=${{ vars.DEPLOY_SERVICE_NAME }}
           DEPLOY_NGINX_SITE=${{ vars.DEPLOY_NGINX_SITE }}
           DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
+          DEPLOY_SSH_PORT=${{ vars.DEPLOY_SSH_PORT }}
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
           DEPLOY_SEED=${{ vars.DEPLOY_SEED }}
@@ -231,6 +233,7 @@ jobs:
             HostName $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f2)
             User $(echo "${{ vars.DEPLOY_SERVER }}" | cut -d@ -f1)
             IdentityFile ~/.ssh/deploy_key
+            Port ${{ vars.DEPLOY_SSH_PORT }}
             StrictHostKeyChecking yes
           EOF
 
@@ -244,6 +247,7 @@ jobs:
           DEPLOY_SERVICE_NAME=${{ vars.DEPLOY_SERVICE_NAME }}
           DEPLOY_NGINX_SITE=${{ vars.DEPLOY_NGINX_SITE }}
           DEPLOY_PORT=${{ vars.DEPLOY_PORT }}
+          DEPLOY_SSH_PORT=${{ vars.DEPLOY_SSH_PORT }}
           DEPLOY_CRON_ENABLED=${{ vars.DEPLOY_CRON_ENABLED }}
           DEPLOY_ICON=${{ vars.DEPLOY_ICON }}
           DEPLOY_SEED=${{ vars.DEPLOY_SEED }}

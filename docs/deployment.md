@@ -587,13 +587,14 @@ The CD workflow requires two GitHub **Environments** (`staging` and
 | Secret             | Description                                         |
 |--------------------|-----------------------------------------------------|
 | `SSH_PRIVATE_KEY`  | Ed25519 private key authorized on the server        |
-| `SSH_KNOWN_HOSTS`  | Output of `ssh-keyscan <server-host>`               |
+| `SSH_KNOWN_HOSTS`  | Output of `ssh-keyscan -p <port> <server-host>`     |
 
 **Environment variables** (per GitHub Environment):
 
 | Variable                  | Example (staging)           | Example (production)       |
 |---------------------------|-----------------------------|----------------------------|
 | `DEPLOY_SERVER`           | `deploy@odroid.local`       | `deploy@odroid.local`      |
+| `DEPLOY_SSH_PORT`         | `22`                        | `22`                       |
 | `DEPLOY_DOMAIN`           | `stage.yourdomain.com`      | `yourdomain.com`           |
 | `DEPLOY_REMOTE_DIR`       | `/opt/myapps-stage`         | `/opt/myapps`              |
 | `DEPLOY_REMOTE_BUILD_DIR` | `~/myapps-stage-build`      | `~/myapps-stage-build`     |
