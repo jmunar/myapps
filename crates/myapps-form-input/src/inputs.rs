@@ -1,6 +1,7 @@
 use axum::{
     Extension, Form, Router,
     extract::Path,
+    http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
@@ -19,6 +20,7 @@ pub fn routes() -> Router<AppState> {
         .route("/new", get(new_input_page))
         .route("/inputs/create", post(create))
         .route("/inputs/{id}", get(view))
+        .route("/inputs/{id}/cell", post(update_cell))
         .route("/inputs/{id}/delete", post(delete))
 }
 
@@ -619,23 +621,57 @@ async fn view(
         ));
     };
 
-    let lines: Vec<&str> = inp.csv_data.lines().collect();
+    // Look up the form type's columns so the JS knows each column's input control.
+    let ft_row: Option<(String, String)> =
+        sqlx::query_as("SELECT name, columns_json FROM form_input_form_types WHERE id = ?")
+            .bind(inp.form_type_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
+    let (ft_name, columns_json) = ft_row
+        .map(|(n, j)| (Some(n), j))
+        .unwrap_or((None, "[]".to_string()));
+    let ft_columns: Vec<ColumnDef> = serde_json::from_str(&columns_json).unwrap_or_default();
+
     let highlight_first_col = inp.row_set_id.is_some();
-    let mut table_html = String::from("<table><thead><tr>");
+    let lines: Vec<Vec<String>> = inp.csv_data.lines().map(parse_csv_line).collect();
+
+    // Build the grid. The first column is the row identifier when fixed-row mode is on,
+    // mirroring the new-input page's layout. Editable cells get data-row/data-col/data-type
+    // so the JS double-click handler knows which control to spawn.
+    let mut table_html = String::from(r#"<table class="ci-input-table"><thead><tr>"#);
     if let Some(header) = lines.first() {
-        for col in parse_csv_line(header) {
-            table_html.push_str(&format!("<th>{col}</th>"));
+        for (i, col) in header.iter().enumerate() {
+            if i == 0 && highlight_first_col {
+                table_html.push_str(&format!(r#"<th class="ci-th-pupil">{col}</th>"#));
+            } else {
+                table_html.push_str(&format!("<th>{col}</th>"));
+            }
         }
     }
     table_html.push_str("</tr></thead><tbody>");
-    for line in lines.iter().skip(1) {
+    for (r, line) in lines.iter().enumerate().skip(1) {
         table_html.push_str("<tr>");
-        let fields = parse_csv_line(line);
-        for (i, field) in fields.iter().enumerate() {
-            if i == 0 && highlight_first_col {
+        for (c, field) in line.iter().enumerate() {
+            if c == 0 && highlight_first_col {
                 table_html.push_str(&format!(r#"<td class="ci-pupil-name">{field}</td>"#));
             } else {
-                table_html.push_str(&format!("<td>{field}</td>"));
+                // Editable. Cell type comes from the form-type column at the matching
+                // index. For fixed-row mode the leading column is the row id, so user
+                // columns are offset by 1.
+                let col_idx = if highlight_first_col { c - 1 } else { c };
+                let col_type = ft_columns
+                    .get(col_idx)
+                    .map(|cd| cd.col_type.as_str())
+                    .unwrap_or("text");
+                let cell_class = match col_type {
+                    "number" => "ci-cell-editable ci-col-number",
+                    "bool" => "ci-cell-editable ci-col-bool",
+                    _ => "ci-cell-editable",
+                };
+                table_html.push_str(&format!(
+                    r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="{col_type}">{field}</td>"#,
+                ));
             }
         }
         table_html.push_str("</tr>");
@@ -650,12 +686,6 @@ async fn view(
             .unwrap_or(None),
         None => None,
     };
-    let ft_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM form_input_form_types WHERE id = ?")
-            .bind(inp.form_type_id)
-            .fetch_optional(&state.pool)
-            .await
-            .unwrap_or(None);
 
     let date = &inp.created_at[..10.min(inp.created_at.len())];
 
@@ -666,6 +696,8 @@ async fn view(
         None => String::new(),
     };
 
+    let col_bool = t.ft_col_bool;
+
     let body = format!(
         r##"<div class="page-header">
             <h1>{name}</h1>
@@ -675,15 +707,110 @@ async fn view(
         </div>
 
         <div class="card">
-            {table_html}
+            <div class="ci-grid-container">
+                {table_html}
+            </div>
         </div>
 
         <div class="mt-2">
             <a href="{base}/forms" class="btn btn-secondary">{back}</a>
-        </div>"##,
+        </div>
+
+        <script>
+        (function() {{
+            var lblBool = '{col_bool}';
+            var saveUrl = '{base}/forms/inputs/{id}/cell';
+
+            document.querySelectorAll('.ci-cell-editable').forEach(function(cell) {{
+                cell.addEventListener('dblclick', function() {{
+                    if (cell.classList.contains('ci-cell-editing')) return;
+                    startEdit(cell);
+                }});
+            }});
+
+            function startEdit(cell) {{
+                var oldValue = cell.textContent;
+                var colType = cell.dataset.type || 'text';
+                cell.classList.add('ci-cell-editing');
+                cell.dataset.oldValue = oldValue;
+                var control;
+                if (colType === 'bool') {{
+                    var parts = lblBool.split(' / ');
+                    var yes = parts[0] || 'Yes';
+                    var no = parts[1] || 'No';
+                    control = document.createElement('select');
+                    control.className = 'ci-cell ci-cell-select';
+                    control.innerHTML = '<option value=""></option>'
+                        + '<option value="' + yes + '">' + yes + '</option>'
+                        + '<option value="' + no + '">' + no + '</option>';
+                    control.value = oldValue;
+                }} else if (colType === 'number') {{
+                    control = document.createElement('input');
+                    control.type = 'number';
+                    control.step = 'any';
+                    control.inputMode = 'decimal';
+                    control.className = 'ci-cell ci-cell-input';
+                    control.value = oldValue;
+                }} else {{
+                    control = document.createElement('input');
+                    control.type = 'text';
+                    control.className = 'ci-cell ci-cell-input';
+                    control.value = oldValue;
+                }}
+                cell.textContent = '';
+                cell.appendChild(control);
+                control.focus();
+                if (control.select) control.select();
+
+                var done = false;
+                function finish(commit) {{
+                    if (done) return;
+                    done = true;
+                    if (commit) {{
+                        save(cell, control.value);
+                    }} else {{
+                        cell.textContent = cell.dataset.oldValue || '';
+                        cell.classList.remove('ci-cell-editing');
+                        delete cell.dataset.oldValue;
+                    }}
+                }}
+                control.addEventListener('keydown', function(e) {{
+                    if (e.key === 'Enter') {{ e.preventDefault(); finish(true); }}
+                    else if (e.key === 'Escape') {{ e.preventDefault(); finish(false); }}
+                }});
+                control.addEventListener('blur', function() {{ finish(true); }});
+            }}
+
+            function save(cell, newValue) {{
+                var body = 'row=' + encodeURIComponent(cell.dataset.row)
+                    + '&col=' + encodeURIComponent(cell.dataset.col)
+                    + '&value=' + encodeURIComponent(newValue);
+                fetch(saveUrl, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
+                    body: body,
+                    credentials: 'same-origin',
+                }}).then(function(res) {{
+                    if (res.ok) {{
+                        cell.textContent = newValue;
+                    }} else {{
+                        alert('Save failed (' + res.status + ')');
+                        cell.textContent = cell.dataset.oldValue || '';
+                    }}
+                }}).catch(function() {{
+                    alert('Save failed (network error)');
+                    cell.textContent = cell.dataset.oldValue || '';
+                }}).finally(function() {{
+                    cell.classList.remove('ci-cell-editing');
+                    delete cell.dataset.oldValue;
+                }});
+            }}
+        }})();
+        </script>"##,
         name = inp.name,
         ft_name = ft_name.as_deref().unwrap_or("?"),
         back = t.inp_back,
+        id = inp.id,
     );
 
     Html(render_page(
@@ -739,4 +866,104 @@ fn parse_csv_line(line: &str) -> Vec<String> {
     }
     fields.push(current);
     fields
+}
+
+/// Mirror of the JS csvEscape: quote when the value contains a comma, quote, or newline.
+fn csv_escape(val: &str) -> String {
+    if val.is_empty() {
+        return String::new();
+    }
+    if val.contains(',') || val.contains('"') || val.contains('\n') {
+        format!("\"{}\"", val.replace('"', "\"\""))
+    } else {
+        val.to_string()
+    }
+}
+
+fn serialize_csv_line(fields: &[String]) -> String {
+    fields
+        .iter()
+        .map(|f| csv_escape(f))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Replace a single cell at (row, col) of `csv_data` with `new_value` and
+/// return the rewritten CSV. `row == 0` is the header and is rejected.
+fn update_csv_cell(
+    csv_data: &str,
+    row: usize,
+    col: usize,
+    new_value: &str,
+) -> Result<String, &'static str> {
+    if row == 0 {
+        return Err("header row is not editable");
+    }
+    let mut lines: Vec<Vec<String>> = csv_data.lines().map(parse_csv_line).collect();
+    if row >= lines.len() {
+        return Err("row out of range");
+    }
+    let line = &mut lines[row];
+    if col >= line.len() {
+        return Err("col out of range");
+    }
+    line[col] = new_value.to_string();
+    Ok(lines
+        .into_iter()
+        .map(|l| serialize_csv_line(&l))
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+#[derive(Deserialize)]
+struct UpdateCellForm {
+    row: usize,
+    col: usize,
+    #[serde(default)]
+    value: String,
+}
+
+async fn update_cell(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(id): Path<i64>,
+    Form(form): Form<UpdateCellForm>,
+) -> impl IntoResponse {
+    let inp: Option<(String, Option<i64>)> = sqlx::query_as(
+        "SELECT csv_data, row_set_id FROM form_input_inputs WHERE id = ? AND user_id = ?",
+    )
+    .bind(id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some((csv_data, row_set_id)) = inp else {
+        return StatusCode::NOT_FOUND;
+    };
+
+    // For fixed-row inputs the leading column is the row identifier — not editable.
+    if row_set_id.is_some() && form.col == 0 {
+        return StatusCode::BAD_REQUEST;
+    }
+
+    let updated = match update_csv_cell(&csv_data, form.row, form.col, &form.value) {
+        Ok(s) => s,
+        Err(_) => return StatusCode::BAD_REQUEST,
+    };
+
+    let res = sqlx::query("UPDATE form_input_inputs SET csv_data = ? WHERE id = ? AND user_id = ?")
+        .bind(&updated)
+        .bind(id)
+        .bind(user_id.0)
+        .execute(&state.pool)
+        .await;
+
+    match res {
+        Ok(_) => StatusCode::NO_CONTENT,
+        Err(e) => {
+            tracing::error!("DB update failed: {e:#}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
 }

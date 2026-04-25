@@ -148,6 +148,22 @@
     box-shadow: inset 0 0 0 2px var(--accent);
 }
 
+/* Editable cells (view page) — plain text by default, click-to-edit hint on hover */
+.ci-cell-editable {
+    cursor: pointer;
+    padding: 0.4rem 0.5rem;
+}
+
+.ci-cell-editable:hover {
+    background: var(--accent-light);
+}
+
+.ci-cell-editable.ci-cell-editing {
+    padding: 0;
+    cursor: text;
+    background: var(--accent-light);
+}
+
 /* ── Mobile overrides ─────────────────────────────────────────── */
 @media (max-width: 640px) {
     /* Override the global mobile table→card transform for the input grid */
