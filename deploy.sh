@@ -167,7 +167,7 @@ if ! id myapps &>/dev/null; then
 fi
 
 # Create directory structure
-sudo mkdir -p $DEPLOY_REMOTE_DIR/{data,logs,static}
+sudo mkdir -p $DEPLOY_REMOTE_DIR/{data,static}
 sudo chown -R myapps:myapps $DEPLOY_REMOTE_DIR
 sudo chmod 750 $DEPLOY_REMOTE_DIR
 
@@ -207,7 +207,6 @@ User=myapps
 Group=myapps
 WorkingDirectory=$DEPLOY_REMOTE_DIR
 ExecStart=$DEPLOY_REMOTE_DIR/myapps serve
-EnvironmentFile=$DEPLOY_REMOTE_DIR/.env
 Restart=on-failure
 RestartSec=5
 
@@ -228,7 +227,7 @@ echo "  Installed $DEPLOY_SERVICE_NAME.service"
 if [[ "$DEPLOY_CRON_ENABLED" == "true" ]]; then
     sudo tee /etc/cron.d/$DEPLOY_SERVICE_NAME > /dev/null <<CRON
 # MyApps daily scheduled tasks ($DEPLOY_SERVICE_NAME)
-0 6 * * * myapps . $DEPLOY_REMOTE_DIR/.env && $DEPLOY_REMOTE_DIR/myapps cron >> $DEPLOY_REMOTE_DIR/logs/cron.log 2>&1
+0 6 * * * myapps $DEPLOY_REMOTE_DIR/myapps cron
 CRON
     sudo chmod 644 /etc/cron.d/$DEPLOY_SERVICE_NAME
     echo "  Installed cron job (daily at 06:00)"
