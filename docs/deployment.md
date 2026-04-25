@@ -283,7 +283,7 @@ When set, myapps sends requests to a running llama.cpp server
 
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
 `DEPLOY_APPS` limits which apps are mounted and shown in the launcher. Valid
-keys: `leanfin`, `mindflow`, `voice_to_text`, `classroom_input`, `notes`. When
+keys: `leanfin`, `mindflow`, `voice_to_text`, `form_input`, `notes`. When
 empty or unset, all apps are available.
 `AUTH_SSO_HEADER` enables reverse-proxy SSO authentication (e.g. Authelia). When
 set to the header name that carries the authenticated username (typically

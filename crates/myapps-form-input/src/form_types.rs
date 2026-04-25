@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::classroom_nav;
+use super::forms_nav;
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -69,7 +69,7 @@ async fn list(
     let t = super::i18n::t(lang);
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ? ORDER BY name ASC",
+        "SELECT id, name, columns_json FROM form_input_form_types WHERE user_id = ? ORDER BY name ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -95,8 +95,8 @@ async fn list(
                     <div>{col_html}</div>
                 </div>
                 <div class="label-item-actions">
-                    <a href="{base}/classroom/form-types/{id}/edit" class="btn-icon">{edit_label}</a>
-                    <form method="POST" action="{base}/classroom/form-types/{id}/delete" style="display:inline"
+                    <a href="{base}/forms/form-types/{id}/edit" class="btn-icon">{edit_label}</a>
+                    <form method="POST" action="{base}/forms/form-types/{id}/delete" style="display:inline"
                           onsubmit="return confirm('{delete_confirm}')">
                         <button class="btn-icon btn-icon-danger">{delete_label}</button>
                     </form>
@@ -127,7 +127,7 @@ async fn list(
         <div class="card mt-2" style="max-width:40rem;">
             <div class="card-header"><h2>{create_heading}</h2></div>
             <div class="card-body">
-                <form method="POST" action="{base}/classroom/form-types/create">
+                <form method="POST" action="{base}/forms/form-types/create">
                     <div class="form-group">
                         <label for="name">{name_lbl}</label>
                         <input type="text" id="name" name="name" required placeholder="e.g. Weekly quiz">
@@ -178,8 +178,8 @@ async fn list(
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.form_types),
-        &classroom_nav(base, "form_types", lang),
+        &format!("Forms — {}", t.form_types),
+        &forms_nav(base, "form_types", lang),
         &body,
         &state.config,
         lang,
@@ -213,16 +213,14 @@ async fn create(
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
 
-    sqlx::query(
-        "INSERT INTO classroom_input_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
-    )
-    .bind(user_id.0)
-    .bind(form.name.trim())
-    .bind(&json)
-    .execute(&state.pool)
-    .await
-    .ok();
-    Redirect::to(&format!("{base}/classroom/form-types"))
+    sqlx::query("INSERT INTO form_input_form_types (user_id, name, columns_json) VALUES (?, ?, ?)")
+        .bind(user_id.0)
+        .bind(form.name.trim())
+        .bind(&json)
+        .execute(&state.pool)
+        .await
+        .ok();
+    Redirect::to(&format!("{base}/forms/form-types"))
 }
 
 async fn edit_page(
@@ -235,7 +233,7 @@ async fn edit_page(
     let t = super::i18n::t(lang);
 
     let ft: Option<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE id = ? AND user_id = ?",
+        "SELECT id, name, columns_json FROM form_input_form_types WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id.0)
@@ -245,8 +243,8 @@ async fn edit_page(
 
     let Some(ft) = ft else {
         return Html(render_page(
-            "Classroom — Not Found",
-            &classroom_nav(base, "form_types", lang),
+            "Forms — Not Found",
+            &forms_nav(base, "form_types", lang),
             &format!(
                 r#"<div class="empty-state"><p>{}</p></div>"#,
                 t.ft_not_found
@@ -310,7 +308,7 @@ async fn edit_page(
 
         <div class="card" style="max-width:40rem;">
             <div class="card-body">
-                <form method="POST" action="{base}/classroom/form-types/{id}/edit">
+                <form method="POST" action="{base}/forms/form-types/{id}/edit">
                     <div class="form-group">
                         <label for="name">{name_lbl}</label>
                         <input type="text" id="name" name="name" value="{name}" required>
@@ -325,7 +323,7 @@ async fn edit_page(
                     </div>
                     <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
                         <button type="submit" class="btn btn-primary">{save_btn}</button>
-                        <a href="{base}/classroom/form-types" class="btn btn-secondary">{cancel_btn}</a>
+                        <a href="{base}/forms/form-types" class="btn btn-secondary">{cancel_btn}</a>
                     </div>
                 </form>
             </div>
@@ -352,8 +350,8 @@ async fn edit_page(
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.ft_edit_title),
-        &classroom_nav(base, "form_types", lang),
+        &format!("Forms — {}", t.ft_edit_title),
+        &forms_nav(base, "form_types", lang),
         &body,
         &state.config,
         lang,
@@ -389,7 +387,7 @@ async fn edit(
     let json = serde_json::to_string(&columns).unwrap_or_default();
 
     sqlx::query(
-        "UPDATE classroom_input_form_types SET name = ?, columns_json = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        "UPDATE form_input_form_types SET name = ?, columns_json = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
     )
     .bind(form.name.trim())
     .bind(&json)
@@ -398,7 +396,7 @@ async fn edit(
     .execute(&state.pool)
     .await
     .ok();
-    Redirect::to(&format!("{base}/classroom/form-types"))
+    Redirect::to(&format!("{base}/forms/form-types"))
 }
 
 async fn delete(
@@ -410,5 +408,5 @@ async fn delete(
     super::ops::delete_form_type(&state.pool, user_id.0, id)
         .await
         .ok();
-    Redirect::to(&format!("{base}/classroom/form-types"))
+    Redirect::to(&format!("{base}/forms/form-types"))
 }

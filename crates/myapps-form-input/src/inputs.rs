@@ -6,8 +6,8 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::classroom_nav;
 use super::form_types::ColumnDef;
+use super::forms_nav;
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -26,7 +26,7 @@ pub fn routes() -> Router<AppState> {
 #[allow(dead_code)]
 struct InputRow {
     id: i64,
-    classroom_id: i64,
+    row_set_id: Option<i64>,
     form_type_id: i64,
     name: String,
     csv_data: String,
@@ -35,10 +35,10 @@ struct InputRow {
 
 #[derive(sqlx::FromRow)]
 #[allow(dead_code)]
-struct ClassroomRow {
+struct RowSetRow {
     id: i64,
     label: String,
-    pupils: String,
+    rows: String,
 }
 
 #[derive(sqlx::FromRow)]
@@ -58,8 +58,8 @@ async fn list(
     let t = super::i18n::t(lang);
 
     let inputs: Vec<InputRow> = sqlx::query_as(
-        "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
-         FROM classroom_input_inputs WHERE user_id = ? ORDER BY created_at DESC",
+        "SELECT id, row_set_id, form_type_id, name, csv_data, created_at
+         FROM form_input_inputs WHERE user_id = ? ORDER BY created_at DESC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -69,20 +69,18 @@ async fn list(
         Default::default()
     });
 
-    // Pre-fetch classrooms and form types for labels
-    let classrooms: Vec<ClassroomRow> = sqlx::query_as(
-        "SELECT id, label, pupils FROM classroom_input_classrooms WHERE user_id = ?",
-    )
-    .bind(user_id.0)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!("DB query failed: {e:#}");
-        Default::default()
-    });
+    let row_sets: Vec<RowSetRow> =
+        sqlx::query_as("SELECT id, label, rows FROM form_input_row_sets WHERE user_id = ?")
+            .bind(user_id.0)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!("DB query failed: {e:#}");
+                Default::default()
+            });
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ?",
+        "SELECT id, name, columns_json FROM form_input_form_types WHERE user_id = ?",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -97,28 +95,32 @@ async fn list(
 
     let mut rows_html = String::new();
     for inp in &inputs {
-        let cls_label = classrooms
-            .iter()
-            .find(|c| c.id == inp.classroom_id)
-            .map(|c| c.label.as_str())
-            .unwrap_or("?");
+        let rs_label = inp
+            .row_set_id
+            .and_then(|rsid| {
+                row_sets
+                    .iter()
+                    .find(|rs| rs.id == rsid)
+                    .map(|rs| rs.label.as_str())
+            })
+            .unwrap_or("—");
         let ft_name = form_types
             .iter()
             .find(|f| f.id == inp.form_type_id)
             .map(|f| f.name.as_str())
             .unwrap_or("?");
-        let row_count = inp.csv_data.lines().count().saturating_sub(1); // minus header
+        let row_count = inp.csv_data.lines().count().saturating_sub(1);
         let date = &inp.created_at[..10.min(inp.created_at.len())];
 
         rows_html.push_str(&format!(
             r##"<tr>
-                <td><a href="{base}/classroom/inputs/{id}">{name}</a></td>
-                <td><span class="label-badge" style="--label-color:#1A6B5A">{cls_label}</span></td>
+                <td><a href="{base}/forms/inputs/{id}">{name}</a></td>
+                <td><span class="label-badge" style="--label-color:#1A6B5A">{rs_label}</span></td>
                 <td>{ft_name}</td>
                 <td class="mono">{row_count}</td>
                 <td class="txn-date">{date}</td>
                 <td>
-                    <form method="POST" action="{base}/classroom/inputs/{id}/delete" style="display:inline"
+                    <form method="POST" action="{base}/forms/inputs/{id}/delete" style="display:inline"
                           onsubmit="return confirm('{delete_confirm}')">
                         <button class="btn-icon btn-icon-danger">{delete_label}</button>
                     </form>
@@ -135,12 +137,12 @@ async fn list(
         format!(
             r#"<table>
                 <thead><tr>
-                    <th>{col_name}</th><th>{col_classroom}</th><th>{col_form_type}</th><th>{col_rows}</th><th>{col_date}</th><th></th>
+                    <th>{col_name}</th><th>{col_row_set}</th><th>{col_form_type}</th><th>{col_rows}</th><th>{col_date}</th><th></th>
                 </tr></thead>
                 <tbody>{rows_html}</tbody>
             </table>"#,
             col_name = t.inp_col_name,
-            col_classroom = t.inp_col_classroom,
+            col_row_set = t.inp_col_row_set,
             col_form_type = t.inp_col_form_type,
             col_rows = t.inp_col_rows,
             col_date = t.inp_col_date,
@@ -154,7 +156,7 @@ async fn list(
                     <h1>{title}</h1>
                     <p>{subtitle}</p>
                 </div>
-                <a href="{base}/classroom/new" class="btn btn-primary">{new_btn}</a>
+                <a href="{base}/forms/new" class="btn btn-primary">{new_btn}</a>
             </div>
         </div>
 
@@ -167,8 +169,8 @@ async fn list(
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.inputs),
-        &classroom_nav(base, "inputs", lang),
+        &format!("Forms — {}", t.inputs),
+        &forms_nav(base, "inputs", lang),
         &body,
         &state.config,
         lang,
@@ -183,8 +185,8 @@ async fn new_input_page(
     let base = &state.config.base_path;
     let t = super::i18n::t(lang);
 
-    let classrooms: Vec<ClassroomRow> = sqlx::query_as(
-        "SELECT id, label, pupils FROM classroom_input_classrooms WHERE user_id = ? ORDER BY label ASC",
+    let row_sets: Vec<RowSetRow> = sqlx::query_as(
+        "SELECT id, label, rows FROM form_input_row_sets WHERE user_id = ? ORDER BY label ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -195,7 +197,7 @@ async fn new_input_page(
     });
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ? ORDER BY name ASC",
+        "SELECT id, name, columns_json FROM form_input_form_types WHERE user_id = ? ORDER BY name ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -205,11 +207,11 @@ async fn new_input_page(
         Default::default()
     });
 
-    if classrooms.is_empty() || form_types.is_empty() {
-        let msg = if classrooms.is_empty() && form_types.is_empty() {
+    if row_sets.is_empty() || form_types.is_empty() {
+        let msg = if row_sets.is_empty() && form_types.is_empty() {
             t.inp_need_both.to_string()
-        } else if classrooms.is_empty() {
-            t.inp_need_classroom.to_string()
+        } else if row_sets.is_empty() {
+            t.inp_need_row_set.to_string()
         } else {
             t.inp_need_form_type.to_string()
         };
@@ -219,20 +221,19 @@ async fn new_input_page(
             title = t.inp_new_title,
         );
         return Html(render_page(
-            &format!("Classroom — {}", t.inp_new_title),
-            &classroom_nav(base, "inputs", lang),
+            &format!("Forms — {}", t.inp_new_title),
+            &forms_nav(base, "inputs", lang),
             &body,
             &state.config,
             lang,
         ));
     }
 
-    // Serialize classrooms and form types as JSON for the JS grid builder
-    let classrooms_json: Vec<serde_json::Value> = classrooms
+    let row_sets_json: Vec<serde_json::Value> = row_sets
         .iter()
-        .map(|c| {
-            let pupils: Vec<&str> = c.pupils.lines().filter(|l| !l.trim().is_empty()).collect();
-            serde_json::json!({"id": c.id, "label": c.label, "pupils": pupils})
+        .map(|rs| {
+            let rows: Vec<&str> = rs.rows.lines().filter(|l| !l.trim().is_empty()).collect();
+            serde_json::json!({"id": rs.id, "label": rs.label, "rows": rows})
         })
         .collect();
     let form_types_json: Vec<serde_json::Value> = form_types
@@ -243,22 +244,23 @@ async fn new_input_page(
         })
         .collect();
 
-    let cls_json = serde_json::to_string(&classrooms_json).unwrap_or_default();
+    let rs_json = serde_json::to_string(&row_sets_json).unwrap_or_default();
     let ft_json = serde_json::to_string(&form_types_json).unwrap_or_default();
 
-    // Classroom select options
-    let mut cls_opts = String::new();
-    for c in &classrooms {
-        cls_opts.push_str(&format!(r#"<option value="{}">{}</option>"#, c.id, c.label));
+    let mut rs_opts = String::new();
+    for rs in &row_sets {
+        rs_opts.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            rs.id, rs.label
+        ));
     }
 
-    // Form type select options
     let mut ft_opts = String::new();
     for f in &form_types {
         ft_opts.push_str(&format!(r#"<option value="{}">{}</option>"#, f.id, f.name));
     }
 
-    let pupil_label = t.inp_pupil;
+    let row_label = t.inp_row;
     let select_hint = t.inp_select_hint;
     let col_bool = t.ft_col_bool;
 
@@ -270,11 +272,11 @@ async fn new_input_page(
 
         <div class="card" style="max-width:60rem;">
             <div class="card-body">
-                <form method="POST" action="{base}/classroom/inputs/create" id="input-form">
+                <form method="POST" action="{base}/forms/inputs/create" id="input-form">
                     <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
                         <div class="form-group">
-                            <label for="classroom_id">{classroom_lbl}</label>
-                            <select id="classroom_id" name="classroom_id" required>{cls_opts}</select>
+                            <label for="row_set_id">{row_set_lbl}</label>
+                            <select id="row_set_id" name="row_set_id" required>{rs_opts}</select>
                         </div>
                         <div class="form-group">
                             <label for="form_type_id">{form_type_lbl}</label>
@@ -296,39 +298,39 @@ async fn new_input_page(
 
         <script>
         (function() {{
-            var classrooms = {cls_json};
+            var rowSets = {rs_json};
             var formTypes = {ft_json};
-            var lblPupil = '{pupil_label}';
+            var lblRow = '{row_label}';
             var lblSelectHint = '{select_hint}';
             var lblBool = '{col_bool}';
 
-            var clsSel = document.getElementById('classroom_id');
+            var rsSel = document.getElementById('row_set_id');
             var ftSel = document.getElementById('form_type_id');
             var gridContainer = document.getElementById('grid-container');
             var csvInput = document.getElementById('csv_data');
             var form = document.getElementById('input-form');
 
             function buildGrid() {{
-                var clsId = parseInt(clsSel.value);
+                var rsId = parseInt(rsSel.value);
                 var ftId = parseInt(ftSel.value);
-                var cls = classrooms.find(function(c) {{ return c.id === clsId; }});
+                var rs = rowSets.find(function(r) {{ return r.id === rsId; }});
                 var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
-                if (!cls || !ft || ft.columns.length === 0) {{
+                if (!rs || !ft || ft.columns.length === 0) {{
                     gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
                     return;
                 }}
 
-                var pupils = cls.pupils;
+                var rows = rs.rows;
                 var cols = ft.columns;
 
-                var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">' + lblPupil + '</th>';
+                var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">' + lblRow + '</th>';
                 for (var i = 0; i < cols.length; i++) {{
                     html += '<th>' + cols[i].name + '</th>';
                 }}
                 html += '</tr></thead><tbody>';
 
-                for (var r = 0; r < pupils.length; r++) {{
-                    html += '<tr><td class="ci-pupil-name">' + pupils[r] + '</td>';
+                for (var r = 0; r < rows.length; r++) {{
+                    html += '<tr><td class="ci-pupil-name">' + rows[r] + '</td>';
                     for (var c = 0; c < cols.length; c++) {{
                         var colType = cols[c].type || cols[c].col_type || 'text';
                         if (colType === 'bool') {{
@@ -351,11 +353,11 @@ async fn new_input_page(
             }}
 
             function setupNav() {{
-                var clsId = parseInt(clsSel.value);
+                var rsId = parseInt(rsSel.value);
                 var ftId = parseInt(ftSel.value);
-                var cls = classrooms.find(function(c) {{ return c.id === clsId; }});
+                var rs = rowSets.find(function(r) {{ return r.id === rsId; }});
                 var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
-                var maxR = cls ? cls.pupils.length - 1 : 0;
+                var maxR = rs ? rs.rows.length - 1 : 0;
                 var maxC = ft ? ft.columns.length - 1 : 0;
 
                 var cells = gridContainer.querySelectorAll('.ci-cell');
@@ -399,27 +401,27 @@ async fn new_input_page(
                 }});
             }}
 
-            clsSel.addEventListener('change', buildGrid);
+            rsSel.addEventListener('change', buildGrid);
             ftSel.addEventListener('change', buildGrid);
             buildGrid();
 
             form.addEventListener('submit', function() {{
-                var clsId = parseInt(clsSel.value);
+                var rsId = parseInt(rsSel.value);
                 var ftId = parseInt(ftSel.value);
-                var cls = classrooms.find(function(c) {{ return c.id === clsId; }});
+                var rs = rowSets.find(function(r) {{ return r.id === rsId; }});
                 var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
-                if (!cls || !ft) return;
+                if (!rs || !ft) return;
 
-                var pupils = cls.pupils;
+                var rows = rs.rows;
                 var cols = ft.columns;
 
                 var lines = [];
-                var header = [lblPupil];
+                var header = [lblRow];
                 for (var i = 0; i < cols.length; i++) header.push(csvEscape(cols[i].name));
                 lines.push(header.join(','));
 
-                for (var r = 0; r < pupils.length; r++) {{
-                    var row = [csvEscape(pupils[r])];
+                for (var r = 0; r < rows.length; r++) {{
+                    var row = [csvEscape(rows[r])];
                     for (var c = 0; c < cols.length; c++) {{
                         var cell = gridContainer.querySelector('[data-r="' + r + '"][data-c="' + c + '"]');
                         row.push(csvEscape(cell ? cell.value : ''));
@@ -441,15 +443,15 @@ async fn new_input_page(
         </script>"##,
         new_title = t.inp_new_title,
         new_subtitle = t.inp_new_subtitle,
-        classroom_lbl = t.inp_classroom,
+        row_set_lbl = t.inp_row_set,
         form_type_lbl = t.inp_form_type,
         name_lbl = t.inp_name,
         save_btn = t.inp_save,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.inp_new_title),
-        &classroom_nav(base, "inputs", lang),
+        &format!("Forms — {}", t.inp_new_title),
+        &forms_nav(base, "inputs", lang),
         &body,
         &state.config,
         lang,
@@ -458,7 +460,7 @@ async fn new_input_page(
 
 #[derive(Deserialize)]
 struct CreateInputForm {
-    classroom_id: i64,
+    row_set_id: i64,
     form_type_id: i64,
     name: String,
     csv_data: String,
@@ -473,14 +475,14 @@ async fn create(
     super::ops::create_input(
         &state.pool,
         user_id.0,
-        form.classroom_id,
+        Some(form.row_set_id),
         form.form_type_id,
         form.name.trim(),
         &form.csv_data,
     )
     .await
     .ok();
-    Redirect::to(&format!("{base}/classroom"))
+    Redirect::to(&format!("{base}/forms"))
 }
 
 async fn view(
@@ -493,8 +495,8 @@ async fn view(
     let t = super::i18n::t(lang);
 
     let inp: Option<InputRow> = sqlx::query_as(
-        "SELECT id, classroom_id, form_type_id, name, csv_data, created_at
-         FROM classroom_input_inputs WHERE id = ? AND user_id = ?",
+        "SELECT id, row_set_id, form_type_id, name, csv_data, created_at
+         FROM form_input_inputs WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id.0)
@@ -504,8 +506,8 @@ async fn view(
 
     let Some(inp) = inp else {
         return Html(render_page(
-            "Classroom — Not Found",
-            &classroom_nav(base, "inputs", lang),
+            "Forms — Not Found",
+            &forms_nav(base, "inputs", lang),
             &format!(
                 r#"<div class="empty-state"><p>{}</p></div>"#,
                 t.inp_not_found
@@ -515,7 +517,6 @@ async fn view(
         ));
     };
 
-    // Parse CSV into HTML table
     let lines: Vec<&str> = inp.csv_data.lines().collect();
     let mut table_html = String::from("<table><thead><tr>");
     if let Some(header) = lines.first() {
@@ -538,14 +539,16 @@ async fn view(
     }
     table_html.push_str("</tbody></table>");
 
-    let cls_label: Option<String> =
-        sqlx::query_scalar("SELECT label FROM classroom_input_classrooms WHERE id = ?")
-            .bind(inp.classroom_id)
+    let rs_label: Option<String> = match inp.row_set_id {
+        Some(rsid) => sqlx::query_scalar("SELECT label FROM form_input_row_sets WHERE id = ?")
+            .bind(rsid)
             .fetch_optional(&state.pool)
             .await
-            .unwrap_or(None);
+            .unwrap_or(None),
+        None => None,
+    };
     let ft_name: Option<String> =
-        sqlx::query_scalar("SELECT name FROM classroom_input_form_types WHERE id = ?")
+        sqlx::query_scalar("SELECT name FROM form_input_form_types WHERE id = ?")
             .bind(inp.form_type_id)
             .fetch_optional(&state.pool)
             .await
@@ -557,7 +560,7 @@ async fn view(
         r##"<div class="page-header">
             <h1>{name}</h1>
             <p>
-                <span class="label-badge" style="--label-color:#1A6B5A">{cls_label}</span>
+                <span class="label-badge" style="--label-color:#1A6B5A">{rs_label}</span>
                 {ft_name} — {date}
             </p>
         </div>
@@ -567,17 +570,17 @@ async fn view(
         </div>
 
         <div class="mt-2">
-            <a href="{base}/classroom" class="btn btn-secondary">{back}</a>
+            <a href="{base}/forms" class="btn btn-secondary">{back}</a>
         </div>"##,
         name = inp.name,
-        cls_label = cls_label.as_deref().unwrap_or("?"),
+        rs_label = rs_label.as_deref().unwrap_or("?"),
         ft_name = ft_name.as_deref().unwrap_or("?"),
         back = t.inp_back,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", inp.name),
-        &classroom_nav(base, "inputs", lang),
+        &format!("Forms — {}", inp.name),
+        &forms_nav(base, "inputs", lang),
         &body,
         &state.config,
         lang,
@@ -590,13 +593,13 @@ async fn delete(
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    sqlx::query("DELETE FROM classroom_input_inputs WHERE id = ? AND user_id = ?")
+    sqlx::query("DELETE FROM form_input_inputs WHERE id = ? AND user_id = ?")
         .bind(id)
         .bind(user_id.0)
         .execute(&state.pool)
         .await
         .ok();
-    Redirect::to(&format!("{base}/classroom"))
+    Redirect::to(&format!("{base}/forms"))
 }
 
 /// Simple CSV line parser that handles quoted fields.

@@ -81,7 +81,7 @@ myapps/
 │   │   ├── static/style.css
 │   │   ├── tests/
 │   │   └── src/
-│   ├── myapps-classroom-input/ # ClassroomInput marks & notes recording
+│   ├── myapps-form-input/      # FormInput custom forms with row sets
 │   │   ├── migrations/
 │   │   ├── static/style.css
 │   │   ├── tests/
@@ -173,10 +173,10 @@ After login, the top-level router serves:
   - `/mindflow/actions` — All actions list
   - `POST /mindflow/actions/{id}/toggle` — Toggle action done/pending
   - `POST /mindflow/actions/{id}/delete` — Delete action
-- `/classroom/` — ClassroomInput sub-app (nested router)
-  - `/classroom/` — Input list (all saved inputs)
-  - `/classroom/new` — New input page (select classroom + form type, fill grid)
-  - `POST /classroom/inputs/create` — Save input as CSV
+- `/forms/` — FormInput sub-app (nested router)
+  - `/forms/` — Input list (all saved inputs)
+  - `/forms/new` — New input page (select row set + form type, fill grid)
+  - `POST /forms/inputs/create` — Save input as CSV
   - `/classroom/inputs/{id}` — View input detail (read-only table)
   - `POST /classroom/inputs/{id}/delete` — Delete input
   - `/classroom/classrooms` — Classroom list + create form

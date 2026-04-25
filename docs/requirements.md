@@ -192,7 +192,7 @@ visibility into spending patterns.
 - **Integration test infrastructure** — HTTP-level tests using axum-test with
   in-memory SQLite, covering all apps: auth flows, launcher, settings, invite
   registration, and per-app route/CRUD testing for LeanFin, MindFlow,
-  VoiceToText, and ClassroomInput. A Claude Code agent automates test
+  VoiceToText, and FormInput. A Claude Code agent automates test
   generation for new features. The `/finish-development` command includes a
   frontend test generation step.
 - **Account balances** — fetch and display account balances from Enable Banking
@@ -313,28 +313,29 @@ connections on an interactive mind map.
 - **Local LLM integration** — MindFlow-specific: async auto-categorization,
   action extraction, connection finding.
 
-### ClassroomInput (fourth sub-application)
+### FormInput (fourth sub-application)
 
-ClassroomInput is a mobile-oriented app for recording marks and notes for
-classrooms. Teachers select a classroom and form type, then fill in a
+FormInput is a mobile-oriented app for capturing structured data with custom
+forms. The user picks a row set and a form type, then fills in a
 spreadsheet-like grid that saves data as CSV.
 
 #### Implemented
 
-- **Classroom management** — create and delete classrooms. A classroom has a
-  label (e.g. "1-A") and a list of pupils pasted from the clipboard (one per
-  line, empty lines stripped).
+- **Row set management** — create and delete row sets. A row set has a label
+  (e.g. "1-A") and a list of row identifiers pasted from the clipboard (one
+  per line, empty lines stripped).
 - **Form type management** — create, edit, and delete form types. Each form type
   defines a set of columns with name and type (text, number, or yes/no boolean).
   Columns can be added/removed dynamically in the editor.
-- **Input grid** — select a classroom + form type, name the input, then fill a
-  table with pupils as the frozen left column and one column per form type field.
-  Arrow keys navigate between cells (with wrap-around at row boundaries), Enter
-  moves down. On submit, the grid is serialized as CSV and stored in the database.
-- **Input list and detail** — all inputs are listed with classroom, form type,
+- **Input grid** — select a row set + form type, name the input, then fill a
+  table with row identifiers as the frozen left column and one column per form
+  type field. Arrow keys navigate between cells (with wrap-around at row
+  boundaries), Enter moves down. On submit, the grid is serialized as CSV and
+  stored in the database.
+- **Input list and detail** — all inputs are listed with row set, form type,
   row count, and date. Each input can be viewed as a read-only HTML table or
   deleted.
-- **Seed data** — `cargo run -- seed --user <name>` populates 3 classrooms,
+- **Seed data** — `cargo run -- seed --user <name>` populates 3 row sets,
   4 form types, and 4 sample inputs with realistic data for a given user.
 
 #### Not yet implemented

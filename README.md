@@ -17,7 +17,7 @@ login and launcher.
 | **LeanFin** ($) | [`myapps-leanfin`](crates/myapps-leanfin/) | Personal expense management with bank sync (PSD2 via Enable Banking), manual accounts, labels, auto-labeling rules, balance evolution charts, and expense breakdowns. |
 | **MindFlow** (🧠) | [`myapps-mindflow`](crates/myapps-mindflow/) | Thought capture and mind mapping. Quickly jot down ideas, organise them into categories, visualise connections on a D3-powered map, and turn thoughts into actions. |
 | **VoiceToText** (🎤) | [`myapps-voice-to-text`](crates/myapps-voice-to-text/) | Audio transcription powered by whisper.cpp. Record or upload audio and get text back — all processed locally, no cloud APIs. |
-| **ClassroomInput** (✎) | [`myapps-classroom-input`](crates/myapps-classroom-input/) | Classroom marks and notes recording. Define custom form types, manage classrooms and students, and record structured observations. |
+| **FormInput** (✎) | [`myapps-form-input`](crates/myapps-form-input/) | Custom forms backed by row sets and column-typed inputs. Define form types, manage row sets, and capture spreadsheet-style entries as CSV. |
 | **Notes** (✏️) | [`myapps-notes`](crates/myapps-notes/) | Markdown-based note-taking with live WYSIWYG editing and voice dictation. |
 
 All apps share authentication, database, layout/styling, i18n (EN/ES), and
@@ -59,11 +59,11 @@ hide per-user.
   <img src="docs/screenshots/voice-to-text.png" width="270" alt="VoiceToText – Dashboard" />
 </p>
 
-### ClassroomInput
+### FormInput
 
 <p align="center">
-  <img src="docs/screenshots/classroom-input.png" width="270" alt="ClassroomInput – Inputs" />
-  <img src="docs/screenshots/classroom-classrooms.png" width="270" alt="ClassroomInput – Classrooms" />
+  <img src="docs/screenshots/classroom-input.png" width="270" alt="FormInput – Inputs" />
+  <img src="docs/screenshots/classroom-classrooms.png" width="270" alt="FormInput – Row sets" />
 </p>
 
 ### Notes
@@ -133,7 +133,7 @@ cargo run -- seed --user yourname
 ```
 
 This populates LeanFin with sample transactions and accounts, MindFlow with
-thoughts and categories, and ClassroomInput with classrooms and students.
+thoughts and categories, and FormInput with row sets and form types.
 
 ### 4. Run
 

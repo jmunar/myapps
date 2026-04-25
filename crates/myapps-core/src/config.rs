@@ -253,7 +253,7 @@ mod tests {
         assert!(config.is_app_deployed("leanfin"));
         assert!(config.is_app_deployed("mindflow"));
         assert!(!config.is_app_deployed("voice_to_text"));
-        assert!(!config.is_app_deployed("classroom_input"));
+        assert!(!config.is_app_deployed("form_input"));
     }
 
     #[test]

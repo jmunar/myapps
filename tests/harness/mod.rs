@@ -182,13 +182,13 @@ impl TestApp {
             .await;
     }
 
-    /// Seed full ClassroomInput demo data and log in as the seed user.
-    pub async fn seed_and_login_classroom(&self) {
+    /// Seed full FormInput demo data and log in as the seed user.
+    pub async fn seed_and_login_forms(&self) {
         let user_id = myapps::auth::create_user(&self.pool, "seeduser", "seeduser")
             .await
             .unwrap();
-        let app = myapps::apps::classroom_input::ClassroomInputApp;
-        myapps::apps::classroom_input::services::seed::run(&self.pool, user_id, &app)
+        let app = myapps::apps::form_input::FormInputApp;
+        myapps::apps::form_input::services::seed::run(&self.pool, user_id, &app)
             .await
             .unwrap();
 

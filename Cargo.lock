@@ -2001,8 +2001,8 @@ dependencies = [
  "axum-test",
  "chrono",
  "clap",
- "myapps-classroom-input",
  "myapps-core",
+ "myapps-form-input",
  "myapps-leanfin",
  "myapps-mindflow",
  "myapps-notes",
@@ -2011,21 +2011,6 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
-]
-
-[[package]]
-name = "myapps-classroom-input"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "myapps-core",
- "myapps-test-harness",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2058,6 +2043,21 @@ dependencies = [
  "url",
  "uuid",
  "web-push",
+]
+
+[[package]]
+name = "myapps-form-input"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "myapps-core",
+ "myapps-test-harness",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
