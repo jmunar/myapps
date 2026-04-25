@@ -6,7 +6,9 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::forms_nav;
+use super::{
+    MAX_ROW_SET_LABEL_LEN, MAX_ROW_SET_ROW_COUNT, MAX_ROW_SET_ROWS_BYTES, forms_nav, html_escape,
+};
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -77,7 +79,8 @@ async fn list(
                 </div>
             </div>"##,
             id = rs.id,
-            label = rs.label,
+            label = html_escape(&rs.label),
+            row_preview = html_escape(&row_preview),
         ));
     }
 
@@ -149,17 +152,36 @@ async fn create(
     Form(form): Form<CreateForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let cleaned: String = form
+    let label = form.label.trim();
+    let cleaned_lines: Vec<&str> = form
         .rows
         .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect();
+    let cleaned = cleaned_lines.join("\n");
+
+    // Reject inputs that exceed the storage/UI bounds. The form has the `required`
+    // attribute on both fields so empty submissions never reach this point under
+    // normal use, but a hand-crafted POST could still slip past — bounce it.
+    if label.is_empty()
+        || label.chars().count() > MAX_ROW_SET_LABEL_LEN
+        || cleaned_lines.len() > MAX_ROW_SET_ROW_COUNT
+        || cleaned.len() > MAX_ROW_SET_ROWS_BYTES
+    {
+        tracing::warn!(
+            user_id = user_id.0,
+            label_chars = label.chars().count(),
+            row_count = cleaned_lines.len(),
+            rows_bytes = cleaned.len(),
+            "rejected oversized row-set submission"
+        );
+        return Redirect::to(&format!("{base}/forms/row-sets"));
+    }
 
     sqlx::query("INSERT INTO form_input_row_sets (user_id, label, rows) VALUES (?, ?, ?)")
         .bind(user_id.0)
-        .bind(form.label.trim())
+        .bind(label)
         .bind(&cleaned)
         .execute(&state.pool)
         .await

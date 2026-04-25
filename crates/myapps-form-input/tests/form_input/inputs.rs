@@ -647,3 +647,107 @@ async fn new_input_page_hides_row_set_warning_when_dynamic_form_type_exists() {
     assert!(body.contains(r#"id="row-set-group""#));
     assert!(body.contains(r#"id="add-row-btn""#));
 }
+
+#[tokio::test]
+async fn inputs_list_escapes_html_in_input_name() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'test'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let (ft_id,): (i64,) = sqlx::query_as(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, 'T', '[]', 0) RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO form_input_inputs (user_id, row_set_id, form_type_id, name, csv_data) VALUES (?, NULL, ?, ?, '')",
+    )
+    .bind(user_id)
+    .bind(ft_id)
+    .bind("<img src=x onerror=alert(1)>")
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get("/forms").await.text();
+    assert!(!body.contains("<img src=x onerror=alert(1)>"));
+    assert!(body.contains("&lt;img src=x onerror=alert(1)&gt;"));
+}
+
+#[tokio::test]
+async fn input_view_escapes_html_in_cells_and_headers() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'test'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let (ft_id,): (i64,) = sqlx::query_as(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, 'T', '[{\"name\":\"col\",\"type\":\"text\"}]', 0) RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    let csv = "<b>header</b>\n<script>alert(1)</script>";
+    let (id,): (i64,) = sqlx::query_as(
+        "INSERT INTO form_input_inputs (user_id, row_set_id, form_type_id, name, csv_data) VALUES (?, NULL, ?, 'i', ?) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(ft_id)
+    .bind(csv)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(
+        !body.contains("<b>header</b>"),
+        "header cell must be escaped"
+    );
+    assert!(
+        !body.contains("<script>alert(1)</script>"),
+        "row cell must be escaped"
+    );
+    assert!(body.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+}
+
+#[tokio::test]
+async fn new_input_page_escapes_script_close_in_embedded_json() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'test'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, 'T', '[]', 1)",
+    )
+    .bind(user_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO form_input_row_sets (user_id, label, rows) VALUES (?, ?, ?)")
+        .bind(user_id)
+        .bind("rs")
+        .bind("</script><b>x")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let body = app.server.get("/forms/new").await.text();
+    // A literal </script> inside the embedded JSON would close the surrounding
+    // <script> tag and let the rest of the JSON literal render as HTML.
+    assert!(
+        !body.contains("</script><b>x"),
+        "embedded JSON must escape '</' so the surrounding <script> tag stays open"
+    );
+    assert!(body.contains("<\\/script>"));
+}

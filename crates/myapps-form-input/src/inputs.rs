@@ -8,7 +8,7 @@ use axum::{
 use serde::Deserialize;
 
 use super::form_types::ColumnDef;
-use super::forms_nav;
+use super::{forms_nav, html_escape};
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -130,7 +130,9 @@ async fn list(
                 </td>
             </tr>"##,
             id = inp.id,
-            name = inp.name,
+            name = html_escape(&inp.name),
+            rs_label = html_escape(rs_label),
+            ft_name = html_escape(ft_name),
         ));
     }
 
@@ -263,20 +265,32 @@ async fn new_input_page(
         })
         .collect();
 
-    let rs_json = serde_json::to_string(&row_sets_json).unwrap_or_default();
-    let ft_json = serde_json::to_string(&form_types_json).unwrap_or_default();
+    // `serde_json::to_string` does not escape `<`/`>`/`&`, so a row containing
+    // `</script>` would prematurely close the surrounding inline script. Escape
+    // the only sequence that can do that: a `<` immediately followed by `/`.
+    let rs_json = serde_json::to_string(&row_sets_json)
+        .unwrap_or_default()
+        .replace("</", "<\\/");
+    let ft_json = serde_json::to_string(&form_types_json)
+        .unwrap_or_default()
+        .replace("</", "<\\/");
 
     let mut rs_opts = String::new();
     for rs in &row_sets {
         rs_opts.push_str(&format!(
             r#"<option value="{}">{}</option>"#,
-            rs.id, rs.label
+            rs.id,
+            html_escape(&rs.label)
         ));
     }
 
     let mut ft_opts = String::new();
     for f in &form_types {
-        ft_opts.push_str(&format!(r#"<option value="{}">{}</option>"#, f.id, f.name));
+        ft_opts.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            f.id,
+            html_escape(&f.name)
+        ));
     }
 
     let row_label = t.inp_row;
@@ -734,6 +748,7 @@ async fn view(
                         </span>
                     </div>
                 </th>"##,
+                col = html_escape(col),
                 sort_asc = t.inp_sort_asc,
                 sort_desc = t.inp_sort_desc,
                 filter_ph = t.inp_filter_placeholder,
@@ -746,7 +761,10 @@ async fn view(
         table_html.push_str(&format!(r#"<tr data-original-index="{original_index}">"#));
         for (c, field) in line.iter().enumerate() {
             if c == 0 && highlight_first_col {
-                table_html.push_str(&format!(r#"<td class="ci-pupil-name">{field}</td>"#));
+                table_html.push_str(&format!(
+                    r#"<td class="ci-pupil-name">{field}</td>"#,
+                    field = html_escape(field)
+                ));
             } else {
                 // Editable. Cell type comes from the form-type column at the matching
                 // index. For fixed-row mode the leading column is the row id, so user
@@ -785,6 +803,7 @@ async fn view(
                 } else {
                     table_html.push_str(&format!(
                         r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="{col_type}">{field}</td>"#,
+                        field = html_escape(field),
                     ));
                 }
             }
@@ -805,9 +824,10 @@ async fn view(
     let date = &inp.created_at[..10.min(inp.created_at.len())];
 
     let rs_badge = match rs_label.as_deref() {
-        Some(label) => {
-            format!(r#"<span class="label-badge" style="--label-color:#1A6B5A">{label}</span> "#)
-        }
+        Some(label) => format!(
+            r#"<span class="label-badge" style="--label-color:#1A6B5A">{label}</span> "#,
+            label = html_escape(label)
+        ),
         None => String::new(),
     };
 
@@ -1102,14 +1122,14 @@ async fn view(
             }}
         }})();
         </script>"##,
-        name = inp.name,
-        ft_name = ft_name.as_deref().unwrap_or("?"),
+        name = html_escape(&inp.name),
+        ft_name = html_escape(ft_name.as_deref().unwrap_or("?")),
         back = t.inp_back,
         id = inp.id,
     );
 
     Html(render_page(
-        &format!("Forms — {}", inp.name),
+        &format!("Forms — {}", html_escape(&inp.name)),
         &forms_nav(base, "inputs", lang),
         &body,
         &state.config,
@@ -1170,15 +1190,6 @@ fn parse_link_value(value: &str) -> (&str, &str) {
         Some((u, t)) => (u, t),
         None => (value, ""),
     }
-}
-
-/// HTML-escape a string for use in attribute or text content.
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
 
 /// Simple CSV line parser that handles quoted fields.

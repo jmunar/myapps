@@ -65,6 +65,88 @@ async fn create_row_set() {
 }
 
 #[tokio::test]
+async fn row_sets_page_escapes_html_in_label() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let response = app
+        .server
+        .post("/forms/row-sets/create")
+        .form(&serde_json::json!({
+            "label": "<img src=x onerror=alert(1)>",
+            "rows": "</script><b>row</b>\nplain",
+        }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+
+    let body = app.server.get("/forms/row-sets").await.text();
+    assert!(
+        !body.contains("<img src=x onerror=alert(1)>"),
+        "raw <img onerror> tag must be escaped, not present in rendered HTML"
+    );
+    assert!(
+        body.contains("&lt;img src=x onerror=alert(1)&gt;"),
+        "label must appear escaped"
+    );
+    assert!(
+        !body.contains("</script><b>row</b>"),
+        "raw </script> in row preview must be escaped"
+    );
+}
+
+#[tokio::test]
+async fn create_row_set_rejects_oversized_label() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let huge_label = "X".repeat(1_000);
+    let response = app
+        .server
+        .post("/forms/row-sets/create")
+        .form(&serde_json::json!({
+            "label": huge_label,
+            "rows": "a\nb",
+        }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM form_input_row_sets")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "oversized label must not be inserted");
+}
+
+#[tokio::test]
+async fn create_row_set_rejects_too_many_rows() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let many_rows = (0..6_000)
+        .map(|i| format!("row-{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let response = app
+        .server
+        .post("/forms/row-sets/create")
+        .form(&serde_json::json!({
+            "label": "ok",
+            "rows": many_rows,
+        }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM form_input_row_sets")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "row-set with too many rows must not be inserted");
+}
+
+#[tokio::test]
 async fn delete_row_set() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
     app.seed_and_login(&myapps_form_input::FormInputApp).await;

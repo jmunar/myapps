@@ -15,6 +15,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_cookies::CookieManagerLayer;
 use tower_http::services::ServeDir;
+use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
+use tracing::Level;
 
 /// Shared application state available to all route handlers.
 #[derive(Clone)]
@@ -97,6 +99,16 @@ pub fn build_router(
         .route("/static/apps.css", get(apps_css))
         .nest_service("/static", ServeDir::new("static"))
         .layer(CookieManagerLayer::new())
+        // Per-request tracing. Defaults emit at DEBUG so they vanish under the
+        // standard `info` filter; bump everything to INFO so request/response
+        // pairs are visible by default. Suppress with `RUST_LOG=tower_http=warn`
+        // if a particular deployment is too chatty.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_request(DefaultOnRequest::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .with_state(state)
 }
 

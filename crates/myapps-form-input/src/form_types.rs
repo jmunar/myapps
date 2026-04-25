@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::forms_nav;
+use super::{forms_nav, html_escape};
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -56,7 +56,7 @@ fn render_column_list(cols: &[ColumnDef], lang: Lang) -> String {
         };
         out.push_str(&format!(
             r#"<span class="label-badge" style="--label-color:#3182CE">{name} <small>({type_label})</small></span> "#,
-            name = c.name,
+            name = html_escape(&c.name),
         ));
     }
     out
@@ -113,7 +113,7 @@ async fn list(
                 </div>
             </div>"##,
             id = ft.id,
-            name = ft.name,
+            name = html_escape(&ft.name),
         ));
     }
 
@@ -340,7 +340,7 @@ async fn edit_page(
                 </select>
                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
             </div>"#,
-            name = c.name,
+            name = html_escape(&c.name),
         ));
     }
 
@@ -421,7 +421,7 @@ async fn edit_page(
         }})();
         </script>"##,
         id = ft.id,
-        name = ft.name,
+        name = html_escape(&ft.name),
         edit_title = t.ft_edit_title,
         name_lbl = t.ft_name,
         fixed_rows_lbl = t.ft_fixed_rows,
