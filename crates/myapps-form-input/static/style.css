@@ -148,6 +148,129 @@
     box-shadow: inset 0 0 0 2px var(--accent);
 }
 
+/* Editable cells (view page) — plain text by default, click-to-edit hint on hover */
+.ci-cell-editable {
+    cursor: pointer;
+    padding: 0.4rem 0.5rem;
+}
+
+.ci-cell-editable:hover {
+    background: var(--accent-light);
+}
+
+.ci-cell-editable.ci-cell-editing {
+    padding: 0;
+    cursor: text;
+    background: var(--accent-light);
+}
+
+/* ── Header sort & filter controls ────────────────────────────── */
+.ci-th-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.ci-th-controls {
+    display: flex;
+    gap: 0.15rem;
+    align-items: center;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.ci-sort-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0 0.15rem;
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    line-height: 1;
+    border-radius: 2px;
+}
+
+.ci-sort-btn:hover {
+    color: var(--text);
+}
+
+.ci-sort-btn.ci-sort-active {
+    color: var(--accent);
+    background: var(--accent-light);
+}
+
+.ci-filter-input {
+    flex: 1;
+    min-width: 3rem;
+    padding: 0.1rem 0.25rem;
+    font-size: 0.7rem;
+    font-weight: normal;
+    border: 1px solid var(--border-light);
+    border-radius: 2px;
+    background: var(--bg-card);
+    color: var(--text);
+}
+
+.ci-filter-input.ci-filter-active {
+    border-color: var(--accent);
+    background: var(--accent-light);
+}
+
+/* ── Link cell ────────────────────────────────────────────────── */
+.ci-col-link {
+    min-width: 8rem;
+}
+
+.ci-col-link a {
+    display: inline-block;
+    padding: 0.4rem 0.5rem;
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.ci-link-btn {
+    display: block;
+    width: 100%;
+    height: 2.2rem;
+    padding: 0 0.5rem;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.ci-link-btn:hover {
+    color: var(--accent);
+    background: var(--accent-light);
+}
+
+dialog.ci-link-modal {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--text);
+    padding: 1.25rem;
+    min-width: 20rem;
+    max-width: 90vw;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+dialog.ci-link-modal::backdrop {
+    background: rgba(0, 0, 0, 0.4);
+}
+
+dialog.ci-link-modal h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
+}
+
+dialog.ci-link-modal .form-group {
+    margin-bottom: 0.75rem;
+}
+
 /* ── Mobile overrides ─────────────────────────────────────────── */
 @media (max-width: 640px) {
     /* Override the global mobile table→card transform for the input grid */

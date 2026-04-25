@@ -94,12 +94,15 @@ test.describe("README screenshots", () => {
     await page.goto(`${BASE_URL}/voice`);
     await snap(page, "voice-to-text");
 
-    // ── ClassroomInput ──
-    await page.goto(`${BASE_URL}/classroom`);
-    await snap(page, "classroom-input");
+    // ── FormInput ──
+    await page.goto(`${BASE_URL}/forms`);
+    await snap(page, "form-input-inputs");
 
-    await page.goto(`${BASE_URL}/classroom/classrooms`);
-    await snap(page, "classroom-classrooms");
+    await page.goto(`${BASE_URL}/forms/row-sets`);
+    await snap(page, "form-input-row-sets");
+
+    await page.goto(`${BASE_URL}/forms/form-types`);
+    await snap(page, "form-input-form-types");
 
     // ── Notes ──
     await page.goto(`${BASE_URL}/notes`);

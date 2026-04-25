@@ -1,8 +1,8 @@
-mod classrooms;
 mod form_types;
 pub mod i18n;
 mod inputs;
 pub mod ops;
+mod row_sets;
 pub mod services;
 
 use axum::Router;
@@ -11,39 +11,39 @@ use myapps_core::layout::NavItem;
 use myapps_core::registry::{App, AppInfo};
 use myapps_core::routes::AppState;
 
-/// ClassroomInput sub-application router.
-/// All routes are relative — the top-level router nests this under `/classroom`.
+/// FormInput sub-application router.
+/// All routes are relative — the top-level router nests this under `/forms`.
 pub fn router() -> Router<AppState> {
     Router::new()
-        .merge(classrooms::routes())
+        .merge(row_sets::routes())
         .merge(form_types::routes())
         .merge(inputs::routes())
 }
 
-pub fn classroom_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
+pub fn forms_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
     let ct = myapps_core::i18n::t(lang);
     vec![
         NavItem {
-            href: format!("{base}/classroom"),
-            label: "Classroom".to_string(),
+            href: format!("{base}/forms"),
+            label: "Forms".to_string(),
             active: false,
             right: false,
         },
         NavItem {
-            href: format!("{base}/classroom"),
+            href: format!("{base}/forms"),
             label: t.inputs.to_string(),
             active: active == "inputs",
             right: false,
         },
         NavItem {
-            href: format!("{base}/classroom/classrooms"),
-            label: t.classrooms.to_string(),
-            active: active == "classrooms",
+            href: format!("{base}/forms/row-sets"),
+            label: t.row_sets.to_string(),
+            active: active == "row_sets",
             right: false,
         },
         NavItem {
-            href: format!("{base}/classroom/form-types"),
+            href: format!("{base}/forms/form-types"),
             label: t.form_types.to_string(),
             active: active == "form_types",
             right: false,
@@ -57,23 +57,25 @@ pub fn classroom_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     ]
 }
 
-pub struct ClassroomInputApp;
+pub struct FormInputApp;
 
-impl App for ClassroomInputApp {
+impl App for FormInputApp {
     fn info(&self) -> AppInfo {
         AppInfo {
-            key: "classroom_input",
-            name: "ClassroomInput",
-            description: "Record marks &amp; notes for classrooms",
+            key: "form_input",
+            name: "Forms",
+            description: "Record structured data with custom forms",
             icon: "\u{270E}",
-            path: "/classroom",
+            path: "/forms",
         }
     }
 
     fn description(&self, lang: myapps_core::i18n::Lang) -> &'static str {
         match lang {
-            myapps_core::i18n::Lang::En => "Record marks &amp; notes for classrooms",
-            myapps_core::i18n::Lang::Es => "Registro de notas y observaciones del aula",
+            myapps_core::i18n::Lang::En => "Record structured data with custom forms",
+            myapps_core::i18n::Lang::Es => {
+                "Registra datos estructurados con formularios personalizados"
+            }
         }
     }
 

@@ -192,7 +192,7 @@ visibility into spending patterns.
 - **Integration test infrastructure** — HTTP-level tests using axum-test with
   in-memory SQLite, covering all apps: auth flows, launcher, settings, invite
   registration, and per-app route/CRUD testing for LeanFin, MindFlow,
-  VoiceToText, and ClassroomInput. A Claude Code agent automates test
+  VoiceToText, and FormInput. A Claude Code agent automates test
   generation for new features. The `/finish-development` command includes a
   frontend test generation step.
 - **Account balances** — fetch and display account balances from Enable Banking
@@ -313,32 +313,46 @@ connections on an interactive mind map.
 - **Local LLM integration** — MindFlow-specific: async auto-categorization,
   action extraction, connection finding.
 
-### ClassroomInput (fourth sub-application)
+### FormInput (fourth sub-application)
 
-ClassroomInput is a mobile-oriented app for recording marks and notes for
-classrooms. Teachers select a classroom and form type, then fill in a
-spreadsheet-like grid that saves data as CSV.
+FormInput is a mobile-oriented app for capturing structured data with custom
+forms. The user picks a form type (and optionally a row set, depending on the
+form type's mode), then fills in a spreadsheet-like grid that saves data as CSV.
 
 #### Implemented
 
-- **Classroom management** — create and delete classrooms. A classroom has a
-  label (e.g. "1-A") and a list of pupils pasted from the clipboard (one per
-  line, empty lines stripped).
+- **Row set management** — create and delete row sets. A row set has a label
+  (e.g. "1-A") and a list of row identifiers pasted from the clipboard (one
+  per line, empty lines stripped).
 - **Form type management** — create, edit, and delete form types. Each form type
-  defines a set of columns with name and type (text, number, or yes/no boolean).
-  Columns can be added/removed dynamically in the editor.
-- **Input grid** — select a classroom + form type, name the input, then fill a
-  table with pupils as the frozen left column and one column per form type field.
-  Arrow keys navigate between cells (with wrap-around at row boundaries), Enter
-  moves down. On submit, the grid is serialized as CSV and stored in the database.
-- **Input list and detail** — all inputs are listed with classroom, form type,
-  row count, and date. Each input can be viewed as a read-only HTML table or
+  defines a set of columns with name and type (text, number, yes/no boolean, or
+  link). A form type also has a `fixed_rows` flag: when on, every input picks
+  a row set and gets one row per item; when off, the user adds rows freely.
+- **Link column type** — link cells open a small modal for URL + optional
+  display text (default "link"/"enlace"). The view renders an anchor; storage
+  is a single CSV cell formatted as `url|text`.
+- **Input grid** — select a form type (and a row set when the form type is
+  fixed-row), name the input, then fill a table. In fixed-row mode the row
+  identifiers form a frozen left column; in dynamic mode the user adds and
+  removes rows freely. On submit, the grid is serialized as CSV and stored in
+  the database.
+- **Input editing in place** — the view page reuses the input grid layout.
+  Double-click any data cell to edit it; one cell save is persisted via AJAX
+  (`POST /forms/inputs/{id}/cell`). The row identifier in fixed-row mode stays
+  read-only.
+- **Per-column sort and filter on the view** — every column header carries
+  small sort buttons (A→Z, Z→A) and a filter input. Sort is exclusive across
+  columns, filters stack. Numeric columns sort by parsed value with empty
+  cells last. Sorting and filtering are presentation-only — saves still hit
+  the underlying CSV row regardless of the visible order.
+- **Input list and detail** — all inputs are listed with row set, form type,
+  row count, and date. Each input can be viewed (and edited cell by cell) or
   deleted.
-- **Seed data** — `cargo run -- seed --user <name>` populates 3 classrooms,
-  4 form types, and 4 sample inputs with realistic data for a given user.
+- **Seed data** — `cargo run -- seed --user <name>` populates row sets, form
+  types (mix of fixed and dynamic), and sample inputs with realistic data
+  for a given user.
 
 #### Not yet implemented
-- **Input editing** — re-open a saved input for modification.
 - **CSV export** — download an input as a CSV file.
 - **Bulk operations** — delete multiple inputs at once.
 

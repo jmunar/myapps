@@ -57,10 +57,10 @@ crates/myapps-voice-to-text/tests/
   voice_to_text/
     dashboard.rs              # jobs dashboard, empty state
     jobs.rs                   # new form, job detail, delete, list partial
-crates/myapps-classroom-input/tests/
+crates/myapps-form-input/tests/
   integration.rs
-  classroom_input/
-    classrooms.rs             # classroom CRUD
+  form_input/
+    row_sets.rs               # row set CRUD
     form_types.rs             # form type CRUD + column definitions
     inputs.rs                 # input list, new page, detail view, create, delete
 ```
@@ -215,20 +215,20 @@ app.server
 - `POST /voice/jobs/{job_id}/delete` → HTMX partial (updated table rows)
 - `POST /voice/jobs/{job_id}/retry` — form: model → redirect to /voice
 
-#### ClassroomInput (`/classroom`)
-- `GET /classroom` — inputs list page
-- `GET /classroom/new` — new input page (classroom/form-type dropdowns + JS grid)
-- `POST /classroom/inputs/create` — form: classroom_id, form_type_id, name, csv_data → redirect 303
-- `GET /classroom/inputs/{id}` — input detail (CSV rendered as table)
-- `POST /classroom/inputs/{id}/delete` → redirect 303
-- `GET /classroom/classrooms` — classrooms list + create form
-- `POST /classroom/classrooms/create` — form: label, pupils → redirect 303
-- `POST /classroom/classrooms/{id}/delete` → redirect 303
-- `GET /classroom/form-types` — form types list + create form
-- `POST /classroom/form-types/create` — form: name, col_name[], col_type[] → redirect 303
-- `GET /classroom/form-types/{id}/edit` — edit form type page
-- `POST /classroom/form-types/{id}/edit` — form: name, col_name[], col_type[] → redirect 303
-- `POST /classroom/form-types/{id}/delete` → redirect 303
+#### FormInput (`/forms`)
+- `GET /forms` — inputs list page
+- `GET /forms/new` — new input page (row-set/form-type dropdowns + JS grid)
+- `POST /forms/inputs/create` — form: row_set_id, form_type_id, name, csv_data → redirect 303
+- `GET /forms/inputs/{id}` — input detail (CSV rendered as table)
+- `POST /forms/inputs/{id}/delete` → redirect 303
+- `GET /forms/row-sets` — row sets list + create form
+- `POST /forms/row-sets/create` — form: label, rows → redirect 303
+- `POST /forms/row-sets/{id}/delete` → redirect 303
+- `GET /forms/form-types` — form types list + create form
+- `POST /forms/form-types/create` — form: name, col_name[], col_type[] → redirect 303
+- `GET /forms/form-types/{id}/edit` — edit form type page
+- `POST /forms/form-types/{id}/edit` — form: name, col_name[], col_type[] → redirect 303
+- `POST /forms/form-types/{id}/delete` → redirect 303
 
 ## Seed Data Summary
 
@@ -252,9 +252,9 @@ app.server
 - 2 comments on "Q1 project plan" thought
 - 4 actions: high/medium/low priority, some with due dates
 
-### ClassroomInput (`seed_and_login(&ClassroomInputApp)`)
+### FormInput (`seed_and_login(&FormInputApp)`)
 - User: seeduser/seeduser
-- 3 classrooms: 1-A (15 pupils), 1-B (14 pupils), 2-A (12 pupils)
+- 3 row sets: 1-A (15 rows), 1-B (14 rows), 2-A (12 rows)
 - 4 form types: Weekly quiz, Attendance, Reading assessment, Behaviour report
 - 4 inputs: Week 10 quiz, Week 11 quiz, Attendance Mon 10 Mar, Reading assessment March
 

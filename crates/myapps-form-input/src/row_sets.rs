@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use super::classroom_nav;
+use super::forms_nav;
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -14,17 +14,17 @@ use myapps_core::routes::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/classrooms", get(list))
-        .route("/classrooms/create", post(create))
-        .route("/classrooms/{id}/delete", post(delete))
+        .route("/row-sets", get(list))
+        .route("/row-sets/create", post(create))
+        .route("/row-sets/{id}/delete", post(delete))
 }
 
 #[derive(sqlx::FromRow)]
 #[allow(dead_code)]
-struct ClassroomRow {
+struct RowSetRow {
     id: i64,
     label: String,
-    pupils: String,
+    rows: String,
 }
 
 async fn list(
@@ -35,8 +35,8 @@ async fn list(
     let base = &state.config.base_path;
     let t = super::i18n::t(lang);
 
-    let classrooms: Vec<ClassroomRow> = sqlx::query_as(
-        "SELECT id, label, pupils FROM classroom_input_classrooms WHERE user_id = ? ORDER BY label ASC",
+    let row_sets: Vec<RowSetRow> = sqlx::query_as(
+        "SELECT id, label, rows FROM form_input_row_sets WHERE user_id = ? ORDER BY label ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -47,44 +47,44 @@ async fn list(
     });
 
     let delete_label = t.inp_delete;
-    let delete_confirm = t.cls_delete_confirm;
-    let pupils_count_label = t.cls_pupils_count;
+    let delete_confirm = t.rs_delete_confirm;
+    let rows_count_label = t.rs_rows_count;
 
     let mut items = String::new();
-    for c in &classrooms {
-        let pupil_count = c.pupils.lines().filter(|l| !l.trim().is_empty()).count();
-        let pupil_preview: String = c
-            .pupils
+    for rs in &row_sets {
+        let row_count = rs.rows.lines().filter(|l| !l.trim().is_empty()).count();
+        let row_preview: String = rs
+            .rows
             .lines()
             .filter(|l| !l.trim().is_empty())
             .take(5)
             .collect::<Vec<_>>()
             .join(", ");
-        let ellipsis = if pupil_count > 5 { ", …" } else { "" };
+        let ellipsis = if row_count > 5 { ", …" } else { "" };
 
         items.push_str(&format!(
-            r##"<div class="label-item" id="classroom-{id}">
+            r##"<div class="label-item" id="row-set-{id}">
                 <div class="label-item-info">
                     <span class="label-badge" style="--label-color:#1A6B5A">{label}</span>
-                    <span class="text-secondary text-sm">{pupil_count} {pupils_count_label}</span>
-                    <span class="text-secondary text-sm">{pupil_preview}{ellipsis}</span>
+                    <span class="text-secondary text-sm">{row_count} {rows_count_label}</span>
+                    <span class="text-secondary text-sm">{row_preview}{ellipsis}</span>
                 </div>
                 <div class="label-item-actions">
-                    <form method="POST" action="{base}/classroom/classrooms/{id}/delete" style="display:inline"
+                    <form method="POST" action="{base}/forms/row-sets/{id}/delete" style="display:inline"
                           onsubmit="return confirm('{delete_confirm}')">
                         <button class="btn-icon btn-icon-danger">{delete_label}</button>
                     </form>
                 </div>
             </div>"##,
-            id = c.id,
-            label = c.label,
+            id = rs.id,
+            label = rs.label,
         ));
     }
 
     if items.is_empty() {
         items = format!(
             r#"<div class="empty-state"><p>{}</p></div>"#,
-            t.cls_no_classrooms
+            t.rs_no_row_sets
         );
     }
 
@@ -95,42 +95,42 @@ async fn list(
         </div>
 
         <div class="card" style="max-width:40rem;">
-            <div class="card-header"><h2>{your_classrooms}</h2></div>
+            <div class="card-header"><h2>{your_row_sets}</h2></div>
             <div class="card-body">
                 <div class="label-list">{items}</div>
             </div>
         </div>
 
         <div class="card mt-2" style="max-width:40rem;">
-            <div class="card-header"><h2>{add_classroom}</h2></div>
+            <div class="card-header"><h2>{add_row_set}</h2></div>
             <div class="card-body">
-                <form method="POST" action="{base}/classroom/classrooms/create">
+                <form method="POST" action="{base}/forms/row-sets/create">
                     <div class="form-group">
                         <label for="label">{label_lbl}</label>
                         <input type="text" id="label" name="label" required placeholder="{placeholder}" style="max-width:10rem">
                     </div>
                     <div class="form-group">
-                        <label for="pupils">{pupils_lbl}</label>
-                        <textarea id="pupils" name="pupils" rows="10" required
-                                  placeholder="María García&#10;Pedro López&#10;Ana Martínez"></textarea>
+                        <label for="rows">{rows_lbl}</label>
+                        <textarea id="rows" name="rows" rows="10" required
+                                  placeholder="Item one&#10;Item two&#10;Item three"></textarea>
                     </div>
                     <button type="submit">{create_btn}</button>
                 </form>
             </div>
         </div>"##,
-        title = t.cls_title,
-        subtitle = t.cls_subtitle,
-        your_classrooms = t.cls_your_classrooms,
-        add_classroom = t.cls_add,
-        label_lbl = t.cls_label,
-        pupils_lbl = t.cls_pupils,
-        placeholder = t.cls_pupils_hint,
-        create_btn = t.cls_create_btn,
+        title = t.rs_title,
+        subtitle = t.rs_subtitle,
+        your_row_sets = t.rs_your_row_sets,
+        add_row_set = t.rs_add,
+        label_lbl = t.rs_label,
+        rows_lbl = t.rs_rows,
+        placeholder = t.rs_label_hint,
+        create_btn = t.rs_create_btn,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.classrooms),
-        &classroom_nav(base, "classrooms", lang),
+        &format!("Forms — {}", t.row_sets),
+        &forms_nav(base, "row_sets", lang),
         &body,
         &state.config,
         lang,
@@ -140,7 +140,7 @@ async fn list(
 #[derive(Deserialize)]
 struct CreateForm {
     label: String,
-    pupils: String,
+    rows: String,
 }
 
 async fn create(
@@ -149,23 +149,22 @@ async fn create(
     Form(form): Form<CreateForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    // Clean up pupils: remove empty lines, trim whitespace
     let cleaned: String = form
-        .pupils
+        .rows
         .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
 
-    sqlx::query("INSERT INTO classroom_input_classrooms (user_id, label, pupils) VALUES (?, ?, ?)")
+    sqlx::query("INSERT INTO form_input_row_sets (user_id, label, rows) VALUES (?, ?, ?)")
         .bind(user_id.0)
         .bind(form.label.trim())
         .bind(&cleaned)
         .execute(&state.pool)
         .await
         .ok();
-    Redirect::to(&format!("{base}/classroom/classrooms"))
+    Redirect::to(&format!("{base}/forms/row-sets"))
 }
 
 async fn delete(
@@ -174,8 +173,8 @@ async fn delete(
     Path(id): Path<i64>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    super::ops::delete_classroom(&state.pool, user_id.0, id)
+    super::ops::delete_row_set(&state.pool, user_id.0, id)
         .await
         .ok();
-    Redirect::to(&format!("{base}/classroom/classrooms"))
+    Redirect::to(&format!("{base}/forms/row-sets"))
 }

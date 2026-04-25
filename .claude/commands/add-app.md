@@ -55,11 +55,11 @@ serde_json.workspace = true
   - `dispatch()` — delegate to `ops::dispatch()`
   - `seed()` — delegate to `services::seed::run()` (wrap in `Some(Box::pin(...))`)
 
-Use `crates/myapps-classroom-input/src/lib.rs` as a reference for the exact
+Use `crates/myapps-form-input/src/lib.rs` as a reference for the exact
 trait method signatures.
 
 ### `src/i18n.rs`
-Follow the pattern in `crates/myapps-classroom-input/src/i18n.rs`:
+Follow the pattern in `crates/myapps-form-input/src/i18n.rs`:
 - `pub struct Translations` with `&'static str` fields for every user-facing string.
 - `const EN: Translations` and `const ES: Translations` — both must define
   every field (compile-time enforced).
@@ -69,7 +69,7 @@ Start with a minimal set of strings (title, subtitle, nav label) and expand as
 features are added.
 
 ### `src/ops.rs`
-Follow the pattern in `crates/myapps-classroom-input/src/ops.rs`:
+Follow the pattern in `crates/myapps-form-input/src/ops.rs`:
 - Reusable action functions (called from both handlers and the command bar).
 - `pub fn commands() -> Vec<CommandAction>` — start empty (`vec![]`).
 - `pub async fn dispatch(...)` — start with a catch-all error.

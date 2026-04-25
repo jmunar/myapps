@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::classroom_nav;
+use super::forms_nav;
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -34,6 +34,7 @@ struct FormTypeRow {
     id: i64,
     name: String,
     columns_json: String,
+    fixed_rows: bool,
 }
 
 fn parse_columns(json: &str) -> Vec<ColumnDef> {
@@ -50,6 +51,7 @@ fn render_column_list(cols: &[ColumnDef], lang: Lang) -> String {
         let type_label = match c.col_type.as_str() {
             "number" => t.ft_col_number,
             "bool" => t.ft_col_bool,
+            "link" => t.ft_col_link,
             _ => t.ft_col_text,
         };
         out.push_str(&format!(
@@ -69,7 +71,7 @@ async fn list(
     let t = super::i18n::t(lang);
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE user_id = ? ORDER BY name ASC",
+        "SELECT id, name, columns_json, fixed_rows FROM form_input_form_types WHERE user_id = ? ORDER BY name ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -87,16 +89,24 @@ async fn list(
     for ft in &form_types {
         let cols = parse_columns(&ft.columns_json);
         let col_html = render_column_list(&cols, lang);
+        let (mode_label, mode_color) = if ft.fixed_rows {
+            (t.ft_badge_fixed, "#1A6B5A")
+        } else {
+            (t.ft_badge_dynamic, "#9333EA")
+        };
 
         items.push_str(&format!(
             r##"<div class="label-item" id="formtype-{id}">
                 <div class="label-item-info" style="flex-direction:column;align-items:flex-start;gap:0.25rem">
                     <strong>{name}</strong>
-                    <div>{col_html}</div>
+                    <div>
+                        <span class="label-badge" style="--label-color:{mode_color}">{mode_label}</span>
+                        {col_html}
+                    </div>
                 </div>
                 <div class="label-item-actions">
-                    <a href="{base}/classroom/form-types/{id}/edit" class="btn-icon">{edit_label}</a>
-                    <form method="POST" action="{base}/classroom/form-types/{id}/delete" style="display:inline"
+                    <a href="{base}/forms/form-types/{id}/edit" class="btn-icon">{edit_label}</a>
+                    <form method="POST" action="{base}/forms/form-types/{id}/delete" style="display:inline"
                           onsubmit="return confirm('{delete_confirm}')">
                         <button class="btn-icon btn-icon-danger">{delete_label}</button>
                     </form>
@@ -127,20 +137,28 @@ async fn list(
         <div class="card mt-2" style="max-width:40rem;">
             <div class="card-header"><h2>{create_heading}</h2></div>
             <div class="card-body">
-                <form method="POST" action="{base}/classroom/form-types/create">
+                <form method="POST" action="{base}/forms/form-types/create" id="ft-create-form">
                     <div class="form-group">
                         <label for="name">{name_lbl}</label>
                         <input type="text" id="name" name="name" required placeholder="e.g. Weekly quiz">
                     </div>
                     <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:0.5rem;font-weight:normal">
+                            <input type="checkbox" name="fixed_rows" value="1">
+                            {fixed_rows_lbl}
+                        </label>
+                        <small class="text-secondary">{fixed_rows_hint}</small>
+                    </div>
+                    <div class="form-group">
                         <label>{columns_lbl}</label>
                         <div id="columns-editor" class="ci-columns-editor">
                             <div class="ci-column-row">
-                                <input type="text" name="col_name[]" placeholder="{col_name_ph}" required>
-                                <select name="col_type[]">
+                                <input type="text" data-col-name placeholder="{col_name_ph}" required>
+                                <select data-col-type>
                                     <option value="text">{col_text}</option>
                                     <option value="number">{col_number}</option>
                                     <option value="bool">{col_bool}</option>
+                                    <option value="link">{col_link}</option>
                                 </select>
                                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
                             </div>
@@ -148,6 +166,7 @@ async fn list(
                         <button type="button" class="btn btn-secondary btn-sm mt-1"
                                 onclick="addColumnRow(document.getElementById('columns-editor'))">{add_column}</button>
                     </div>
+                    <input type="hidden" name="columns" id="ft-create-columns">
                     <button type="submit" class="mt-1">{create_btn}</button>
                 </form>
             </div>
@@ -157,29 +176,52 @@ async fn list(
         function addColumnRow(container) {{
             var row = document.createElement('div');
             row.className = 'ci-column-row';
-            row.innerHTML = '<input type="text" name="col_name[]" placeholder="{col_name_ph}" required>'
-                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>'
+            row.innerHTML = '<input type="text" data-col-name placeholder="{col_name_ph}" required>'
+                + '<select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
         }}
+        function serializeColumns(editorEl) {{
+            var rows = editorEl.querySelectorAll('.ci-column-row');
+            var out = [];
+            rows.forEach(function(row) {{
+                var nameEl = row.querySelector('[data-col-name]');
+                var typeEl = row.querySelector('[data-col-type]');
+                var name = nameEl ? nameEl.value.trim() : '';
+                if (!name) return;
+                out.push({{ name: name, type: typeEl ? typeEl.value : 'text' }});
+            }});
+            return JSON.stringify(out);
+        }}
+        (function() {{
+            var form = document.getElementById('ft-create-form');
+            if (!form) return;
+            form.addEventListener('submit', function() {{
+                document.getElementById('ft-create-columns').value =
+                    serializeColumns(document.getElementById('columns-editor'));
+            }});
+        }})();
         </script>"##,
         title = t.ft_title,
         subtitle = t.ft_subtitle,
         your_types = t.ft_your_types,
         create_heading = t.ft_create,
         name_lbl = t.ft_name,
+        fixed_rows_lbl = t.ft_fixed_rows,
+        fixed_rows_hint = t.ft_fixed_rows_hint,
         columns_lbl = t.ft_columns,
         col_name_ph = t.ft_col_name,
         col_text = t.ft_col_text,
         col_number = t.ft_col_number,
         col_bool = t.ft_col_bool,
+        col_link = t.ft_col_link,
         add_column = t.ft_add_column,
         create_btn = t.ft_create_btn,
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.form_types),
-        &classroom_nav(base, "form_types", lang),
+        &format!("Forms — {}", t.form_types),
+        &forms_nav(base, "form_types", lang),
         &body,
         &state.config,
         lang,
@@ -189,10 +231,11 @@ async fn list(
 #[derive(Deserialize)]
 struct CreateForm {
     name: String,
-    #[serde(rename = "col_name[]")]
-    col_name: Vec<String>,
-    #[serde(rename = "col_type[]")]
-    col_type: Vec<String>,
+    /// JSON-encoded `Vec<ColumnDef>` populated by the page's submit handler.
+    /// Stored as one field rather than repeated `col_name[]`/`col_type[]` keys
+    /// so we sidestep `serde_urlencoded`, which can't deserialize repeated keys.
+    columns: String,
+    fixed_rows: Option<String>,
 }
 
 async fn create(
@@ -201,28 +244,29 @@ async fn create(
     Form(form): Form<CreateForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let columns: Vec<ColumnDef> = form
-        .col_name
-        .iter()
-        .zip(form.col_type.iter())
-        .filter(|(n, _)| !n.trim().is_empty())
-        .map(|(n, t)| ColumnDef {
-            name: n.trim().to_string(),
-            col_type: t.clone(),
+    let columns: Vec<ColumnDef> = serde_json::from_str::<Vec<ColumnDef>>(&form.columns)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| !c.name.trim().is_empty())
+        .map(|c| ColumnDef {
+            name: c.name.trim().to_string(),
+            col_type: c.col_type,
         })
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
+    let fixed_rows = form.fixed_rows.is_some();
 
     sqlx::query(
-        "INSERT INTO classroom_input_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, ?)",
     )
     .bind(user_id.0)
     .bind(form.name.trim())
     .bind(&json)
+    .bind(fixed_rows)
     .execute(&state.pool)
     .await
     .ok();
-    Redirect::to(&format!("{base}/classroom/form-types"))
+    Redirect::to(&format!("{base}/forms/form-types"))
 }
 
 async fn edit_page(
@@ -235,7 +279,7 @@ async fn edit_page(
     let t = super::i18n::t(lang);
 
     let ft: Option<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM classroom_input_form_types WHERE id = ? AND user_id = ?",
+        "SELECT id, name, columns_json, fixed_rows FROM form_input_form_types WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id.0)
@@ -245,8 +289,8 @@ async fn edit_page(
 
     let Some(ft) = ft else {
         return Html(render_page(
-            "Classroom — Not Found",
-            &classroom_nav(base, "form_types", lang),
+            "Forms — Not Found",
+            &forms_nav(base, "form_types", lang),
             &format!(
                 r#"<div class="empty-state"><p>{}</p></div>"#,
                 t.ft_not_found
@@ -262,6 +306,7 @@ async fn edit_page(
     let col_bool = t.ft_col_bool;
     let col_name_ph = t.ft_col_name;
 
+    let col_link = t.ft_col_link;
     let mut col_rows = String::new();
     for c in &cols {
         let sel_text = if c.col_type == "text" {
@@ -279,13 +324,19 @@ async fn edit_page(
         } else {
             ""
         };
+        let sel_link = if c.col_type == "link" {
+            " selected"
+        } else {
+            ""
+        };
         col_rows.push_str(&format!(
             r#"<div class="ci-column-row">
-                <input type="text" name="col_name[]" value="{name}" required>
-                <select name="col_type[]">
+                <input type="text" data-col-name value="{name}" required>
+                <select data-col-type>
                     <option value="text"{sel_text}>{col_text}</option>
                     <option value="number"{sel_num}>{col_number}</option>
                     <option value="bool"{sel_bool}>{col_bool}</option>
+                    <option value="link"{sel_link}>{col_link}</option>
                 </select>
                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
             </div>"#,
@@ -296,8 +347,8 @@ async fn edit_page(
     if col_rows.is_empty() {
         col_rows = format!(
             r#"<div class="ci-column-row">
-            <input type="text" name="col_name[]" placeholder="{col_name_ph}" required>
-            <select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>
+            <input type="text" data-col-name placeholder="{col_name_ph}" required>
+            <select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>
             <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
         </div>"#
         );
@@ -310,10 +361,17 @@ async fn edit_page(
 
         <div class="card" style="max-width:40rem;">
             <div class="card-body">
-                <form method="POST" action="{base}/classroom/form-types/{id}/edit">
+                <form method="POST" action="{base}/forms/form-types/{id}/edit" id="ft-edit-form">
                     <div class="form-group">
                         <label for="name">{name_lbl}</label>
                         <input type="text" id="name" name="name" value="{name}" required>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:0.5rem;font-weight:normal">
+                            <input type="checkbox" name="fixed_rows" value="1"{fixed_rows_checked}>
+                            {fixed_rows_lbl}
+                        </label>
+                        <small class="text-secondary">{fixed_rows_hint}</small>
                     </div>
                     <div class="form-group">
                         <label>{columns_lbl}</label>
@@ -323,9 +381,10 @@ async fn edit_page(
                         <button type="button" class="btn btn-secondary btn-sm mt-1"
                                 onclick="addColumnRow(document.getElementById('columns-editor'))">{add_column}</button>
                     </div>
+                    <input type="hidden" name="columns" id="ft-edit-columns">
                     <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
                         <button type="submit" class="btn btn-primary">{save_btn}</button>
-                        <a href="{base}/classroom/form-types" class="btn btn-secondary">{cancel_btn}</a>
+                        <a href="{base}/forms/form-types" class="btn btn-secondary">{cancel_btn}</a>
                     </div>
                 </form>
             </div>
@@ -335,16 +394,39 @@ async fn edit_page(
         function addColumnRow(container) {{
             var row = document.createElement('div');
             row.className = 'ci-column-row';
-            row.innerHTML = '<input type="text" name="col_name[]" placeholder="{col_name_ph}" required>'
-                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>'
+            row.innerHTML = '<input type="text" data-col-name placeholder="{col_name_ph}" required>'
+                + '<select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
         }}
+        function serializeColumns(editorEl) {{
+            var rows = editorEl.querySelectorAll('.ci-column-row');
+            var out = [];
+            rows.forEach(function(row) {{
+                var nameEl = row.querySelector('[data-col-name]');
+                var typeEl = row.querySelector('[data-col-type]');
+                var name = nameEl ? nameEl.value.trim() : '';
+                if (!name) return;
+                out.push({{ name: name, type: typeEl ? typeEl.value : 'text' }});
+            }});
+            return JSON.stringify(out);
+        }}
+        (function() {{
+            var form = document.getElementById('ft-edit-form');
+            if (!form) return;
+            form.addEventListener('submit', function() {{
+                document.getElementById('ft-edit-columns').value =
+                    serializeColumns(document.getElementById('columns-editor'));
+            }});
+        }})();
         </script>"##,
         id = ft.id,
         name = ft.name,
         edit_title = t.ft_edit_title,
         name_lbl = t.ft_name,
+        fixed_rows_lbl = t.ft_fixed_rows,
+        fixed_rows_hint = t.ft_fixed_rows_hint,
+        fixed_rows_checked = if ft.fixed_rows { " checked" } else { "" },
         columns_lbl = t.ft_columns,
         add_column = t.ft_add_column,
         save_btn = t.ft_save,
@@ -352,8 +434,8 @@ async fn edit_page(
     );
 
     Html(render_page(
-        &format!("Classroom — {}", t.ft_edit_title),
-        &classroom_nav(base, "form_types", lang),
+        &format!("Forms — {}", t.ft_edit_title),
+        &forms_nav(base, "form_types", lang),
         &body,
         &state.config,
         lang,
@@ -363,10 +445,8 @@ async fn edit_page(
 #[derive(Deserialize)]
 struct EditForm {
     name: String,
-    #[serde(rename = "col_name[]")]
-    col_name: Vec<String>,
-    #[serde(rename = "col_type[]")]
-    col_type: Vec<String>,
+    columns: String,
+    fixed_rows: Option<String>,
 }
 
 async fn edit(
@@ -376,29 +456,30 @@ async fn edit(
     Form(form): Form<EditForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let columns: Vec<ColumnDef> = form
-        .col_name
-        .iter()
-        .zip(form.col_type.iter())
-        .filter(|(n, _)| !n.trim().is_empty())
-        .map(|(n, t)| ColumnDef {
-            name: n.trim().to_string(),
-            col_type: t.clone(),
+    let columns: Vec<ColumnDef> = serde_json::from_str::<Vec<ColumnDef>>(&form.columns)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| !c.name.trim().is_empty())
+        .map(|c| ColumnDef {
+            name: c.name.trim().to_string(),
+            col_type: c.col_type,
         })
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
+    let fixed_rows = form.fixed_rows.is_some();
 
     sqlx::query(
-        "UPDATE classroom_input_form_types SET name = ?, columns_json = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        "UPDATE form_input_form_types SET name = ?, columns_json = ?, fixed_rows = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
     )
     .bind(form.name.trim())
     .bind(&json)
+    .bind(fixed_rows)
     .bind(id)
     .bind(user_id.0)
     .execute(&state.pool)
     .await
     .ok();
-    Redirect::to(&format!("{base}/classroom/form-types"))
+    Redirect::to(&format!("{base}/forms/form-types"))
 }
 
 async fn delete(
@@ -410,5 +491,5 @@ async fn delete(
     super::ops::delete_form_type(&state.pool, user_id.0, id)
         .await
         .ok();
-    Redirect::to(&format!("{base}/classroom/form-types"))
+    Redirect::to(&format!("{base}/forms/form-types"))
 }

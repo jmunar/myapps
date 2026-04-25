@@ -77,7 +77,7 @@ const SQLITE_DENY_CODE: c_int = 1;
 struct AuthorizerCtx {
     /// e.g. `"leanfin_"`
     own_prefix: String,
-    /// e.g. `["mindflow_", "voice_to_text_", "classroom_input_"]`
+    /// e.g. `["mindflow_", "voice_to_text_", "form_input_"]`
     other_prefixes: Vec<String>,
 }
 

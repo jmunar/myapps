@@ -159,7 +159,7 @@ async fn hiding_all_apps_shows_empty_state() {
         "leanfin",
         "mindflow",
         "voice_to_text",
-        "classroom_input",
+        "form_input",
         "notes",
     ] {
         app.server
@@ -257,7 +257,7 @@ async fn deploy_apps_none_shows_all_apps_in_launcher() {
     assert!(body.contains("LeanFin"));
     assert!(body.contains("MindFlow"));
     assert!(body.contains("VoiceToText"));
-    assert!(body.contains("ClassroomInput"));
+    assert!(body.contains("Forms"));
 }
 
 #[tokio::test]
@@ -270,7 +270,7 @@ async fn deploy_apps_subset_only_shows_selected_apps_in_launcher() {
     assert!(body.contains("LeanFin"));
     assert!(body.contains("MindFlow"));
     assert!(!body.contains("VoiceToText"));
-    assert!(!body.contains("ClassroomInput"));
+    assert!(!body.contains("Forms"));
 }
 
 #[tokio::test]
@@ -290,24 +290,24 @@ async fn deploy_apps_subset_excluded_app_route_returns_404() {
     let response = app.server.get("/voice").expect_failure().await;
     assert_eq!(response.status_code(), 404);
 
-    // ClassroomInput is NOT deployed — should 404
-    let response = app.server.get("/classroom").expect_failure().await;
+    // FormInput is NOT deployed — should 404
+    let response = app.server.get("/forms").expect_failure().await;
     assert_eq!(response.status_code(), 404);
 }
 
 #[tokio::test]
 async fn deploy_apps_single_app_only_mounts_that_app() {
-    let app = harness::spawn_app_with_deploy_apps(Some(vec!["classroom_input".into()])).await;
+    let app = harness::spawn_app_with_deploy_apps(Some(vec!["form_input".into()])).await;
     app.login_as("test", "pass").await;
 
     let body = app.server.get("/").await.text();
-    assert!(body.contains("ClassroomInput"));
+    assert!(body.contains("Forms"));
     assert!(!body.contains("LeanFin"));
     assert!(!body.contains("MindFlow"));
     assert!(!body.contains("VoiceToText"));
 
-    // Classroom route works
-    let response = app.server.get("/classroom").await;
+    // Forms route works
+    let response = app.server.get("/forms").await;
     assert_eq!(response.status_code(), 200);
 
     // Others 404
@@ -325,7 +325,7 @@ async fn deploy_apps_edit_mode_only_shows_deployed_apps() {
     assert!(body.contains("LeanFin"));
     assert!(body.contains("MindFlow"));
     assert!(!body.contains("VoiceToText"));
-    assert!(!body.contains("ClassroomInput"));
+    assert!(!body.contains("Forms"));
 }
 
 #[tokio::test]
@@ -687,7 +687,7 @@ async fn hiding_all_internal_and_external_apps_shows_empty_state() {
         "leanfin",
         "mindflow",
         "voice_to_text",
-        "classroom_input",
+        "form_input",
         "notes",
     ] {
         app.server
@@ -717,7 +717,7 @@ async fn hiding_all_internal_but_not_external_does_not_show_empty_state() {
         "leanfin",
         "mindflow",
         "voice_to_text",
-        "classroom_input",
+        "form_input",
         "notes",
     ] {
         app.server
