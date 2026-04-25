@@ -51,6 +51,7 @@ fn render_column_list(cols: &[ColumnDef], lang: Lang) -> String {
         let type_label = match c.col_type.as_str() {
             "number" => t.ft_col_number,
             "bool" => t.ft_col_bool,
+            "link" => t.ft_col_link,
             _ => t.ft_col_text,
         };
         out.push_str(&format!(
@@ -157,6 +158,7 @@ async fn list(
                                     <option value="text">{col_text}</option>
                                     <option value="number">{col_number}</option>
                                     <option value="bool">{col_bool}</option>
+                                    <option value="link">{col_link}</option>
                                 </select>
                                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
                             </div>
@@ -174,7 +176,7 @@ async fn list(
             var row = document.createElement('div');
             row.className = 'ci-column-row';
             row.innerHTML = '<input type="text" name="col_name[]" placeholder="{col_name_ph}" required>'
-                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>'
+                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
         }}
@@ -191,6 +193,7 @@ async fn list(
         col_text = t.ft_col_text,
         col_number = t.ft_col_number,
         col_bool = t.ft_col_bool,
+        col_link = t.ft_col_link,
         add_column = t.ft_add_column,
         create_btn = t.ft_create_btn,
     );
@@ -283,6 +286,7 @@ async fn edit_page(
     let col_bool = t.ft_col_bool;
     let col_name_ph = t.ft_col_name;
 
+    let col_link = t.ft_col_link;
     let mut col_rows = String::new();
     for c in &cols {
         let sel_text = if c.col_type == "text" {
@@ -300,6 +304,11 @@ async fn edit_page(
         } else {
             ""
         };
+        let sel_link = if c.col_type == "link" {
+            " selected"
+        } else {
+            ""
+        };
         col_rows.push_str(&format!(
             r#"<div class="ci-column-row">
                 <input type="text" name="col_name[]" value="{name}" required>
@@ -307,6 +316,7 @@ async fn edit_page(
                     <option value="text"{sel_text}>{col_text}</option>
                     <option value="number"{sel_num}>{col_number}</option>
                     <option value="bool"{sel_bool}>{col_bool}</option>
+                    <option value="link"{sel_link}>{col_link}</option>
                 </select>
                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
             </div>"#,
@@ -318,7 +328,7 @@ async fn edit_page(
         col_rows = format!(
             r#"<div class="ci-column-row">
             <input type="text" name="col_name[]" placeholder="{col_name_ph}" required>
-            <select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>
+            <select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>
             <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
         </div>"#
         );
@@ -364,7 +374,7 @@ async fn edit_page(
             var row = document.createElement('div');
             row.className = 'ci-column-row';
             row.innerHTML = '<input type="text" name="col_name[]" placeholder="{col_name_ph}" required>'
-                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option></select>'
+                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
         }}

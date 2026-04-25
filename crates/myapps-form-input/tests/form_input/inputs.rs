@@ -460,6 +460,142 @@ async fn update_cell_rejects_other_users_input() {
 }
 
 #[tokio::test]
+async fn new_input_page_renders_link_modal() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let body = app.server.get("/forms/new").await.text();
+    // Modal markup is present so JS can call showModal()
+    assert!(body.contains(r#"id="link-modal""#));
+    assert!(body.contains(r#"id="link-modal-url""#));
+    assert!(body.contains(r#"id="link-modal-text""#));
+}
+
+#[tokio::test]
+async fn form_type_with_link_column_persists() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let columns_json = r#"[{"name":"Title","type":"text"},{"name":"Source","type":"link"}]"#;
+    sqlx::query(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0)",
+    )
+    .bind(uid)
+    .bind("Bookmark log")
+    .bind(columns_json)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get("/forms/form-types").await.text();
+    assert!(body.contains("Bookmark log"));
+    assert!(body.contains("Source"));
+    // Link type label appears in the EN translation
+    assert!(body.contains("Link"));
+}
+
+#[tokio::test]
+async fn view_page_renders_link_cell_as_anchor() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let columns_json = r#"[{"name":"Title","type":"text"},{"name":"Source","type":"link"}]"#;
+    let ft_id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0) RETURNING id",
+    )
+    .bind(uid)
+    .bind("Bookmark log")
+    .bind(columns_json)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let csv = "Title,Source\nRust book,https://doc.rust-lang.org/book/|the book\nNo source,";
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_inputs (user_id, row_set_id, form_type_id, name, csv_data) VALUES (?, NULL, ?, ?, ?) RETURNING id",
+    )
+    .bind(uid)
+    .bind(ft_id)
+    .bind("My bookmarks")
+    .bind(csv)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    // Link cell renders as an anchor with target=_blank
+    assert!(body.contains(r#"href="https://doc.rust-lang.org/book/""#));
+    assert!(body.contains("the book</a>"));
+    // Cell carries data-type=link and data-value for the dblclick handler
+    assert!(body.contains(r#"data-type="link""#));
+    assert!(body.contains(r#"data-value="https://doc.rust-lang.org/book/|the book""#));
+    // Modal markup is present
+    assert!(body.contains(r#"id="link-modal""#));
+}
+
+#[tokio::test]
+async fn update_cell_persists_link_value_with_pipe() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let columns_json = r#"[{"name":"Source","type":"link"}]"#;
+    let ft_id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0) RETURNING id",
+    )
+    .bind(uid)
+    .bind("Bookmarks")
+    .bind(columns_json)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_inputs (user_id, row_set_id, form_type_id, name, csv_data) VALUES (?, NULL, ?, ?, ?) RETURNING id",
+    )
+    .bind(uid)
+    .bind(ft_id)
+    .bind("Bookmarks")
+    .bind("Source\nplaceholder")
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let response = app
+        .server
+        .post(&format!("/forms/inputs/{id}/cell"))
+        .form(&serde_json::json!({
+            "row": 1,
+            "col": 0,
+            "value": "https://example.com|example",
+        }))
+        .await;
+    assert_eq!(response.status_code(), 204);
+
+    let csv: String = sqlx::query_scalar("SELECT csv_data FROM form_input_inputs WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let lines: Vec<&str> = csv.lines().collect();
+    assert_eq!(lines[1], "https://example.com|example");
+}
+
+#[tokio::test]
 async fn new_input_page_hides_row_set_warning_when_dynamic_form_type_exists() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
     app.seed_and_login(&myapps_form_input::FormInputApp).await;

@@ -286,6 +286,9 @@ async fn new_input_page(
     let remove_row_label = t.inp_remove_row;
     let no_rows_yet = t.inp_no_rows_yet;
     let need_row_set = t.inp_need_row_set;
+    let link_default_text = t.link_default_text;
+    let link_add_btn = t.link_add_btn;
+    let modal_html = render_link_modal(t);
 
     let body = format!(
         r##"<div class="page-header">
@@ -321,6 +324,8 @@ async fn new_input_page(
             </div>
         </div>
 
+        {modal_html}
+
         <script>
         (function() {{
             var rowSets = {rs_json};
@@ -330,6 +335,8 @@ async fn new_input_page(
             var lblBool = '{col_bool}';
             var lblRemoveRow = '{remove_row_label}';
             var lblNoRowsYet = '{no_rows_yet}';
+            var lblLinkDefault = '{link_default_text}';
+            var lblLinkAdd = '{link_add_btn}';
 
             var rsSel = document.getElementById('row_set_id');
             var ftSel = document.getElementById('form_type_id');
@@ -363,6 +370,11 @@ async fn new_input_page(
                         + '<option value=""></option><option value="' + yes + '">' + yes + '</option><option value="' + no + '">' + no + '</option></select></td>';
                 }} else if (colType === 'number') {{
                     return '<td class="ci-col-number"><input type="number" step="any" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input" inputmode="decimal"></td>';
+                }} else if (colType === 'link') {{
+                    return '<td class="ci-col-link">'
+                        + '<input type="hidden" data-r="' + r + '" data-c="' + c + '" class="ci-cell" value="">'
+                        + '<button type="button" class="ci-link-btn" onclick="window.openLinkModal(this)">' + lblLinkAdd + '</button>'
+                        + '</td>';
                 }}
                 return '<td><input type="text" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input"></td>';
             }}
@@ -519,6 +531,56 @@ async fn new_input_page(
                 }}
                 return val;
             }}
+
+            // ── Link modal ─────────────────────────────────────────────
+            var modal = document.getElementById('link-modal');
+            var modalForm = document.getElementById('link-modal-form');
+            var modalUrl = document.getElementById('link-modal-url');
+            var modalText = document.getElementById('link-modal-text');
+            var modalCancel = document.getElementById('link-modal-cancel');
+            var modalActiveBtn = null;
+
+            function parseLinkValue(v) {{
+                if (!v) return ['', ''];
+                var i = v.indexOf('|');
+                if (i < 0) return [v, ''];
+                return [v.slice(0, i), v.slice(i + 1)];
+            }}
+            function encodeLinkValue(url, text) {{
+                if (!url) return '';
+                return text ? url + '|' + text : url;
+            }}
+            function buttonLabel(text) {{
+                return text || lblLinkDefault;
+            }}
+
+            window.openLinkModal = function(btn) {{
+                modalActiveBtn = btn;
+                var hidden = btn.previousElementSibling;
+                var current = hidden ? hidden.value : '';
+                var parsed = parseLinkValue(current);
+                modalUrl.value = parsed[0];
+                modalText.value = parsed[1];
+                if (modal && modal.showModal) modal.showModal();
+            }};
+
+            if (modalCancel) modalCancel.addEventListener('click', function() {{
+                modalActiveBtn = null;
+                if (modal && modal.close) modal.close();
+            }});
+
+            if (modalForm) modalForm.addEventListener('submit', function(e) {{
+                e.preventDefault();
+                if (!modalActiveBtn) {{ if (modal && modal.close) modal.close(); return; }}
+                var url = modalUrl.value.trim();
+                if (!url) return;
+                var text = modalText.value.trim();
+                var hidden = modalActiveBtn.previousElementSibling;
+                if (hidden) hidden.value = encodeLinkValue(url, text);
+                modalActiveBtn.textContent = buttonLabel(text);
+                modalActiveBtn = null;
+                if (modal && modal.close) modal.close();
+            }});
         }})();
         </script>"##,
         new_title = t.inp_new_title,
@@ -531,6 +593,9 @@ async fn new_input_page(
         remove_row_label = remove_row_label,
         no_rows_yet = no_rows_yet,
         need_row_set = need_row_set,
+        link_default_text = link_default_text,
+        link_add_btn = link_add_btn,
+        modal_html = modal_html,
     );
 
     Html(render_page(
@@ -667,11 +732,34 @@ async fn view(
                 let cell_class = match col_type {
                     "number" => "ci-cell-editable ci-col-number",
                     "bool" => "ci-cell-editable ci-col-bool",
+                    "link" => "ci-cell-editable ci-col-link",
                     _ => "ci-cell-editable",
                 };
-                table_html.push_str(&format!(
-                    r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="{col_type}">{field}</td>"#,
-                ));
+                if col_type == "link" {
+                    let (url, text) = parse_link_value(field);
+                    let display = if url.is_empty() {
+                        String::new()
+                    } else {
+                        let display_text = if text.is_empty() {
+                            t.link_default_text
+                        } else {
+                            text
+                        };
+                        format!(
+                            r#"<a href="{href}" target="_blank" rel="noopener">{txt}</a>"#,
+                            href = html_escape(url),
+                            txt = html_escape(display_text),
+                        )
+                    };
+                    table_html.push_str(&format!(
+                        r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="link" data-value="{value}">{display}</td>"#,
+                        value = html_escape(field),
+                    ));
+                } else {
+                    table_html.push_str(&format!(
+                        r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="{col_type}">{field}</td>"#,
+                    ));
+                }
             }
         }
         table_html.push_str("</tr>");
@@ -697,6 +785,8 @@ async fn view(
     };
 
     let col_bool = t.ft_col_bool;
+    let link_default_text = t.link_default_text;
+    let modal_html = render_link_modal(t);
 
     let body = format!(
         r##"<div class="page-header">
@@ -716,14 +806,99 @@ async fn view(
             <a href="{base}/forms" class="btn btn-secondary">{back}</a>
         </div>
 
+        {modal_html}
+
         <script>
         (function() {{
             var lblBool = '{col_bool}';
+            var lblLinkDefault = '{link_default_text}';
             var saveUrl = '{base}/forms/inputs/{id}/cell';
 
+            // ── Link modal ─────────────────────────────────────────────
+            var modal = document.getElementById('link-modal');
+            var modalForm = document.getElementById('link-modal-form');
+            var modalUrl = document.getElementById('link-modal-url');
+            var modalText = document.getElementById('link-modal-text');
+            var modalCancel = document.getElementById('link-modal-cancel');
+            var modalActiveCell = null;
+
+            function parseLinkValue(v) {{
+                if (!v) return ['', ''];
+                var i = v.indexOf('|');
+                if (i < 0) return [v, ''];
+                return [v.slice(0, i), v.slice(i + 1)];
+            }}
+            function encodeLinkValue(url, text) {{
+                if (!url) return '';
+                return text ? url + '|' + text : url;
+            }}
+            function renderLinkCellHtml(value) {{
+                var parsed = parseLinkValue(value);
+                var url = parsed[0], text = parsed[1] || lblLinkDefault;
+                if (!url) return '';
+                var a = document.createElement('a');
+                a.href = url;
+                a.target = '_blank';
+                a.rel = 'noopener';
+                a.textContent = text;
+                return a.outerHTML;
+            }}
+
+            if (modalCancel) modalCancel.addEventListener('click', function() {{
+                modalActiveCell = null;
+                if (modal && modal.close) modal.close();
+            }});
+            if (modalForm) modalForm.addEventListener('submit', function(e) {{
+                e.preventDefault();
+                if (!modalActiveCell) {{ if (modal && modal.close) modal.close(); return; }}
+                var url = modalUrl.value.trim();
+                if (!url) return;
+                var text = modalText.value.trim();
+                var newValue = encodeLinkValue(url, text);
+                var cell = modalActiveCell;
+                modalActiveCell = null;
+                saveLink(cell, newValue);
+                if (modal && modal.close) modal.close();
+            }});
+
+            function saveLink(cell, newValue) {{
+                var oldValue = cell.dataset.value || '';
+                cell.dataset.value = newValue;
+                cell.innerHTML = renderLinkCellHtml(newValue);
+                var body = 'row=' + encodeURIComponent(cell.dataset.row)
+                    + '&col=' + encodeURIComponent(cell.dataset.col)
+                    + '&value=' + encodeURIComponent(newValue);
+                fetch(saveUrl, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
+                    body: body,
+                    credentials: 'same-origin',
+                }}).then(function(res) {{
+                    if (!res.ok) {{
+                        alert('Save failed (' + res.status + ')');
+                        cell.dataset.value = oldValue;
+                        cell.innerHTML = renderLinkCellHtml(oldValue);
+                    }}
+                }}).catch(function() {{
+                    alert('Save failed (network error)');
+                    cell.dataset.value = oldValue;
+                    cell.innerHTML = renderLinkCellHtml(oldValue);
+                }});
+            }}
+
+            // ── Cell editing ───────────────────────────────────────────
             document.querySelectorAll('.ci-cell-editable').forEach(function(cell) {{
                 cell.addEventListener('dblclick', function() {{
                     if (cell.classList.contains('ci-cell-editing')) return;
+                    var colType = cell.dataset.type || 'text';
+                    if (colType === 'link') {{
+                        modalActiveCell = cell;
+                        var parsed = parseLinkValue(cell.dataset.value || '');
+                        modalUrl.value = parsed[0];
+                        modalText.value = parsed[1];
+                        if (modal && modal.showModal) modal.showModal();
+                        return;
+                    }}
                     startEdit(cell);
                 }});
             }});
@@ -835,6 +1010,55 @@ async fn delete(
         .await
         .ok();
     Redirect::to(&format!("{base}/forms"))
+}
+
+/// Shared `<dialog>` markup for editing link cells. Both the new-input page and
+/// the view page render this so the JS on either page can call `showModal()`.
+fn render_link_modal(t: &super::i18n::Translations) -> String {
+    format!(
+        r##"<dialog id="link-modal" class="ci-link-modal">
+            <form id="link-modal-form" method="dialog">
+                <h3 style="margin-top:0">{title}</h3>
+                <div class="form-group">
+                    <label for="link-modal-url">{url_lbl}</label>
+                    <input type="url" id="link-modal-url" required>
+                </div>
+                <div class="form-group">
+                    <label for="link-modal-text">{text_lbl}</label>
+                    <input type="text" id="link-modal-text" placeholder="{default_text}">
+                </div>
+                <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.75rem">
+                    <button type="button" id="link-modal-cancel" class="btn btn-secondary">{cancel}</button>
+                    <button type="submit" id="link-modal-save" class="btn btn-primary">{save}</button>
+                </div>
+            </form>
+        </dialog>"##,
+        title = t.link_modal_title,
+        url_lbl = t.link_modal_url,
+        text_lbl = t.link_modal_text,
+        default_text = t.link_default_text,
+        cancel = t.ft_cancel,
+        save = t.ft_save,
+    )
+}
+
+/// Split a stored `url|text` link cell into `(url, text)`. Splits on the first
+/// pipe so additional pipes in the display text are preserved. URLs that
+/// genuinely contain `|` are expected to be URL-encoded as `%7C`.
+fn parse_link_value(value: &str) -> (&str, &str) {
+    match value.split_once('|') {
+        Some((u, t)) => (u, t),
+        None => (value, ""),
+    }
+}
+
+/// HTML-escape a string for use in attribute or text content.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// Simple CSV line parser that handles quoted fields.

@@ -47,6 +47,7 @@ pub struct Translations {
     pub ft_col_text: &'static str,
     pub ft_col_number: &'static str,
     pub ft_col_bool: &'static str,
+    pub ft_col_link: &'static str,
     pub ft_add_column: &'static str,
     pub ft_create_btn: &'static str,
     pub ft_no_types: &'static str,
@@ -64,6 +65,11 @@ pub struct Translations {
     pub inp_add_row: &'static str,
     pub inp_remove_row: &'static str,
     pub inp_no_rows_yet: &'static str,
+    pub link_modal_title: &'static str,
+    pub link_modal_url: &'static str,
+    pub link_modal_text: &'static str,
+    pub link_default_text: &'static str,
+    pub link_add_btn: &'static str,
 }
 
 pub const EN: Translations = Translations {
@@ -115,6 +121,7 @@ pub const EN: Translations = Translations {
     ft_col_text: "Text",
     ft_col_number: "Number",
     ft_col_bool: "Yes / No",
+    ft_col_link: "Link",
     ft_add_column: "+ Add column",
     ft_create_btn: "Create form type",
     ft_no_types: "No form types yet. Create one below.",
@@ -132,6 +139,11 @@ pub const EN: Translations = Translations {
     inp_add_row: "+ Add row",
     inp_remove_row: "Remove row",
     inp_no_rows_yet: "No rows yet — click \u{201C}+ Add row\u{201D} to start.",
+    link_modal_title: "Link",
+    link_modal_url: "URL",
+    link_modal_text: "Text (optional)",
+    link_default_text: "link",
+    link_add_btn: "+ Add link",
 };
 
 pub const ES: Translations = Translations {
@@ -183,6 +195,7 @@ pub const ES: Translations = Translations {
     ft_col_text: "Texto",
     ft_col_number: "Número",
     ft_col_bool: "Sí / No",
+    ft_col_link: "Enlace",
     ft_add_column: "+ Añadir columna",
     ft_create_btn: "Crear tipo de formulario",
     ft_no_types: "Sin tipos de formulario aún. Crea uno a continuación.",
@@ -200,6 +213,11 @@ pub const ES: Translations = Translations {
     inp_add_row: "+ Añadir fila",
     inp_remove_row: "Eliminar fila",
     inp_no_rows_yet: "Sin filas aún — haz clic en \u{201C}+ Añadir fila\u{201D} para empezar.",
+    link_modal_title: "Enlace",
+    link_modal_url: "URL",
+    link_modal_text: "Texto (opcional)",
+    link_default_text: "enlace",
+    link_add_btn: "+ Añadir enlace",
 };
 
 pub fn t(lang: myapps_core::i18n::Lang) -> &'static Translations {
