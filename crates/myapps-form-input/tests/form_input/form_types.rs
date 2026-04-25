@@ -340,3 +340,71 @@ async fn delete_form_type() {
     let body = list.text();
     assert!(!body.contains("Behaviour report"));
 }
+
+#[tokio::test]
+async fn form_types_page_escapes_html_in_name_and_columns() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'test'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let columns_json = r#"[{"name":"<b>col</b>","type":"text"}]"#;
+    sqlx::query(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0)",
+    )
+    .bind(user_id)
+    .bind("<img src=x onerror=alert(1)>")
+    .bind(columns_json)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get("/forms/form-types").await.text();
+    assert!(
+        !body.contains("<img src=x onerror=alert(1)>"),
+        "form-type name must be escaped"
+    );
+    assert!(body.contains("&lt;img src=x onerror=alert(1)&gt;"));
+    assert!(!body.contains("<b>col</b>"), "column name must be escaped");
+    assert!(body.contains("&lt;b&gt;col&lt;/b&gt;"));
+}
+
+#[tokio::test]
+async fn form_type_edit_page_escapes_attribute_values() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'test'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    // A `"` in the name would close the attribute and let the rest become a new
+    // attribute. Verify it's escaped to &quot; so the value attribute is intact.
+    let columns_json = r#"[{"name":"a\"><script>alert(1)</script>","type":"text"}]"#;
+    let (id,): (i64,) = sqlx::query_as(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(r#"hi"><script>alert(1)</script>"#)
+    .bind(columns_json)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app
+        .server
+        .get(&format!("/forms/form-types/{id}/edit"))
+        .await
+        .text();
+    assert!(
+        !body.contains(r#"hi"><script>alert(1)</script>"#),
+        "raw quote-break in name attribute must be escaped"
+    );
+    assert!(
+        !body.contains(r#"a"><script>alert(1)</script>"#),
+        "raw quote-break in column name must be escaped"
+    );
+    assert!(body.contains("&quot;"));
+}

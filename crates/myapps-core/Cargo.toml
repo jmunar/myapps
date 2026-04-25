@@ -15,7 +15,7 @@ tracing.workspace = true
 tower-cookies.workspace = true
 reqwest.workspace = true
 uuid.workspace = true
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
 argon2 = "0.5"
 rand = "0.9"
 rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }

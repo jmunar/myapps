@@ -11,6 +11,25 @@ use myapps_core::layout::NavItem;
 use myapps_core::registry::{App, AppInfo};
 use myapps_core::routes::AppState;
 
+/// HTML-escape a string for safe interpolation into HTML element bodies or
+/// double-quoted attribute values. User-controlled strings (labels, names,
+/// CSV cells) MUST go through this before reaching `format!` templates.
+pub(crate) fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+/// Maximum length of a row-set label (chars). Beyond this we reject the
+/// submission rather than truncating, so the user sees their input is wrong.
+pub(crate) const MAX_ROW_SET_LABEL_LEN: usize = 200;
+/// Maximum total length of a row-set's `rows` blob (bytes after cleaning).
+pub(crate) const MAX_ROW_SET_ROWS_BYTES: usize = 64 * 1024;
+/// Maximum number of non-empty lines in a row-set.
+pub(crate) const MAX_ROW_SET_ROW_COUNT: usize = 5_000;
+
 /// FormInput sub-application router.
 /// All routes are relative — the top-level router nests this under `/forms`.
 pub fn router() -> Router<AppState> {
