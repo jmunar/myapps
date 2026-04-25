@@ -164,6 +164,58 @@
     background: var(--accent-light);
 }
 
+/* ── Header sort & filter controls ────────────────────────────── */
+.ci-th-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.ci-th-controls {
+    display: flex;
+    gap: 0.15rem;
+    align-items: center;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.ci-sort-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0 0.15rem;
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    line-height: 1;
+    border-radius: 2px;
+}
+
+.ci-sort-btn:hover {
+    color: var(--text);
+}
+
+.ci-sort-btn.ci-sort-active {
+    color: var(--accent);
+    background: var(--accent-light);
+}
+
+.ci-filter-input {
+    flex: 1;
+    min-width: 3rem;
+    padding: 0.1rem 0.25rem;
+    font-size: 0.7rem;
+    font-weight: normal;
+    border: 1px solid var(--border-light);
+    border-radius: 2px;
+    background: var(--bg-card);
+    color: var(--text);
+}
+
+.ci-filter-input.ci-filter-active {
+    border-color: var(--accent);
+    background: var(--accent-light);
+}
+
 /* ── Link cell ────────────────────────────────────────────────── */
 .ci-col-link {
     min-width: 8rem;

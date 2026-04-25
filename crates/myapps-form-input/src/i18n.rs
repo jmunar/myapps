@@ -70,6 +70,9 @@ pub struct Translations {
     pub link_modal_text: &'static str,
     pub link_default_text: &'static str,
     pub link_add_btn: &'static str,
+    pub inp_sort_asc: &'static str,
+    pub inp_sort_desc: &'static str,
+    pub inp_filter_placeholder: &'static str,
 }
 
 pub const EN: Translations = Translations {
@@ -144,6 +147,9 @@ pub const EN: Translations = Translations {
     link_modal_text: "Text (optional)",
     link_default_text: "link",
     link_add_btn: "+ Add link",
+    inp_sort_asc: "Sort A \u{2192} Z",
+    inp_sort_desc: "Sort Z \u{2192} A",
+    inp_filter_placeholder: "Filter",
 };
 
 pub const ES: Translations = Translations {
@@ -218,6 +224,9 @@ pub const ES: Translations = Translations {
     link_modal_text: "Texto (opcional)",
     link_default_text: "enlace",
     link_add_btn: "+ Añadir enlace",
+    inp_sort_asc: "Ordenar A \u{2192} Z",
+    inp_sort_desc: "Ordenar Z \u{2192} A",
+    inp_filter_placeholder: "Filtrar",
 };
 
 pub fn t(lang: myapps_core::i18n::Lang) -> &'static Translations {

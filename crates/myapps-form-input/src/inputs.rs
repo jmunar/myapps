@@ -707,16 +707,43 @@ async fn view(
     let mut table_html = String::from(r#"<table class="ci-input-table"><thead><tr>"#);
     if let Some(header) = lines.first() {
         for (i, col) in header.iter().enumerate() {
-            if i == 0 && highlight_first_col {
-                table_html.push_str(&format!(r#"<th class="ci-th-pupil">{col}</th>"#));
+            // The leading column in fixed-row mode is the row identifier (text);
+            // user columns shift by one in that layout.
+            let col_type = if i == 0 && highlight_first_col {
+                "text"
             } else {
-                table_html.push_str(&format!("<th>{col}</th>"));
-            }
+                let col_idx = if highlight_first_col { i - 1 } else { i };
+                ft_columns
+                    .get(col_idx)
+                    .map(|cd| cd.col_type.as_str())
+                    .unwrap_or("text")
+            };
+            let th_class = if i == 0 && highlight_first_col {
+                r#" class="ci-th-pupil""#
+            } else {
+                ""
+            };
+            table_html.push_str(&format!(
+                r##"<th{th_class} data-col="{i}" data-col-type="{col_type}">
+                    <div class="ci-th-content">
+                        <span class="ci-th-label">{col}</span>
+                        <span class="ci-th-controls">
+                            <button type="button" class="ci-sort-btn" data-col="{i}" data-dir="asc" title="{sort_asc}">▲</button>
+                            <button type="button" class="ci-sort-btn" data-col="{i}" data-dir="desc" title="{sort_desc}">▼</button>
+                            <input type="text" class="ci-filter-input" data-col="{i}" placeholder="{filter_ph}">
+                        </span>
+                    </div>
+                </th>"##,
+                sort_asc = t.inp_sort_asc,
+                sort_desc = t.inp_sort_desc,
+                filter_ph = t.inp_filter_placeholder,
+            ));
         }
     }
     table_html.push_str("</tr></thead><tbody>");
     for (r, line) in lines.iter().enumerate().skip(1) {
-        table_html.push_str("<tr>");
+        let original_index = r - 1;
+        table_html.push_str(&format!(r#"<tr data-original-index="{original_index}">"#));
         for (c, field) in line.iter().enumerate() {
             if c == 0 && highlight_first_col {
                 table_html.push_str(&format!(r#"<td class="ci-pupil-name">{field}</td>"#));
@@ -813,6 +840,99 @@ async fn view(
             var lblBool = '{col_bool}';
             var lblLinkDefault = '{link_default_text}';
             var saveUrl = '{base}/forms/inputs/{id}/cell';
+
+            // ── Sort & filter ──────────────────────────────────────────
+            // Operates purely on the DOM. Cells keep their original
+            // data-row/data-col, so saves still hit the underlying CSV row
+            // regardless of the visible order or which rows are filtered out.
+            var tbody = document.querySelector('.ci-input-table tbody');
+            var allRows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+            var activeFilters = {{}};   // colIdx -> filter substring (lowercase)
+            var activeSort = null;      // {{ col: idx, dir: 'asc'|'desc', type: '...' }}
+
+            function cellTextAt(tr, colIdx) {{
+                var c = tr.children[colIdx];
+                return c ? (c.textContent || '').trim() : '';
+            }}
+
+            function applyFilters() {{
+                var filterCols = Object.keys(activeFilters);
+                allRows.forEach(function(tr) {{
+                    var visible = true;
+                    for (var i = 0; i < filterCols.length; i++) {{
+                        var col = filterCols[i];
+                        var needle = activeFilters[col];
+                        if (!needle) continue;
+                        var hay = cellTextAt(tr, parseInt(col)).toLowerCase();
+                        if (hay.indexOf(needle) < 0) {{ visible = false; break; }}
+                    }}
+                    tr.style.display = visible ? '' : 'none';
+                }});
+            }}
+
+            function applySort() {{
+                if (!tbody) return;
+                var ordered;
+                if (!activeSort) {{
+                    ordered = allRows.slice().sort(function(a, b) {{
+                        return parseInt(a.dataset.originalIndex) - parseInt(b.dataset.originalIndex);
+                    }});
+                }} else {{
+                    var col = activeSort.col, dir = activeSort.dir, type = activeSort.type;
+                    ordered = allRows.slice().sort(function(a, b) {{
+                        var va = cellTextAt(a, col), vb = cellTextAt(b, col);
+                        var cmp;
+                        if (type === 'number') {{
+                            var na = parseFloat(va), nb = parseFloat(vb);
+                            var aNaN = isNaN(na), bNaN = isNaN(nb);
+                            if (aNaN && bNaN) cmp = 0;
+                            else if (aNaN) cmp = 1;        // empties sort last
+                            else if (bNaN) cmp = -1;
+                            else cmp = na - nb;
+                        }} else {{
+                            cmp = va.localeCompare(vb, undefined, {{ numeric: false, sensitivity: 'base' }});
+                        }}
+                        return dir === 'asc' ? cmp : -cmp;
+                    }});
+                }}
+                ordered.forEach(function(tr) {{ tbody.appendChild(tr); }});
+            }}
+
+            function refreshSortBtnStates() {{
+                document.querySelectorAll('.ci-sort-btn').forEach(function(btn) {{
+                    var on = activeSort &&
+                        parseInt(btn.dataset.col) === activeSort.col &&
+                        btn.dataset.dir === activeSort.dir;
+                    btn.classList.toggle('ci-sort-active', !!on);
+                }});
+            }}
+
+            document.querySelectorAll('.ci-sort-btn').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                    var col = parseInt(btn.dataset.col);
+                    var dir = btn.dataset.dir;
+                    var th = btn.closest('th');
+                    var type = th ? (th.dataset.colType || 'text') : 'text';
+                    if (activeSort && activeSort.col === col && activeSort.dir === dir) {{
+                        activeSort = null;       // toggle off
+                    }} else {{
+                        activeSort = {{ col: col, dir: dir, type: type }};
+                    }}
+                    refreshSortBtnStates();
+                    applySort();
+                }});
+            }});
+
+            document.querySelectorAll('.ci-filter-input').forEach(function(inp) {{
+                inp.addEventListener('input', function() {{
+                    var col = parseInt(inp.dataset.col);
+                    var v = inp.value.trim().toLowerCase();
+                    if (v) activeFilters[col] = v;
+                    else delete activeFilters[col];
+                    inp.classList.toggle('ci-filter-active', !!v);
+                    applyFilters();
+                }});
+            }});
 
             // ── Link modal ─────────────────────────────────────────────
             var modal = document.getElementById('link-modal');

@@ -596,6 +596,33 @@ async fn update_cell_persists_link_value_with_pipe() {
 }
 
 #[tokio::test]
+async fn view_page_renders_sort_and_filter_controls() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_inputs WHERE name = 'Week 10 quiz' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    // Each header carries its column index + type so the JS can sort numerically
+    // when appropriate.
+    assert!(body.contains(r#"data-col-type="text""#));
+    assert!(body.contains(r#"data-col-type="number""#));
+    // Sort buttons (one asc + one desc) and a filter input per column.
+    assert!(body.contains("ci-sort-btn"));
+    assert!(body.contains(r#"data-dir="asc""#));
+    assert!(body.contains(r#"data-dir="desc""#));
+    assert!(body.contains("ci-filter-input"));
+    // Each row records its original CSV index so sort can be cleared / saves
+    // hit the right underlying row.
+    assert!(body.contains(r#"data-original-index="0""#));
+    assert!(body.contains(r#"data-original-index="1""#));
+}
+
+#[tokio::test]
 async fn new_input_page_hides_row_set_warning_when_dynamic_form_type_exists() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
     app.seed_and_login(&myapps_form_input::FormInputApp).await;
