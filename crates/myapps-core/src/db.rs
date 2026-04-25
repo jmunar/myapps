@@ -17,6 +17,11 @@ pub fn migrator(extra: &[sqlx::migrate::Migrator]) -> sqlx::migrate::Migrator {
 
     sqlx::migrate::Migrator {
         migrations: Cow::Owned(all),
+        // Tolerate previously-applied migrations that are no longer in source.
+        // ClassroomInput's 20240204000000 migration was retimestamped when the
+        // app was repurposed as FormInput; existing staging/prod DBs still have
+        // the old version row in `_sqlx_migrations`.
+        ignore_missing: true,
         ..sqlx::migrate::Migrator::DEFAULT
     }
 }
