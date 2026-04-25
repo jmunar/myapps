@@ -47,6 +47,7 @@ struct FormTypeRow {
     id: i64,
     name: String,
     columns_json: String,
+    fixed_rows: bool,
 }
 
 async fn list(
@@ -80,7 +81,7 @@ async fn list(
             });
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM form_input_form_types WHERE user_id = ?",
+        "SELECT id, name, columns_json, fixed_rows FROM form_input_form_types WHERE user_id = ?",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -197,7 +198,7 @@ async fn new_input_page(
     });
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM form_input_form_types WHERE user_id = ? ORDER BY name ASC",
+        "SELECT id, name, columns_json, fixed_rows FROM form_input_form_types WHERE user_id = ? ORDER BY name ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -207,18 +208,29 @@ async fn new_input_page(
         Default::default()
     });
 
-    if row_sets.is_empty() || form_types.is_empty() {
-        let msg = if row_sets.is_empty() && form_types.is_empty() {
-            t.inp_need_both.to_string()
-        } else if row_sets.is_empty() {
-            t.inp_need_row_set.to_string()
-        } else {
-            t.inp_need_form_type.to_string()
-        };
+    if form_types.is_empty() {
         let body = format!(
             r#"<div class="page-header"><h1>{title}</h1></div>
             <div class="card" style="max-width:36rem"><div class="card-body"><p>{msg}</p></div></div>"#,
             title = t.inp_new_title,
+            msg = t.inp_need_form_type,
+        );
+        return Html(render_page(
+            &format!("Forms — {}", t.inp_new_title),
+            &forms_nav(base, "inputs", lang),
+            &body,
+            &state.config,
+            lang,
+        ));
+    }
+
+    let any_fixed = form_types.iter().any(|f| f.fixed_rows);
+    if row_sets.is_empty() && any_fixed && form_types.iter().all(|f| f.fixed_rows) {
+        let body = format!(
+            r#"<div class="page-header"><h1>{title}</h1></div>
+            <div class="card" style="max-width:36rem"><div class="card-body"><p>{msg}</p></div></div>"#,
+            title = t.inp_new_title,
+            msg = t.inp_need_row_set,
         );
         return Html(render_page(
             &format!("Forms — {}", t.inp_new_title),
@@ -240,7 +252,12 @@ async fn new_input_page(
         .iter()
         .map(|f| {
             let cols: Vec<ColumnDef> = serde_json::from_str(&f.columns_json).unwrap_or_default();
-            serde_json::json!({"id": f.id, "name": f.name, "columns": cols})
+            serde_json::json!({
+                "id": f.id,
+                "name": f.name,
+                "columns": cols,
+                "fixed_rows": f.fixed_rows,
+            })
         })
         .collect();
 
@@ -263,6 +280,10 @@ async fn new_input_page(
     let row_label = t.inp_row;
     let select_hint = t.inp_select_hint;
     let col_bool = t.ft_col_bool;
+    let add_row_label = t.inp_add_row;
+    let remove_row_label = t.inp_remove_row;
+    let no_rows_yet = t.inp_no_rows_yet;
+    let need_row_set = t.inp_need_row_set;
 
     let body = format!(
         r##"<div class="page-header">
@@ -274,9 +295,9 @@ async fn new_input_page(
             <div class="card-body">
                 <form method="POST" action="{base}/forms/inputs/create" id="input-form">
                     <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
-                        <div class="form-group">
+                        <div class="form-group" id="row-set-group">
                             <label for="row_set_id">{row_set_lbl}</label>
-                            <select id="row_set_id" name="row_set_id" required>{rs_opts}</select>
+                            <select id="row_set_id" name="row_set_id">{rs_opts}</select>
                         </div>
                         <div class="form-group">
                             <label for="form_type_id">{form_type_lbl}</label>
@@ -288,7 +309,9 @@ async fn new_input_page(
                         </div>
                     </div>
 
+                    <div id="row-set-warning" class="text-secondary mt-2" style="display:none">{need_row_set}</div>
                     <div id="grid-container" class="ci-grid-container mt-2"></div>
+                    <button type="button" id="add-row-btn" class="btn btn-secondary btn-sm mt-1" style="display:none">{add_row_label}</button>
 
                     <input type="hidden" name="csv_data" id="csv_data">
                     <button type="submit" class="btn btn-primary mt-2" id="submit-btn">{save_btn}</button>
@@ -303,130 +326,185 @@ async fn new_input_page(
             var lblRow = '{row_label}';
             var lblSelectHint = '{select_hint}';
             var lblBool = '{col_bool}';
+            var lblRemoveRow = '{remove_row_label}';
+            var lblNoRowsYet = '{no_rows_yet}';
 
             var rsSel = document.getElementById('row_set_id');
             var ftSel = document.getElementById('form_type_id');
+            var rsGroup = document.getElementById('row-set-group');
+            var rsWarning = document.getElementById('row-set-warning');
             var gridContainer = document.getElementById('grid-container');
+            var addRowBtn = document.getElementById('add-row-btn');
+            var submitBtn = document.getElementById('submit-btn');
             var csvInput = document.getElementById('csv_data');
             var form = document.getElementById('input-form');
 
-            function buildGrid() {{
-                var rsId = parseInt(rsSel.value);
-                var ftId = parseInt(ftSel.value);
-                var rs = rowSets.find(function(r) {{ return r.id === rsId; }});
-                var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
-                if (!rs || !ft || ft.columns.length === 0) {{
-                    gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
-                    return;
-                }}
+            // dynamic-mode state: array of arrays of strings; built from DOM on submit
+            var dynamicRowCount = 0;
 
+            function currentFormType() {{
+                var ftId = parseInt(ftSel.value);
+                return formTypes.find(function(f) {{ return f.id === ftId; }});
+            }}
+
+            function currentRowSet() {{
+                var rsId = parseInt(rsSel.value);
+                return rowSets.find(function(r) {{ return r.id === rsId; }});
+            }}
+
+            function cellHtml(r, c, colType) {{
+                if (colType === 'bool') {{
+                    var parts = lblBool.split(' / ');
+                    var yes = parts[0] || 'Yes';
+                    var no = parts[1] || 'No';
+                    return '<td class="ci-col-bool"><select data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-select">'
+                        + '<option value=""></option><option value="' + yes + '">' + yes + '</option><option value="' + no + '">' + no + '</option></select></td>';
+                }} else if (colType === 'number') {{
+                    return '<td class="ci-col-number"><input type="number" step="any" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input" inputmode="decimal"></td>';
+                }}
+                return '<td><input type="text" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input"></td>';
+            }}
+
+            function buildFixedGrid(rs, ft) {{
                 var rows = rs.rows;
                 var cols = ft.columns;
-
                 var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">' + lblRow + '</th>';
-                for (var i = 0; i < cols.length; i++) {{
-                    html += '<th>' + cols[i].name + '</th>';
-                }}
+                for (var i = 0; i < cols.length; i++) html += '<th>' + cols[i].name + '</th>';
                 html += '</tr></thead><tbody>';
-
                 for (var r = 0; r < rows.length; r++) {{
                     html += '<tr><td class="ci-pupil-name">' + rows[r] + '</td>';
                     for (var c = 0; c < cols.length; c++) {{
                         var colType = cols[c].type || cols[c].col_type || 'text';
-                        if (colType === 'bool') {{
-                            var parts = lblBool.split(' / ');
-                            var yes = parts[0] || 'Yes';
-                            var no = parts[1] || 'No';
-                            html += '<td class="ci-col-bool"><select data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-select">'
-                                + '<option value=""></option><option value="' + yes + '">' + yes + '</option><option value="' + no + '">' + no + '</option></select></td>';
-                        }} else if (colType === 'number') {{
-                            html += '<td class="ci-col-number"><input type="number" step="any" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input" inputmode="decimal"></td>';
-                        }} else {{
-                            html += '<td><input type="text" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input"></td>';
-                        }}
+                        html += cellHtml(r, c, colType);
                     }}
                     html += '</tr>';
                 }}
                 html += '</tbody></table>';
                 gridContainer.innerHTML = html;
-                setupNav();
             }}
 
-            function setupNav() {{
-                var rsId = parseInt(rsSel.value);
-                var ftId = parseInt(ftSel.value);
-                var rs = rowSets.find(function(r) {{ return r.id === rsId; }});
-                var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
-                var maxR = rs ? rs.rows.length - 1 : 0;
-                var maxC = ft ? ft.columns.length - 1 : 0;
+            function dynamicRowHtml(r, cols) {{
+                var html = '<tr data-row="' + r + '">';
+                for (var c = 0; c < cols.length; c++) {{
+                    var colType = cols[c].type || cols[c].col_type || 'text';
+                    html += cellHtml(r, c, colType);
+                }}
+                html += '<td style="padding:0 0.4rem"><button type="button" class="btn-icon btn-icon-danger remove-row-btn" data-row="' + r + '" title="' + lblRemoveRow + '">×</button></td>';
+                html += '</tr>';
+                return html;
+            }}
 
-                var cells = gridContainer.querySelectorAll('.ci-cell');
-                cells.forEach(function(cell) {{
-                    cell.addEventListener('keydown', function(e) {{
-                        var r = parseInt(this.dataset.r);
-                        var c = parseInt(this.dataset.c);
-                        var nextR = r, nextC = c;
-                        var atEnd = this.tagName === 'SELECT' || this.selectionStart == null || this.selectionStart === this.value.length;
-                        var atStart = this.tagName === 'SELECT' || this.selectionStart == null || this.selectionStart === 0;
+            function buildDynamicGrid(ft) {{
+                var cols = ft.columns;
+                if (cols.length === 0) {{
+                    gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
+                    return;
+                }}
+                var html = '<table class="ci-input-table"><thead><tr>';
+                for (var i = 0; i < cols.length; i++) html += '<th>' + cols[i].name + '</th>';
+                html += '<th></th></tr></thead><tbody id="dynamic-rows">';
+                html += dynamicRowHtml(0, cols);
+                html += '</tbody></table>';
+                gridContainer.innerHTML = html;
+                dynamicRowCount = 1;
+                wireRemoveButtons(cols);
+            }}
 
-                        if (e.key === 'ArrowDown' || e.key === 'Enter') {{
-                            e.preventDefault();
-                            nextR = r + 1;
-                        }} else if (e.key === 'ArrowUp') {{
-                            e.preventDefault();
-                            nextR = r - 1;
-                        }} else if (e.key === 'ArrowRight' && atEnd) {{
-                            e.preventDefault();
-                            if (c < maxC) {{
-                                nextC = c + 1;
-                            }} else if (r < maxR) {{
-                                nextR = r + 1;
-                                nextC = 0;
-                            }}
-                        }} else if (e.key === 'ArrowLeft' && atStart) {{
-                            e.preventDefault();
-                            if (c > 0) {{
-                                nextC = c - 1;
-                            }} else if (r > 0) {{
-                                nextR = r - 1;
-                                nextC = maxC;
-                            }}
-                        }} else {{
-                            return;
-                        }}
-
-                        var target = gridContainer.querySelector('[data-r="' + nextR + '"][data-c="' + nextC + '"]');
-                        if (target) target.focus();
-                    }});
+            function wireRemoveButtons(cols) {{
+                gridContainer.querySelectorAll('.remove-row-btn').forEach(function(btn) {{
+                    btn.onclick = function() {{
+                        var tbody = document.getElementById('dynamic-rows');
+                        if (!tbody) return;
+                        if (tbody.children.length <= 1) return;
+                        var row = btn.closest('tr');
+                        if (row) row.remove();
+                    }};
                 }});
             }}
 
-            rsSel.addEventListener('change', buildGrid);
-            ftSel.addEventListener('change', buildGrid);
-            buildGrid();
-
-            form.addEventListener('submit', function() {{
-                var rsId = parseInt(rsSel.value);
-                var ftId = parseInt(ftSel.value);
-                var rs = rowSets.find(function(r) {{ return r.id === rsId; }});
-                var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
-                if (!rs || !ft) return;
-
-                var rows = rs.rows;
-                var cols = ft.columns;
-
-                var lines = [];
-                var header = [lblRow];
-                for (var i = 0; i < cols.length; i++) header.push(csvEscape(cols[i].name));
-                lines.push(header.join(','));
-
-                for (var r = 0; r < rows.length; r++) {{
-                    var row = [csvEscape(rows[r])];
-                    for (var c = 0; c < cols.length; c++) {{
-                        var cell = gridContainer.querySelector('[data-r="' + r + '"][data-c="' + c + '"]');
-                        row.push(csvEscape(cell ? cell.value : ''));
+            function applyMode() {{
+                var ft = currentFormType();
+                if (!ft) {{
+                    gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
+                    addRowBtn.style.display = 'none';
+                    return;
+                }}
+                if (ft.fixed_rows) {{
+                    rsGroup.style.display = '';
+                    rsSel.required = true;
+                    addRowBtn.style.display = 'none';
+                    if (rowSets.length === 0) {{
+                        rsWarning.style.display = '';
+                        gridContainer.innerHTML = '';
+                        submitBtn.disabled = true;
+                        return;
                     }}
-                    lines.push(row.join(','));
+                    rsWarning.style.display = 'none';
+                    submitBtn.disabled = false;
+                    var rs = currentRowSet();
+                    if (!rs || ft.columns.length === 0) {{
+                        gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
+                        return;
+                    }}
+                    buildFixedGrid(rs, ft);
+                }} else {{
+                    rsGroup.style.display = 'none';
+                    rsSel.required = false;
+                    rsWarning.style.display = 'none';
+                    addRowBtn.style.display = '';
+                    submitBtn.disabled = false;
+                    buildDynamicGrid(ft);
+                }}
+            }}
+
+            addRowBtn.addEventListener('click', function() {{
+                var ft = currentFormType();
+                if (!ft || ft.columns.length === 0) return;
+                var tbody = document.getElementById('dynamic-rows');
+                if (!tbody) return;
+                tbody.insertAdjacentHTML('beforeend', dynamicRowHtml(dynamicRowCount, ft.columns));
+                dynamicRowCount++;
+                wireRemoveButtons(ft.columns);
+            }});
+
+            rsSel.addEventListener('change', applyMode);
+            ftSel.addEventListener('change', applyMode);
+            applyMode();
+
+            form.addEventListener('submit', function(e) {{
+                var ft = currentFormType();
+                if (!ft) return;
+                var cols = ft.columns;
+                var lines = [];
+
+                if (ft.fixed_rows) {{
+                    var rs = currentRowSet();
+                    if (!rs) {{ e.preventDefault(); return; }}
+                    var rows = rs.rows;
+                    var header = [lblRow];
+                    for (var i = 0; i < cols.length; i++) header.push(csvEscape(cols[i].name));
+                    lines.push(header.join(','));
+                    for (var r = 0; r < rows.length; r++) {{
+                        var row = [csvEscape(rows[r])];
+                        for (var c = 0; c < cols.length; c++) {{
+                            var cell = gridContainer.querySelector('[data-r="' + r + '"][data-c="' + c + '"]');
+                            row.push(csvEscape(cell ? cell.value : ''));
+                        }}
+                        lines.push(row.join(','));
+                    }}
+                }} else {{
+                    var header2 = [];
+                    for (var i2 = 0; i2 < cols.length; i2++) header2.push(csvEscape(cols[i2].name));
+                    lines.push(header2.join(','));
+                    var trs = gridContainer.querySelectorAll('#dynamic-rows tr');
+                    trs.forEach(function(tr) {{
+                        var rowVals = [];
+                        for (var c2 = 0; c2 < cols.length; c2++) {{
+                            var cell2 = tr.querySelector('[data-c="' + c2 + '"]');
+                            rowVals.push(csvEscape(cell2 ? cell2.value : ''));
+                        }}
+                        lines.push(rowVals.join(','));
+                    }});
                 }}
                 csvInput.value = lines.join('\n');
             }});
@@ -447,6 +525,10 @@ async fn new_input_page(
         form_type_lbl = t.inp_form_type,
         name_lbl = t.inp_name,
         save_btn = t.inp_save,
+        add_row_label = add_row_label,
+        remove_row_label = remove_row_label,
+        no_rows_yet = no_rows_yet,
+        need_row_set = need_row_set,
     );
 
     Html(render_page(
@@ -460,7 +542,8 @@ async fn new_input_page(
 
 #[derive(Deserialize)]
 struct CreateInputForm {
-    row_set_id: i64,
+    #[serde(default)]
+    row_set_id: Option<String>,
     form_type_id: i64,
     name: String,
     csv_data: String,
@@ -472,10 +555,29 @@ async fn create(
     Form(form): Form<CreateInputForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
+
+    let fixed_rows: bool = sqlx::query_scalar(
+        "SELECT fixed_rows FROM form_input_form_types WHERE id = ? AND user_id = ?",
+    )
+    .bind(form.form_type_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None)
+    .unwrap_or(false);
+
+    let row_set_id: Option<i64> = if fixed_rows {
+        form.row_set_id
+            .as_deref()
+            .and_then(|s| s.trim().parse::<i64>().ok())
+    } else {
+        None
+    };
+
     super::ops::create_input(
         &state.pool,
         user_id.0,
-        Some(form.row_set_id),
+        row_set_id,
         form.form_type_id,
         form.name.trim(),
         &form.csv_data,
@@ -518,6 +620,7 @@ async fn view(
     };
 
     let lines: Vec<&str> = inp.csv_data.lines().collect();
+    let highlight_first_col = inp.row_set_id.is_some();
     let mut table_html = String::from("<table><thead><tr>");
     if let Some(header) = lines.first() {
         for col in parse_csv_line(header) {
@@ -529,7 +632,7 @@ async fn view(
         table_html.push_str("<tr>");
         let fields = parse_csv_line(line);
         for (i, field) in fields.iter().enumerate() {
-            if i == 0 {
+            if i == 0 && highlight_first_col {
                 table_html.push_str(&format!(r#"<td class="ci-pupil-name">{field}</td>"#));
             } else {
                 table_html.push_str(&format!("<td>{field}</td>"));
@@ -556,12 +659,18 @@ async fn view(
 
     let date = &inp.created_at[..10.min(inp.created_at.len())];
 
+    let rs_badge = match rs_label.as_deref() {
+        Some(label) => {
+            format!(r#"<span class="label-badge" style="--label-color:#1A6B5A">{label}</span> "#)
+        }
+        None => String::new(),
+    };
+
     let body = format!(
         r##"<div class="page-header">
             <h1>{name}</h1>
             <p>
-                <span class="label-badge" style="--label-color:#1A6B5A">{rs_label}</span>
-                {ft_name} — {date}
+                {rs_badge}{ft_name} — {date}
             </p>
         </div>
 
@@ -573,7 +682,6 @@ async fn view(
             <a href="{base}/forms" class="btn btn-secondary">{back}</a>
         </div>"##,
         name = inp.name,
-        rs_label = rs_label.as_deref().unwrap_or("?"),
         ft_name = ft_name.as_deref().unwrap_or("?"),
         back = t.inp_back,
     );

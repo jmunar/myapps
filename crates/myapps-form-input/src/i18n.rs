@@ -57,6 +57,13 @@ pub struct Translations {
     pub ft_cancel: &'static str,
     pub ft_no_columns: &'static str,
     pub ft_not_found: &'static str,
+    pub ft_fixed_rows: &'static str,
+    pub ft_fixed_rows_hint: &'static str,
+    pub ft_badge_fixed: &'static str,
+    pub ft_badge_dynamic: &'static str,
+    pub inp_add_row: &'static str,
+    pub inp_remove_row: &'static str,
+    pub inp_no_rows_yet: &'static str,
 }
 
 pub const EN: Translations = Translations {
@@ -118,6 +125,13 @@ pub const EN: Translations = Translations {
     ft_cancel: "Cancel",
     ft_no_columns: "No columns",
     ft_not_found: "Form type not found.",
+    ft_fixed_rows: "Fixed rows from a row set",
+    ft_fixed_rows_hint: "When checked, each input picks a row set and gets one row per item. Leave unchecked to add rows freely.",
+    ft_badge_fixed: "Fixed rows",
+    ft_badge_dynamic: "Dynamic rows",
+    inp_add_row: "+ Add row",
+    inp_remove_row: "Remove row",
+    inp_no_rows_yet: "No rows yet — click \u{201C}+ Add row\u{201D} to start.",
 };
 
 pub const ES: Translations = Translations {
@@ -179,6 +193,13 @@ pub const ES: Translations = Translations {
     ft_cancel: "Cancelar",
     ft_no_columns: "Sin columnas",
     ft_not_found: "Tipo de formulario no encontrado.",
+    ft_fixed_rows: "Filas fijas desde un conjunto de filas",
+    ft_fixed_rows_hint: "Si está marcado, cada registro selecciona un conjunto de filas y crea una fila por elemento. Déjalo sin marcar para añadir filas libremente.",
+    ft_badge_fixed: "Filas fijas",
+    ft_badge_dynamic: "Filas dinámicas",
+    inp_add_row: "+ Añadir fila",
+    inp_remove_row: "Eliminar fila",
+    inp_no_rows_yet: "Sin filas aún — haz clic en \u{201C}+ Añadir fila\u{201D} para empezar.",
 };
 
 pub fn t(lang: myapps_core::i18n::Lang) -> &'static Translations {

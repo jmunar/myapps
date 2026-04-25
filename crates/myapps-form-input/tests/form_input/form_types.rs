@@ -118,6 +118,116 @@ async fn edit_form_type() {
 }
 
 #[tokio::test]
+async fn form_types_list_shows_fixed_and_dynamic_badges() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let body = app.server.get("/forms/form-types").await.text();
+    assert!(body.contains("Fixed rows"));
+    assert!(body.contains("Dynamic rows"));
+}
+
+#[tokio::test]
+async fn create_form_type_with_fixed_rows_persists_flag() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'test'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, 'Roll call', '[]', 1)",
+    )
+    .bind(user_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, 'Free notes', '[]', 0)",
+    )
+    .bind(user_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let stored: (bool, bool) = sqlx::query_as(
+        "SELECT (SELECT fixed_rows FROM form_input_form_types WHERE name = 'Roll call'),
+                (SELECT fixed_rows FROM form_input_form_types WHERE name = 'Free notes')",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert!(stored.0, "Roll call should be fixed_rows=true");
+    assert!(!stored.1, "Free notes should be fixed_rows=false");
+}
+
+#[tokio::test]
+async fn fixed_rows_column_defaults_to_false() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'test'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    // Insert without specifying fixed_rows — the migration's DEFAULT 0 applies.
+    sqlx::query(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json) VALUES (?, 'Quick log', '[]')",
+    )
+    .bind(user_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let stored: bool = sqlx::query_scalar(
+        "SELECT fixed_rows FROM form_input_form_types WHERE name = 'Quick log' LIMIT 1",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert!(!stored, "default fixed_rows should be false");
+}
+
+#[tokio::test]
+async fn edit_form_type_page_reflects_fixed_rows_checkbox_state() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (fixed_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_form_types WHERE name = 'Weekly quiz' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    let (dyn_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_form_types WHERE name = 'Expense log' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let fixed_body = app
+        .server
+        .get(&format!("/forms/form-types/{fixed_id}/edit"))
+        .await
+        .text();
+    assert!(
+        fixed_body.contains(r#"name="fixed_rows" value="1" checked"#),
+        "fixed_rows checkbox should be checked for fixed-rows form type"
+    );
+
+    let dyn_body = app
+        .server
+        .get(&format!("/forms/form-types/{dyn_id}/edit"))
+        .await
+        .text();
+    assert!(
+        dyn_body.contains(r#"name="fixed_rows" value="1">"#)
+            && !dyn_body.contains(r#"name="fixed_rows" value="1" checked"#),
+        "fixed_rows checkbox should not be checked for dynamic form type"
+    );
+}
+
+#[tokio::test]
 async fn delete_form_type() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
     app.seed_and_login(&myapps_form_input::FormInputApp).await;

@@ -142,3 +142,83 @@ async fn delete_input() {
     let body = list.text();
     assert!(!body.contains("Week 10 quiz"));
 }
+
+#[tokio::test]
+async fn dynamic_input_seeded_and_listed_without_row_set() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (id, row_set_id): (i64, Option<i64>) = sqlx::query_as(
+        "SELECT id, row_set_id FROM form_input_inputs WHERE name = 'March expenses' LIMIT 1",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert!(
+        row_set_id.is_none(),
+        "dynamic input should have NULL row_set_id"
+    );
+
+    let body = app.server.get("/forms").await.text();
+    assert!(body.contains("March expenses"));
+    assert!(body.contains("Expense log"));
+
+    let detail = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(detail.contains("Train ticket"));
+    assert!(detail.contains("Office supplies"));
+}
+
+#[tokio::test]
+async fn create_dynamic_input_ignores_row_set_id() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (rs_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_row_sets WHERE label = '1-A' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    let (ft_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_form_types WHERE name = 'Expense log' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let response = app
+        .server
+        .post("/forms/inputs/create")
+        .form(&serde_json::json!({
+            "row_set_id": rs_id,
+            "form_type_id": ft_id,
+            "name": "April expenses",
+            "csv_data": "Item,Amount,Reimbursable,Notes\nFlight,420,Yes,Trip",
+        }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+
+    let stored: Option<i64> = sqlx::query_scalar(
+        "SELECT row_set_id FROM form_input_inputs WHERE name = 'April expenses' LIMIT 1",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert!(
+        stored.is_none(),
+        "row_set_id should be cleared for a dynamic form type even when posted"
+    );
+}
+
+#[tokio::test]
+async fn new_input_page_hides_row_set_warning_when_dynamic_form_type_exists() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let body = app.server.get("/forms/new").await.text();
+    // The page tags each form type with a fixed_rows boolean for the JS toggle
+    assert!(body.contains(r#""fixed_rows":true"#));
+    assert!(body.contains(r#""fixed_rows":false"#));
+    // The row-set group is present but JS hides it for dynamic mode
+    assert!(body.contains(r#"id="row-set-group""#));
+    assert!(body.contains(r#"id="add-row-btn""#));
+}

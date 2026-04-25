@@ -85,33 +85,44 @@ pub async fn run(
     tracing::info!("Seeded {rs_count} row sets");
 
     // ── Form types ────────────────────────────────────────────────
-    let form_types: &[(&str, &str)] = &[
+    // (name, columns_json, fixed_rows)
+    let form_types: &[(&str, &str, bool)] = &[
         (
             "Weekly quiz",
             r#"[{"name":"Score","type":"number"},{"name":"Comment","type":"text"}]"#,
+            true,
         ),
         (
             "Attendance",
             r#"[{"name":"Present","type":"bool"},{"name":"Late","type":"bool"},{"name":"Note","type":"text"}]"#,
+            true,
         ),
         (
             "Reading assessment",
             r#"[{"name":"Fluency","type":"number"},{"name":"Comprehension","type":"number"},{"name":"Vocabulary","type":"number"},{"name":"Overall","type":"text"}]"#,
+            true,
         ),
         (
             "Behaviour report",
             r#"[{"name":"Participation","type":"number"},{"name":"Respect","type":"number"},{"name":"Effort","type":"number"},{"name":"Remark","type":"text"}]"#,
+            true,
+        ),
+        (
+            "Expense log",
+            r#"[{"name":"Item","type":"text"},{"name":"Amount","type":"number"},{"name":"Reimbursable","type":"bool"},{"name":"Notes","type":"text"}]"#,
+            false,
         ),
     ];
 
     let mut ft_count = 0u64;
-    for (name, columns_json) in form_types {
+    for (name, columns_json, fixed_rows) in form_types {
         let result = sqlx::query(
-            "INSERT INTO form_input_form_types (user_id, name, columns_json) VALUES (?, ?, ?)",
+            "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, ?)",
         )
         .bind(user_id)
         .bind(name)
         .bind(columns_json)
+        .bind(fixed_rows)
         .execute(pool)
         .await?;
         ft_count += result.rows_affected();
@@ -146,7 +157,7 @@ Nuria Jiménez,8.5,
 Óscar Álvarez,7,Improving steadily
 Paula Domínguez,9,
 Raúl Muñoz,7.5,";
-        inp_count += insert_input(pool, user_id, rsid, fid, "Week 10 quiz", csv).await;
+        inp_count += insert_input(pool, user_id, Some(rsid), fid, "Week 10 quiz", csv).await;
     }
 
     if let (Some(rsid), Some(fid)) = (rs_1a, ft_quiz) {
@@ -167,7 +178,7 @@ Nuria Jiménez,9,Great work
 Óscar Álvarez,7.5,
 Paula Domínguez,8.5,
 Raúl Muñoz,8,";
-        inp_count += insert_input(pool, user_id, rsid, fid, "Week 11 quiz", csv).await;
+        inp_count += insert_input(pool, user_id, Some(rsid), fid, "Week 11 quiz", csv).await;
     }
 
     if let (Some(rsid), Some(fid)) = (rs_1b, ft_attendance) {
@@ -187,7 +198,15 @@ Karina Iglesias,Yes,Yes,Bus delay
 Luis Rubio,Yes,No,
 María Peña,Yes,No,
 Nicolás Flores,Yes,No,";
-        inp_count += insert_input(pool, user_id, rsid, fid, "Attendance — Mon 10 Mar", csv).await;
+        inp_count += insert_input(
+            pool,
+            user_id,
+            Some(rsid),
+            fid,
+            "Attendance — Mon 10 Mar",
+            csv,
+        )
+        .await;
     }
 
     if let (Some(rsid), Some(fid)) = (rs_2a, ft_reading) {
@@ -205,8 +224,26 @@ Julia Fuentes,8,8,7,Good
 Kevin Santos,7,7,7,Satisfactory
 Lucía Cabrera,9,8,9,Excellent
 Mario Campos,6,6,5,Needs improvement";
-        inp_count +=
-            insert_input(pool, user_id, rsid, fid, "Reading assessment — March", csv).await;
+        inp_count += insert_input(
+            pool,
+            user_id,
+            Some(rsid),
+            fid,
+            "Reading assessment — March",
+            csv,
+        )
+        .await;
+    }
+
+    // Dynamic-mode example: an expense log with no row set.
+    if let Some(fid) = ft_id(pool, user_id, "Expense log").await {
+        let csv = "\
+Item,Amount,Reimbursable,Notes
+Train ticket,42.50,Yes,Client visit
+Coffee,3.20,No,
+Office supplies,18.75,Yes,Notebooks and pens
+Lunch,12.00,Yes,Working session";
+        inp_count += insert_input(pool, user_id, None, fid, "March expenses", csv).await;
     }
 
     tracing::info!("Seeded {inp_count} inputs");
@@ -244,7 +281,7 @@ async fn ft_id(pool: &SqlitePool, user_id: i64, name: &str) -> Option<i64> {
 async fn insert_input(
     pool: &SqlitePool,
     user_id: i64,
-    row_set_id: i64,
+    row_set_id: Option<i64>,
     form_type_id: i64,
     name: &str,
     csv: &str,

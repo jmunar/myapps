@@ -34,6 +34,7 @@ struct FormTypeRow {
     id: i64,
     name: String,
     columns_json: String,
+    fixed_rows: bool,
 }
 
 fn parse_columns(json: &str) -> Vec<ColumnDef> {
@@ -69,7 +70,7 @@ async fn list(
     let t = super::i18n::t(lang);
 
     let form_types: Vec<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM form_input_form_types WHERE user_id = ? ORDER BY name ASC",
+        "SELECT id, name, columns_json, fixed_rows FROM form_input_form_types WHERE user_id = ? ORDER BY name ASC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -87,12 +88,20 @@ async fn list(
     for ft in &form_types {
         let cols = parse_columns(&ft.columns_json);
         let col_html = render_column_list(&cols, lang);
+        let (mode_label, mode_color) = if ft.fixed_rows {
+            (t.ft_badge_fixed, "#1A6B5A")
+        } else {
+            (t.ft_badge_dynamic, "#9333EA")
+        };
 
         items.push_str(&format!(
             r##"<div class="label-item" id="formtype-{id}">
                 <div class="label-item-info" style="flex-direction:column;align-items:flex-start;gap:0.25rem">
                     <strong>{name}</strong>
-                    <div>{col_html}</div>
+                    <div>
+                        <span class="label-badge" style="--label-color:{mode_color}">{mode_label}</span>
+                        {col_html}
+                    </div>
                 </div>
                 <div class="label-item-actions">
                     <a href="{base}/forms/form-types/{id}/edit" class="btn-icon">{edit_label}</a>
@@ -133,6 +142,13 @@ async fn list(
                         <input type="text" id="name" name="name" required placeholder="e.g. Weekly quiz">
                     </div>
                     <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:0.5rem;font-weight:normal">
+                            <input type="checkbox" name="fixed_rows" value="1">
+                            {fixed_rows_lbl}
+                        </label>
+                        <small class="text-secondary">{fixed_rows_hint}</small>
+                    </div>
+                    <div class="form-group">
                         <label>{columns_lbl}</label>
                         <div id="columns-editor" class="ci-columns-editor">
                             <div class="ci-column-row">
@@ -168,6 +184,8 @@ async fn list(
         your_types = t.ft_your_types,
         create_heading = t.ft_create,
         name_lbl = t.ft_name,
+        fixed_rows_lbl = t.ft_fixed_rows,
+        fixed_rows_hint = t.ft_fixed_rows_hint,
         columns_lbl = t.ft_columns,
         col_name_ph = t.ft_col_name,
         col_text = t.ft_col_text,
@@ -193,6 +211,7 @@ struct CreateForm {
     col_name: Vec<String>,
     #[serde(rename = "col_type[]")]
     col_type: Vec<String>,
+    fixed_rows: Option<String>,
 }
 
 async fn create(
@@ -212,14 +231,18 @@ async fn create(
         })
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
+    let fixed_rows = form.fixed_rows.is_some();
 
-    sqlx::query("INSERT INTO form_input_form_types (user_id, name, columns_json) VALUES (?, ?, ?)")
-        .bind(user_id.0)
-        .bind(form.name.trim())
-        .bind(&json)
-        .execute(&state.pool)
-        .await
-        .ok();
+    sqlx::query(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, ?)",
+    )
+    .bind(user_id.0)
+    .bind(form.name.trim())
+    .bind(&json)
+    .bind(fixed_rows)
+    .execute(&state.pool)
+    .await
+    .ok();
     Redirect::to(&format!("{base}/forms/form-types"))
 }
 
@@ -233,7 +256,7 @@ async fn edit_page(
     let t = super::i18n::t(lang);
 
     let ft: Option<FormTypeRow> = sqlx::query_as(
-        "SELECT id, name, columns_json FROM form_input_form_types WHERE id = ? AND user_id = ?",
+        "SELECT id, name, columns_json, fixed_rows FROM form_input_form_types WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id.0)
@@ -314,6 +337,13 @@ async fn edit_page(
                         <input type="text" id="name" name="name" value="{name}" required>
                     </div>
                     <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:0.5rem;font-weight:normal">
+                            <input type="checkbox" name="fixed_rows" value="1"{fixed_rows_checked}>
+                            {fixed_rows_lbl}
+                        </label>
+                        <small class="text-secondary">{fixed_rows_hint}</small>
+                    </div>
+                    <div class="form-group">
                         <label>{columns_lbl}</label>
                         <div id="columns-editor" class="ci-columns-editor">
                             {col_rows}
@@ -343,6 +373,9 @@ async fn edit_page(
         name = ft.name,
         edit_title = t.ft_edit_title,
         name_lbl = t.ft_name,
+        fixed_rows_lbl = t.ft_fixed_rows,
+        fixed_rows_hint = t.ft_fixed_rows_hint,
+        fixed_rows_checked = if ft.fixed_rows { " checked" } else { "" },
         columns_lbl = t.ft_columns,
         add_column = t.ft_add_column,
         save_btn = t.ft_save,
@@ -365,6 +398,7 @@ struct EditForm {
     col_name: Vec<String>,
     #[serde(rename = "col_type[]")]
     col_type: Vec<String>,
+    fixed_rows: Option<String>,
 }
 
 async fn edit(
@@ -385,12 +419,14 @@ async fn edit(
         })
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
+    let fixed_rows = form.fixed_rows.is_some();
 
     sqlx::query(
-        "UPDATE form_input_form_types SET name = ?, columns_json = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        "UPDATE form_input_form_types SET name = ?, columns_json = ?, fixed_rows = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
     )
     .bind(form.name.trim())
     .bind(&json)
+    .bind(fixed_rows)
     .bind(id)
     .bind(user_id.0)
     .execute(&state.pool)
