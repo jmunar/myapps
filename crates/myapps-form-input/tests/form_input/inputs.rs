@@ -596,6 +596,18 @@ async fn update_cell_persists_link_value_with_pipe() {
 }
 
 #[tokio::test]
+async fn update_cell_endpoint_requires_authentication() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    let response = app
+        .server
+        .post("/forms/inputs/1/cell")
+        .form(&serde_json::json!({ "row": 1, "col": 1, "value": "x" }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+}
+
+#[tokio::test]
 async fn view_page_renders_sort_and_filter_controls() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
     app.seed_and_login(&myapps_form_input::FormInputApp).await;
