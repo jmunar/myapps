@@ -61,7 +61,8 @@ make screenshots                    # Regenerate README screenshots (needs Node.
 - **Security audit** (`.github/workflows/audit.yml`) runs on Cargo.toml/lock
   changes and weekly via `cargo audit`.
 - All three workflows support `workflow_dispatch` for manual triggering from
-  the GitHub Actions UI.
+  the GitHub Actions UI. Manual CD runs deploy to staging only by default;
+  tick the `deploy_prod` input to also deploy to production.
 - **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for Cargo
   dependency updates and GitHub Actions version bumps.
 - `make check` runs the same checks locally before pushing.
