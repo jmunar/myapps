@@ -137,7 +137,7 @@ async fn list(
         <div class="card mt-2" style="max-width:40rem;">
             <div class="card-header"><h2>{create_heading}</h2></div>
             <div class="card-body">
-                <form method="POST" action="{base}/forms/form-types/create">
+                <form method="POST" action="{base}/forms/form-types/create" id="ft-create-form">
                     <div class="form-group">
                         <label for="name">{name_lbl}</label>
                         <input type="text" id="name" name="name" required placeholder="e.g. Weekly quiz">
@@ -153,8 +153,8 @@ async fn list(
                         <label>{columns_lbl}</label>
                         <div id="columns-editor" class="ci-columns-editor">
                             <div class="ci-column-row">
-                                <input type="text" name="col_name[]" placeholder="{col_name_ph}" required>
-                                <select name="col_type[]">
+                                <input type="text" data-col-name placeholder="{col_name_ph}" required>
+                                <select data-col-type>
                                     <option value="text">{col_text}</option>
                                     <option value="number">{col_number}</option>
                                     <option value="bool">{col_bool}</option>
@@ -166,6 +166,7 @@ async fn list(
                         <button type="button" class="btn btn-secondary btn-sm mt-1"
                                 onclick="addColumnRow(document.getElementById('columns-editor'))">{add_column}</button>
                     </div>
+                    <input type="hidden" name="columns" id="ft-create-columns">
                     <button type="submit" class="mt-1">{create_btn}</button>
                 </form>
             </div>
@@ -175,11 +176,31 @@ async fn list(
         function addColumnRow(container) {{
             var row = document.createElement('div');
             row.className = 'ci-column-row';
-            row.innerHTML = '<input type="text" name="col_name[]" placeholder="{col_name_ph}" required>'
-                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
+            row.innerHTML = '<input type="text" data-col-name placeholder="{col_name_ph}" required>'
+                + '<select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
         }}
+        function serializeColumns(editorEl) {{
+            var rows = editorEl.querySelectorAll('.ci-column-row');
+            var out = [];
+            rows.forEach(function(row) {{
+                var nameEl = row.querySelector('[data-col-name]');
+                var typeEl = row.querySelector('[data-col-type]');
+                var name = nameEl ? nameEl.value.trim() : '';
+                if (!name) return;
+                out.push({{ name: name, type: typeEl ? typeEl.value : 'text' }});
+            }});
+            return JSON.stringify(out);
+        }}
+        (function() {{
+            var form = document.getElementById('ft-create-form');
+            if (!form) return;
+            form.addEventListener('submit', function() {{
+                document.getElementById('ft-create-columns').value =
+                    serializeColumns(document.getElementById('columns-editor'));
+            }});
+        }})();
         </script>"##,
         title = t.ft_title,
         subtitle = t.ft_subtitle,
@@ -210,10 +231,10 @@ async fn list(
 #[derive(Deserialize)]
 struct CreateForm {
     name: String,
-    #[serde(rename = "col_name[]")]
-    col_name: Vec<String>,
-    #[serde(rename = "col_type[]")]
-    col_type: Vec<String>,
+    /// JSON-encoded `Vec<ColumnDef>` populated by the page's submit handler.
+    /// Stored as one field rather than repeated `col_name[]`/`col_type[]` keys
+    /// so we sidestep `serde_urlencoded`, which can't deserialize repeated keys.
+    columns: String,
     fixed_rows: Option<String>,
 }
 
@@ -223,14 +244,13 @@ async fn create(
     Form(form): Form<CreateForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let columns: Vec<ColumnDef> = form
-        .col_name
-        .iter()
-        .zip(form.col_type.iter())
-        .filter(|(n, _)| !n.trim().is_empty())
-        .map(|(n, t)| ColumnDef {
-            name: n.trim().to_string(),
-            col_type: t.clone(),
+    let columns: Vec<ColumnDef> = serde_json::from_str::<Vec<ColumnDef>>(&form.columns)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| !c.name.trim().is_empty())
+        .map(|c| ColumnDef {
+            name: c.name.trim().to_string(),
+            col_type: c.col_type,
         })
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
@@ -311,8 +331,8 @@ async fn edit_page(
         };
         col_rows.push_str(&format!(
             r#"<div class="ci-column-row">
-                <input type="text" name="col_name[]" value="{name}" required>
-                <select name="col_type[]">
+                <input type="text" data-col-name value="{name}" required>
+                <select data-col-type>
                     <option value="text"{sel_text}>{col_text}</option>
                     <option value="number"{sel_num}>{col_number}</option>
                     <option value="bool"{sel_bool}>{col_bool}</option>
@@ -327,8 +347,8 @@ async fn edit_page(
     if col_rows.is_empty() {
         col_rows = format!(
             r#"<div class="ci-column-row">
-            <input type="text" name="col_name[]" placeholder="{col_name_ph}" required>
-            <select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>
+            <input type="text" data-col-name placeholder="{col_name_ph}" required>
+            <select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>
             <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
         </div>"#
         );
@@ -341,7 +361,7 @@ async fn edit_page(
 
         <div class="card" style="max-width:40rem;">
             <div class="card-body">
-                <form method="POST" action="{base}/forms/form-types/{id}/edit">
+                <form method="POST" action="{base}/forms/form-types/{id}/edit" id="ft-edit-form">
                     <div class="form-group">
                         <label for="name">{name_lbl}</label>
                         <input type="text" id="name" name="name" value="{name}" required>
@@ -361,6 +381,7 @@ async fn edit_page(
                         <button type="button" class="btn btn-secondary btn-sm mt-1"
                                 onclick="addColumnRow(document.getElementById('columns-editor'))">{add_column}</button>
                     </div>
+                    <input type="hidden" name="columns" id="ft-edit-columns">
                     <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
                         <button type="submit" class="btn btn-primary">{save_btn}</button>
                         <a href="{base}/forms/form-types" class="btn btn-secondary">{cancel_btn}</a>
@@ -373,11 +394,31 @@ async fn edit_page(
         function addColumnRow(container) {{
             var row = document.createElement('div');
             row.className = 'ci-column-row';
-            row.innerHTML = '<input type="text" name="col_name[]" placeholder="{col_name_ph}" required>'
-                + '<select name="col_type[]"><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
+            row.innerHTML = '<input type="text" data-col-name placeholder="{col_name_ph}" required>'
+                + '<select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
         }}
+        function serializeColumns(editorEl) {{
+            var rows = editorEl.querySelectorAll('.ci-column-row');
+            var out = [];
+            rows.forEach(function(row) {{
+                var nameEl = row.querySelector('[data-col-name]');
+                var typeEl = row.querySelector('[data-col-type]');
+                var name = nameEl ? nameEl.value.trim() : '';
+                if (!name) return;
+                out.push({{ name: name, type: typeEl ? typeEl.value : 'text' }});
+            }});
+            return JSON.stringify(out);
+        }}
+        (function() {{
+            var form = document.getElementById('ft-edit-form');
+            if (!form) return;
+            form.addEventListener('submit', function() {{
+                document.getElementById('ft-edit-columns').value =
+                    serializeColumns(document.getElementById('columns-editor'));
+            }});
+        }})();
         </script>"##,
         id = ft.id,
         name = ft.name,
@@ -404,10 +445,7 @@ async fn edit_page(
 #[derive(Deserialize)]
 struct EditForm {
     name: String,
-    #[serde(rename = "col_name[]")]
-    col_name: Vec<String>,
-    #[serde(rename = "col_type[]")]
-    col_type: Vec<String>,
+    columns: String,
     fixed_rows: Option<String>,
 }
 
@@ -418,14 +456,13 @@ async fn edit(
     Form(form): Form<EditForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    let columns: Vec<ColumnDef> = form
-        .col_name
-        .iter()
-        .zip(form.col_type.iter())
-        .filter(|(n, _)| !n.trim().is_empty())
-        .map(|(n, t)| ColumnDef {
-            name: n.trim().to_string(),
-            col_type: t.clone(),
+    let columns: Vec<ColumnDef> = serde_json::from_str::<Vec<ColumnDef>>(&form.columns)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|c| !c.name.trim().is_empty())
+        .map(|c| ColumnDef {
+            name: c.name.trim().to_string(),
+            col_type: c.col_type,
         })
         .collect();
     let json = serde_json::to_string(&columns).unwrap_or_default();
