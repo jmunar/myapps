@@ -242,8 +242,6 @@ After setup, enable HTTPS with certbot (see Quick Start step 4).
 ├── private.pem            # Enable Banking RSA private key (chmod 600)
 ├── data/
 │   └── myapps.db          # SQLite database (created on first run)
-├── logs/
-│   └── cron.log           # Cron job output
 └── static/                # (reserved for future use)
 
 ~/myapps-build/            # Build directory (owned by deploy user)
@@ -315,7 +313,7 @@ sudo journalctl -u myapps -f    # tail logs
 Installed at `/etc/cron.d/myapps` by `setup`. Runs daily at 06:00:
 
 ```
-0 6 * * * myapps . /opt/myapps/.env && /opt/myapps/myapps cron >> /opt/myapps/logs/cron.log 2>&1
+0 6 * * * myapps /opt/myapps/myapps cron
 ```
 
 ## Web Push Notifications
