@@ -130,6 +130,11 @@ assembles all crates.
 - After any frontend change (routes, handlers, HTML templates, CSS classes used
   in assertions), run the **frontend-tester agent**
   (`.claude/agents/frontend-tester.md`) to generate or update integration tests.
+- For browser-level verification (XSS, broken HTMX swaps, console errors,
+  4xx/5xx, layout regressions) use the **`/frontend-walkthrough`** command.
+  No-arg form walks every route touched on the current branch vs `main`;
+  pass an app key, route, or description to walk a specific area on demand.
+  See `.claude/commands/frontend-walkthrough.md`.
 - App-specific tests live in each app crate's `tests/` directory
   (e.g. `crates/myapps-leanfin/tests/`). Platform-level auth and launcher
   tests live at the root `tests/`. The shared `myapps-test-harness` crate
