@@ -96,10 +96,13 @@ test.describe("README screenshots", () => {
 
     // ── FormInput ──
     await page.goto(`${BASE_URL}/forms`);
-    await snap(page, "classroom-input");
+    await snap(page, "form-input-inputs");
 
     await page.goto(`${BASE_URL}/forms/row-sets`);
-    await snap(page, "classroom-classrooms");
+    await snap(page, "form-input-row-sets");
+
+    await page.goto(`${BASE_URL}/forms/form-types`);
+    await snap(page, "form-input-form-types");
 
     // ── Notes ──
     await page.goto(`${BASE_URL}/notes`);

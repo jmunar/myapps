@@ -177,15 +177,17 @@ After login, the top-level router serves:
   - `/forms/` — Input list (all saved inputs)
   - `/forms/new` — New input page (select row set + form type, fill grid)
   - `POST /forms/inputs/create` — Save input as CSV
-  - `/classroom/inputs/{id}` — View input detail (read-only table)
-  - `POST /classroom/inputs/{id}/delete` — Delete input
-  - `/classroom/classrooms` — Classroom list + create form
-  - `POST /classroom/classrooms/create` — Create classroom
-  - `POST /classroom/classrooms/{id}/delete` — Delete classroom and its inputs
-  - `/classroom/form-types` — Form type list + create form
-  - `POST /classroom/form-types/create` — Create form type
-  - `/classroom/form-types/{id}/edit` — Edit form type (GET form, POST submit)
-  - `POST /classroom/form-types/{id}/delete` — Delete form type and its inputs
+  - `/forms/inputs/{id}` — View input detail (editable spreadsheet grid with
+    per-column sort/filter; double-click any cell to edit in place)
+  - `POST /forms/inputs/{id}/cell` — Persist a single-cell edit (row, col, value)
+  - `POST /forms/inputs/{id}/delete` — Delete input
+  - `/forms/row-sets` — Row set list + create form
+  - `POST /forms/row-sets/create` — Create row set
+  - `POST /forms/row-sets/{id}/delete` — Delete row set and its inputs
+  - `/forms/form-types` — Form type list + create form
+  - `POST /forms/form-types/create` — Create form type
+  - `/forms/form-types/{id}/edit` — Edit form type (GET form, POST submit)
+  - `POST /forms/form-types/{id}/delete` — Delete form type and its inputs
 - `/notes/` — Notes sub-app (nested router)
   - `/notes/` — Notes list (grid of note cards, pinned first)
   - `POST /notes/new` — Create empty note (redirects to edit)
