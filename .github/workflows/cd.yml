@@ -2,6 +2,11 @@ name: CD
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_prod:
+        description: Also deploy to production
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -199,6 +204,7 @@ jobs:
   deploy-prod:
     name: Deploy to production
     needs: [release, deploy-stage]
+    if: github.event_name != 'workflow_dispatch' || inputs.deploy_prod
     runs-on: ubuntu-latest
     environment: production
     steps:

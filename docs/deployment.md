@@ -614,7 +614,9 @@ CI runners have no interactive terminal.
 ### Manual trigger
 
 The CD workflow supports `workflow_dispatch`, so you can trigger a deploy
-manually from the GitHub Actions UI without pushing a commit.
+manually from the GitHub Actions UI without pushing a commit. Manual runs
+deploy to staging by default; tick the **Also deploy to production** input
+to continue on to prod after staging.
 
 ## nginx + HTTPS
 
