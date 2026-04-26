@@ -1995,7 +1995,7 @@ dependencies = [
 
 [[package]]
 name = "myapps"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "axum-test",
