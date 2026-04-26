@@ -1,6 +1,6 @@
 use axum::{
     Extension, Form, Router,
-    extract::Path,
+    extract::{Multipart, Path},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
@@ -19,6 +19,7 @@ pub fn routes() -> Router<AppState> {
         .route("/", get(list))
         .route("/new", get(new_input_page))
         .route("/inputs/create", post(create))
+        .route("/inputs/create-from-csv", post(create_from_csv))
         .route("/inputs/{id}", get(view))
         .route("/inputs/{id}/cell", post(update_cell))
         .route("/inputs/{id}/delete", post(delete))
@@ -312,29 +313,69 @@ async fn new_input_page(
 
         <div class="card" style="max-width:60rem;">
             <div class="card-body">
-                <form method="POST" action="{base}/forms/inputs/create" id="input-form">
-                    <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
-                        <div class="form-group" id="row-set-group">
-                            <label for="row_set_id">{row_set_lbl}</label>
-                            <select id="row_set_id" name="row_set_id">{rs_opts}</select>
-                        </div>
-                        <div class="form-group">
-                            <label for="form_type_id">{form_type_lbl}</label>
-                            <select id="form_type_id" name="form_type_id" required>{ft_opts}</select>
-                        </div>
-                        <div class="form-group" style="flex:1">
-                            <label for="input_name">{name_lbl}</label>
-                            <input type="text" id="input_name" name="name" required placeholder="e.g. Week 12 quiz">
-                        </div>
-                    </div>
+                <div class="ci-tabs" role="tablist" style="display:flex;gap:0.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border-color, #ddd)">
+                    <button type="button" class="ci-tab-btn" id="tab-btn-manual" data-tab="manual" aria-selected="true" style="background:none;border:none;padding:0.5rem 1rem;border-bottom:2px solid var(--accent-color, #1A6B5A);font-weight:600;cursor:pointer">{tab_manual}</button>
+                    <button type="button" class="ci-tab-btn" id="tab-btn-csv" data-tab="csv" aria-selected="false" style="background:none;border:none;padding:0.5rem 1rem;border-bottom:2px solid transparent;cursor:pointer">{tab_csv}</button>
+                </div>
 
-                    <div id="row-set-warning" class="text-secondary mt-2" style="display:none">{need_row_set}</div>
-                    <div id="grid-container" class="ci-grid-container mt-2"></div>
-                    <button type="button" id="add-row-btn" class="btn btn-secondary btn-sm mt-1" style="display:none">{add_row_label}</button>
+                <div id="tab-pane-manual">
+                    <form method="POST" action="{base}/forms/inputs/create" id="input-form">
+                        <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
+                            <div class="form-group" id="row-set-group">
+                                <label for="row_set_id">{row_set_lbl}</label>
+                                <select id="row_set_id" name="row_set_id">{rs_opts}</select>
+                            </div>
+                            <div class="form-group">
+                                <label for="form_type_id">{form_type_lbl}</label>
+                                <select id="form_type_id" name="form_type_id" required>{ft_opts}</select>
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label for="input_name">{name_lbl}</label>
+                                <input type="text" id="input_name" name="name" required placeholder="e.g. Week 12 quiz">
+                            </div>
+                        </div>
 
-                    <input type="hidden" name="csv_data" id="csv_data">
-                    <button type="submit" class="btn btn-primary mt-2" id="submit-btn">{save_btn}</button>
-                </form>
+                        <div id="row-set-warning" class="text-secondary mt-2" style="display:none">{need_row_set}</div>
+                        <div id="grid-container" class="ci-grid-container mt-2"></div>
+                        <button type="button" id="add-row-btn" class="btn btn-secondary btn-sm mt-1" style="display:none">{add_row_label}</button>
+
+                        <input type="hidden" name="csv_data" id="csv_data">
+                        <button type="submit" class="btn btn-primary mt-2" id="submit-btn">{save_btn}</button>
+                    </form>
+                </div>
+
+                <div id="tab-pane-csv" style="display:none">
+                    <form method="POST" action="{base}/forms/inputs/create-from-csv" enctype="multipart/form-data" id="input-csv-form">
+                        <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
+                            <div class="form-group" id="csv-row-set-group">
+                                <label for="csv_row_set_id">{row_set_lbl}</label>
+                                <select id="csv_row_set_id" name="row_set_id">{rs_opts}</select>
+                            </div>
+                            <div class="form-group">
+                                <label for="csv_form_type_id">{form_type_lbl}</label>
+                                <select id="csv_form_type_id" name="form_type_id" required>{ft_opts}</select>
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label for="csv_input_name">{name_lbl}</label>
+                                <input type="text" id="csv_input_name" name="name" required placeholder="e.g. Week 12 quiz">
+                            </div>
+                        </div>
+
+                        <div id="csv-row-set-warning" class="text-secondary mt-2" style="display:none">{need_row_set}</div>
+
+                        <div class="form-group mt-2">
+                            <label for="csv_file">{csv_file_lbl}</label>
+                            <input type="file" id="csv_file" name="file" accept=".csv,text/csv" required>
+                        </div>
+
+                        <div class="csv-format-help" style="margin:1rem 0;padding:0.75rem;background:var(--surface-secondary,#f5f5f5);border-radius:0.375rem;font-size:0.875rem">
+                            <strong>{csv_format_help}</strong>
+                            <p id="csv-format-hint" style="margin:0.25rem 0 0">{csv_format_dynamic}</p>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary mt-2" id="csv-submit-btn">{csv_upload_btn}</button>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -595,6 +636,64 @@ async fn new_input_page(
                 modalActiveBtn = null;
                 if (modal && modal.close) modal.close();
             }});
+
+            // ── Tabs (manual entry vs CSV upload) ────────────────────────
+            var tabBtnManual = document.getElementById('tab-btn-manual');
+            var tabBtnCsv = document.getElementById('tab-btn-csv');
+            var tabPaneManual = document.getElementById('tab-pane-manual');
+            var tabPaneCsv = document.getElementById('tab-pane-csv');
+            function activateTab(name) {{
+                var manual = name === 'manual';
+                tabPaneManual.style.display = manual ? '' : 'none';
+                tabPaneCsv.style.display = manual ? 'none' : '';
+                tabBtnManual.style.borderBottomColor = manual ? 'var(--accent-color, #1A6B5A)' : 'transparent';
+                tabBtnManual.style.fontWeight = manual ? '600' : '';
+                tabBtnManual.setAttribute('aria-selected', manual ? 'true' : 'false');
+                tabBtnCsv.style.borderBottomColor = manual ? 'transparent' : 'var(--accent-color, #1A6B5A)';
+                tabBtnCsv.style.fontWeight = manual ? '' : '600';
+                tabBtnCsv.setAttribute('aria-selected', manual ? 'false' : 'true');
+            }}
+            tabBtnManual.addEventListener('click', function() {{ activateTab('manual'); }});
+            tabBtnCsv.addEventListener('click', function() {{ activateTab('csv'); }});
+
+            // ── CSV form: mirror the row-set visibility logic ────────────
+            var csvRsSel = document.getElementById('csv_row_set_id');
+            var csvFtSel = document.getElementById('csv_form_type_id');
+            var csvRsGroup = document.getElementById('csv-row-set-group');
+            var csvRsWarning = document.getElementById('csv-row-set-warning');
+            var csvSubmitBtn = document.getElementById('csv-submit-btn');
+            var csvFormatHint = document.getElementById('csv-format-hint');
+            var lblCsvFormatDynamic = '{csv_format_dynamic}';
+            var lblCsvFormatFixed = '{csv_format_fixed}';
+
+            function applyCsvMode() {{
+                var ftId = parseInt(csvFtSel.value);
+                var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
+                if (!ft) {{
+                    csvSubmitBtn.disabled = true;
+                    return;
+                }}
+                if (ft.fixed_rows) {{
+                    csvRsGroup.style.display = '';
+                    csvRsSel.required = true;
+                    csvFormatHint.textContent = lblCsvFormatFixed;
+                    if (rowSets.length === 0) {{
+                        csvRsWarning.style.display = '';
+                        csvSubmitBtn.disabled = true;
+                        return;
+                    }}
+                    csvRsWarning.style.display = 'none';
+                    csvSubmitBtn.disabled = false;
+                }} else {{
+                    csvRsGroup.style.display = 'none';
+                    csvRsSel.required = false;
+                    csvRsWarning.style.display = 'none';
+                    csvSubmitBtn.disabled = false;
+                    csvFormatHint.textContent = lblCsvFormatDynamic;
+                }}
+            }}
+            csvFtSel.addEventListener('change', applyCsvMode);
+            applyCsvMode();
         }})();
         </script>"##,
         new_title = t.inp_new_title,
@@ -603,6 +702,13 @@ async fn new_input_page(
         form_type_lbl = t.inp_form_type,
         name_lbl = t.inp_name,
         save_btn = t.inp_save,
+        tab_manual = t.inp_tab_manual,
+        tab_csv = t.inp_tab_csv,
+        csv_file_lbl = t.inp_csv_file,
+        csv_upload_btn = t.inp_csv_upload_btn,
+        csv_format_help = t.inp_csv_format_help,
+        csv_format_dynamic = t.inp_csv_format_dynamic,
+        csv_format_fixed = t.inp_csv_format_fixed,
         add_row_label = add_row_label,
         remove_row_label = remove_row_label,
         no_rows_yet = no_rows_yet,
@@ -1321,4 +1427,265 @@ async fn update_cell(
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
+}
+
+// ── CSV upload ──────────────────────────────────────────────
+
+/// Cap the uploaded CSV at 1 MiB. Larger uploads are rejected before parsing.
+const MAX_CSV_BYTES: usize = 1_048_576;
+
+async fn create_from_csv(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+    let t = super::i18n::t(lang);
+
+    let mut name: Option<String> = None;
+    let mut form_type_id: Option<i64> = None;
+    let mut row_set_id: Option<i64> = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let field_name = field.name().unwrap_or("").to_string();
+        match field_name.as_str() {
+            "name" => name = field.text().await.ok(),
+            "form_type_id" => {
+                if let Ok(v) = field.text().await {
+                    form_type_id = v.trim().parse().ok();
+                }
+            }
+            "row_set_id" => {
+                if let Ok(v) = field.text().await {
+                    row_set_id = v.trim().parse::<i64>().ok().filter(|&x| x > 0);
+                }
+            }
+            "file" => {
+                if let Ok(bytes) = field.bytes().await
+                    && bytes.len() <= MAX_CSV_BYTES
+                {
+                    file_bytes = Some(bytes.to_vec());
+                } else {
+                    return render_csv_error(&state.config, lang, t.inp_csv_err_too_large)
+                        .into_response();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let name = name.map(|s| s.trim().to_string()).unwrap_or_default();
+    if name.is_empty() {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_no_name).into_response();
+    }
+    let Some(form_type_id) = form_type_id else {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_no_form_type).into_response();
+    };
+    let Some(file_bytes) = file_bytes else {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_no_file).into_response();
+    };
+    if file_bytes.is_empty() {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_empty).into_response();
+    }
+
+    let ft: Option<(String, bool)> = sqlx::query_as(
+        "SELECT columns_json, fixed_rows FROM form_input_form_types WHERE id = ? AND user_id = ?",
+    )
+    .bind(form_type_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+    let Some((columns_json, fixed_rows)) = ft else {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_no_form_type).into_response();
+    };
+    let columns: Vec<ColumnDef> = serde_json::from_str(&columns_json).unwrap_or_default();
+    if columns.is_empty() {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_form_type_no_columns)
+            .into_response();
+    }
+
+    let row_set_rows: Option<Vec<String>> = if fixed_rows {
+        let Some(rsid) = row_set_id else {
+            return render_csv_error(&state.config, lang, t.inp_csv_err_no_row_set).into_response();
+        };
+        let rs_rows: Option<String> =
+            sqlx::query_scalar("SELECT rows FROM form_input_row_sets WHERE id = ? AND user_id = ?")
+                .bind(rsid)
+                .bind(user_id.0)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
+        let Some(rs_rows) = rs_rows else {
+            return render_csv_error(&state.config, lang, t.inp_csv_err_no_row_set).into_response();
+        };
+        Some(
+            rs_rows
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.trim().to_string())
+                .collect(),
+        )
+    } else {
+        None
+    };
+
+    let csv_text = match std::str::from_utf8(&file_bytes) {
+        Ok(s) => s,
+        Err(_) => {
+            return render_csv_error(&state.config, lang, t.inp_csv_err_invalid_utf8)
+                .into_response();
+        }
+    };
+
+    let canonical_csv = match build_csv_from_upload(csv_text, &columns, row_set_rows.as_deref(), t)
+    {
+        Ok(s) => s,
+        Err(msg) => return render_csv_error(&state.config, lang, &msg).into_response(),
+    };
+
+    let stored_row_set_id = if fixed_rows { row_set_id } else { None };
+
+    if let Err(e) = super::ops::create_input(
+        &state.pool,
+        user_id.0,
+        stored_row_set_id,
+        form_type_id,
+        &name,
+        &canonical_csv,
+    )
+    .await
+    {
+        tracing::error!("DB insert failed: {e:#}");
+        return render_csv_error(&state.config, lang, "Database error.").into_response();
+    }
+
+    Redirect::to(&format!("{base}/forms")).into_response()
+}
+
+/// Parse the uploaded CSV, validate against the form type (and row-set entries
+/// when `fixed_rows`), and return the canonical csv_data string used for
+/// storage. The canonical form mirrors what the JS submit code on /forms/new
+/// produces: a header row, then one data row per entry.
+fn build_csv_from_upload(
+    csv_text: &str,
+    columns: &[ColumnDef],
+    row_set_rows: Option<&[String]>,
+    t: &super::i18n::Translations,
+) -> Result<String, String> {
+    let parsed: Vec<Vec<String>> = csv_text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(parse_csv_line)
+        .collect();
+    if parsed.is_empty() {
+        return Err(t.inp_csv_err_no_data_rows.to_string());
+    }
+
+    let fixed_rows = row_set_rows.is_some();
+    let expected_cols = if fixed_rows {
+        columns.len() + 1
+    } else {
+        columns.len()
+    };
+
+    let has_header = looks_like_header(&parsed[0], columns, fixed_rows);
+    let data: &[Vec<String>] = if has_header {
+        &parsed[1..]
+    } else {
+        &parsed[..]
+    };
+    if data.is_empty() {
+        return Err(t.inp_csv_err_no_data_rows.to_string());
+    }
+
+    for (idx, line) in data.iter().enumerate() {
+        if line.len() != expected_cols {
+            return Err(t
+                .inp_csv_err_col_count
+                .replace("{row}", &(idx + 1).to_string())
+                .replace("{expected}", &expected_cols.to_string())
+                .replace("{got}", &line.len().to_string()));
+        }
+    }
+
+    if let Some(rs_rows) = row_set_rows {
+        if data.len() != rs_rows.len() {
+            return Err(t
+                .inp_csv_err_row_count
+                .replace("{got}", &data.len().to_string())
+                .replace("{expected}", &rs_rows.len().to_string()));
+        }
+        for (idx, line) in data.iter().enumerate() {
+            if line[0].trim() != rs_rows[idx] {
+                return Err(t
+                    .inp_csv_err_key_mismatch
+                    .replace("{row}", &(idx + 1).to_string())
+                    .replace("{got}", line[0].trim())
+                    .replace("{expected}", &rs_rows[idx]));
+            }
+        }
+    }
+
+    let mut header_cells: Vec<String> = Vec::with_capacity(expected_cols);
+    if fixed_rows {
+        header_cells.push(t.inp_row.to_string());
+    }
+    for col in columns {
+        header_cells.push(col.name.clone());
+    }
+
+    let mut out = serialize_csv_line(&header_cells);
+    for line in data {
+        out.push('\n');
+        out.push_str(&serialize_csv_line(line));
+    }
+    Ok(out)
+}
+
+/// Detect a header row by comparing the column-name cells (skipping the leading
+/// key cell in fixed-row mode) against the form-type column names,
+/// case-insensitively. Anything else is treated as a data row.
+fn looks_like_header(row: &[String], columns: &[ColumnDef], fixed_rows: bool) -> bool {
+    let offset = usize::from(fixed_rows);
+    if row.len() < offset + columns.len() {
+        return false;
+    }
+    for (i, col) in columns.iter().enumerate() {
+        let cell = row.get(offset + i).map(|s| s.trim()).unwrap_or("");
+        if !cell.eq_ignore_ascii_case(col.name.trim()) {
+            return false;
+        }
+    }
+    true
+}
+
+fn render_csv_error(config: &myapps_core::config::Config, lang: Lang, error: &str) -> Html<String> {
+    let base = &config.base_path;
+    let t = super::i18n::t(lang);
+    let body = format!(
+        r#"<div class="page-header">
+            <h1>{title}</h1>
+        </div>
+        <div class="card" style="max-width:36rem">
+            <div class="card-body">
+                <div class="alert alert-error">{error}</div>
+                <div style="margin-top:1rem">
+                    <a href="{base}/forms/new" class="btn btn-secondary">{back}</a>
+                </div>
+            </div>
+        </div>"#,
+        title = t.inp_csv_import_failed,
+        error = html_escape(error),
+        back = t.inp_csv_back,
+    );
+    Html(render_page(
+        &format!("Forms — {}", t.inp_csv_import_failed),
+        &forms_nav(base, "inputs", lang),
+        &body,
+        config,
+        lang,
+    ))
 }
