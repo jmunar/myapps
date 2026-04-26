@@ -1,3 +1,6 @@
+# Use bash so version-bump targets can rely on `<<<` herestrings.
+SHELL := /bin/bash
+
 .PHONY: fmt lint test check audit upgrade build run screenshots gh-env bump-patch bump-minor bump-major
 
 # Development
@@ -35,7 +38,7 @@ bump-patch:
 	IFS='.' read -r MAJOR MINOR PATCH <<< "$$VERSION"; \
 	PATCH=$$((PATCH + 1)); \
 	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
-	sed -i '' 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml; \
+	sed 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml; \
 	echo "$$VERSION → $$NEW"
 
 bump-minor:
@@ -43,7 +46,7 @@ bump-minor:
 	IFS='.' read -r MAJOR MINOR PATCH <<< "$$VERSION"; \
 	MINOR=$$((MINOR + 1)); PATCH=0; \
 	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
-	sed -i '' 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml; \
+	sed 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml; \
 	echo "$$VERSION → $$NEW"
 
 bump-major:
@@ -51,7 +54,7 @@ bump-major:
 	IFS='.' read -r MAJOR MINOR PATCH <<< "$$VERSION"; \
 	MAJOR=$$((MAJOR + 1)); MINOR=0; PATCH=0; \
 	NEW="$$MAJOR.$$MINOR.$$PATCH"; \
-	sed -i '' 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml; \
+	sed 's/^version = "'"$$VERSION"'"/version = "'"$$NEW"'"/' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml; \
 	echo "$$VERSION → $$NEW"
 
 # Build & Run
