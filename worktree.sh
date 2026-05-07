@@ -61,65 +61,7 @@ cmd_create() {
 
     echo ""
     echo "Worktree ready at: $worktree_dir"
-
-    # If running in iTerm2, open a new tab in the worktree directory.
-    # Uses a "Worktree" profile (if it exists) configured so that the branch
-    # name sticks as the tab title. Required profile settings:
-    #   - General > Title: set to "Session Name"
-    #   - General > "Applications in terminal may change the title": disabled
-    if [ "${TERM_PROGRAM:-}" = "iTerm.app" ]; then
-        local escaped_dir
-        escaped_dir=$(printf '%q' "$worktree_dir")
-        osascript <<APPLESCRIPT
-tell application "iTerm2"
-    tell current window
-        -- Remember current tab position before creating the new one
-        set currentTab to current tab
-        set tabCount to count of tabs
-        set origIndex to 0
-        repeat with i from 1 to tabCount
-            if tab i is currentTab then
-                set origIndex to i
-                exit repeat
-            end if
-        end repeat
-
-        try
-            set newTab to (create tab with profile "Worktree")
-        on error
-            set newTab to (create tab with default profile)
-        end try
-        tell current session of newTab
-            set name to "${branch}"
-            -- Split horizontally: top runs claude, bottom is a plain terminal
-            set bottomSession to (split horizontally with same profile)
-            write text "cd ${escaped_dir} && claude"
-        end tell
-        tell bottomSession
-            write text "cd ${escaped_dir}"
-        end tell
-
-        -- New tab is appended at end (tabCount + 1).
-        -- Move it left until it sits right before the original tab.
-        set movesNeeded to (tabCount + 1) - origIndex
-    end tell
-end tell
-
--- Use Cmd+Shift+Left to move the tab into position
-if movesNeeded > 0 then
-    tell application "System Events"
-        tell process "iTerm2"
-            repeat movesNeeded times
-                key code 123 using {command down, shift down}
-            end repeat
-        end tell
-    end tell
-end if
-APPLESCRIPT
-        echo "Opened iTerm2 tab: $branch"
-    else
-        echo "  cd $worktree_dir"
-    fi
+    echo "  cd $worktree_dir"
 }
 
 cmd_remove() {
