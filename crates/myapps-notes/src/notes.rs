@@ -429,19 +429,23 @@ fn markdown_to_editor_html(md: &str) -> String {
             continue;
         }
 
-        // Unordered list (- or *)
-        if trimmed.starts_with("- [x] ")
-            || trimmed.starts_with("- [ ] ")
-            || trimmed.starts_with("* [x] ")
-            || trimmed.starts_with("* [ ] ")
-        {
+        // Task list items. The current convention is "[x] foo" / "[ ] foo" (what
+        // tiptap-markdown produces); legacy GFM "- [x] foo" / "* [ ] foo" is still
+        // accepted so existing user data keeps rendering correctly.
+        let task = trimmed
+            .strip_prefix("[x] ")
+            .map(|r| (true, r))
+            .or_else(|| trimmed.strip_prefix("[ ] ").map(|r| (false, r)))
+            .or_else(|| trimmed.strip_prefix("- [x] ").map(|r| (true, r)))
+            .or_else(|| trimmed.strip_prefix("* [x] ").map(|r| (true, r)))
+            .or_else(|| trimmed.strip_prefix("- [ ] ").map(|r| (false, r)))
+            .or_else(|| trimmed.strip_prefix("* [ ] ").map(|r| (false, r)));
+        if let Some((checked, rest)) = task {
             if !in_list {
                 html.push_str("<ul>");
                 in_list = true;
                 list_ordered = false;
             }
-            let checked = trimmed.starts_with("- [x]") || trimmed.starts_with("* [x]");
-            let rest = &trimmed[6..];
             let checked_attr = if checked { " checked" } else { "" };
             html.push_str(&format!(
                 r#"<li class="notes-task-item"><input type="checkbox"{} contenteditable="false">{}</li>"#,

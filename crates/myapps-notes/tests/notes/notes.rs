@@ -602,6 +602,37 @@ async fn edit_note_task_checkbox_pairs_with_its_text() {
 }
 
 #[tokio::test]
+async fn edit_note_renders_bare_task_checkbox_syntax() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    // The current convention (what tiptap-markdown serializes) drops the leading
+    // bullet: "[x] foo" / "[ ] foo". The renderer must recognize it just like
+    // the legacy "- [x]" / "- [ ]" form.
+    sqlx::query(
+        "INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Bare', '[x] Done item\n[ ] Todo item')",
+    )
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Bare' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let r = app.server.get(&format!("/notes/{id}/edit")).await;
+    let body = r.text();
+
+    assert!(body.contains(
+        r#"<li class="notes-task-item"><input type="checkbox" checked contenteditable="false">Done item</li>"#,
+    ));
+    assert!(body.contains(
+        r#"<li class="notes-task-item"><input type="checkbox" contenteditable="false">Todo item</li>"#,
+    ));
+}
+
+#[tokio::test]
 async fn edit_note_task_checkbox_markdown_round_trips_through_save() {
     let app = app().await;
     app.login_as("test", "pass").await;

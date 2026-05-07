@@ -13,7 +13,7 @@ pub async fn run(
     let notes: &[(&str, &str, bool)] = &[
         (
             "Meeting Notes — Project Kickoff",
-            "# Project Kickoff\n\n## Attendees\n- Alice, Bob, Carol\n\n## Key Decisions\n1. **Timeline**: 6-week sprint starting March 24\n2. **Stack**: Rust + HTMX (already decided)\n3. **Priority**: MVP first, polish later\n\n## Action Items\n- [ ] Alice: set up CI pipeline\n- [ ] Bob: design database schema\n- [ ] Carol: wireframe the UI\n\n> \"Ship early, iterate fast\" — the team motto",
+            "# Project Kickoff\n\n## Attendees\n- Alice, Bob, Carol\n\n## Key Decisions\n1. **Timeline**: 6-week sprint starting March 24\n2. **Stack**: Rust + HTMX (already decided)\n3. **Priority**: MVP first, polish later\n\n## Action Items\n[ ] Alice: set up CI pipeline\n[ ] Bob: design database schema\n[ ] Carol: wireframe the UI\n\n> \"Ship early, iterate fast\" — the team motto",
             true,
         ),
         (
@@ -23,7 +23,7 @@ pub async fn run(
         ),
         (
             "Shopping List",
-            "# Shopping List\n\n- [x] Olive oil\n- [x] Bread\n- [ ] Tomatoes (vine-ripened)\n- [ ] Mozzarella\n- [ ] Fresh basil\n- [ ] Pasta (penne)\n- [ ] Garlic\n- [ ] Lemons\n\n---\n\n*For the caprese salad recipe on Saturday*",
+            "# Shopping List\n\n[x] Olive oil\n[x] Bread\n[ ] Tomatoes (vine-ripened)\n[ ] Mozzarella\n[ ] Fresh basil\n[ ] Pasta (penne)\n[ ] Garlic\n[ ] Lemons\n\n---\n\n*For the caprese salad recipe on Saturday*",
             false,
         ),
         (
