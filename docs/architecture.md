@@ -175,8 +175,11 @@ After login, the top-level router serves:
   - `POST /mindflow/actions/{id}/delete` — Delete action
 - `/forms/` — FormInput sub-app (nested router)
   - `/forms/` — Input list (all saved inputs)
-  - `/forms/new` — New input page (select row set + form type, fill grid)
+  - `/forms/new` — New input page (tabs: fill grid manually, or upload CSV)
   - `POST /forms/inputs/create` — Save input as CSV
+  - `POST /forms/inputs/create-from-csv` — Create an input by uploading a CSV
+    (multipart). Validates column count; in fixed-row mode also enforces row
+    count and first-column key alignment with the selected row set.
   - `/forms/inputs/{id}` — View input detail (editable spreadsheet grid with
     per-column sort/filter; double-click any cell to edit in place)
   - `POST /forms/inputs/{id}/cell` — Persist a single-cell edit (row, col, value)

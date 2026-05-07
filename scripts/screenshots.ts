@@ -104,6 +104,14 @@ test.describe("README screenshots", () => {
     await page.goto(`${BASE_URL}/forms/form-types`);
     await snap(page, "form-input-form-types");
 
+    // CSV-upload tab on the new-input page. Pick a fixed-row form type so
+    // the help hint shows the more informative "first column is the key" copy.
+    await page.goto(`${BASE_URL}/forms/new`);
+    await page.locator("#tab-btn-csv").click();
+    await page.locator("#csv_form_type_id").selectOption({ label: "Weekly quiz" });
+    await page.locator("#csv_input_name").fill("Week 12 quiz");
+    await snap(page, "form-input-csv-upload");
+
     // ── Notes ──
     await page.goto(`${BASE_URL}/notes`);
     await snap(page, "notes-list");

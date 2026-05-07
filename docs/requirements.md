@@ -336,6 +336,11 @@ form type's mode), then fills in a spreadsheet-like grid that saves data as CSV.
   identifiers form a frozen left column; in dynamic mode the user adds and
   removes rows freely. On submit, the grid is serialized as CSV and stored in
   the database.
+- **CSV upload** — alternatively, the new-input page exposes an "Upload CSV"
+  tab that creates an input from a CSV file (multipart upload). Column count
+  must match the form type; an optional header row matching the column names
+  is detected and dropped. For fixed-row form types the CSV's first column is
+  the row-set key and must match the row-set entries in order.
 - **Input editing in place** — the view page reuses the input grid layout.
   Double-click any data cell to edit it; one cell save is persisted via AJAX
   (`POST /forms/inputs/{id}/cell`). The row identifier in fixed-row mode stays
