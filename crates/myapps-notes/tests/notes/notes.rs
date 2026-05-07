@@ -1,7 +1,7 @@
 use myapps_notes::NotesApp;
 
 async fn app() -> myapps_test_harness::TestApp {
-    myapps_test_harness::spawn_app(vec![Box::new(NotesApp)]).await
+    myapps_test_harness::spawn_app(vec![Box::new(NotesApp::new())]).await
 }
 
 #[tokio::test]
@@ -35,7 +35,7 @@ async fn notes_list_has_nav_elements() {
 #[tokio::test]
 async fn notes_list_has_grid_and_new_note_form() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     assert!(body.contains("notes-grid"));
@@ -46,7 +46,7 @@ async fn notes_list_has_grid_and_new_note_form() {
 #[tokio::test]
 async fn notes_list_card_structure() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     assert!(body.contains("notes-card"));
@@ -59,7 +59,7 @@ async fn notes_list_card_structure() {
 #[tokio::test]
 async fn notes_list_card_links_to_edit() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -75,7 +75,7 @@ async fn notes_list_card_links_to_edit() {
 #[tokio::test]
 async fn notes_list_shows_seeded_notes() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     assert!(body.contains("Meeting Notes"));
@@ -86,7 +86,7 @@ async fn notes_list_shows_seeded_notes() {
 #[tokio::test]
 async fn notes_list_shows_pinned_badge() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     assert!(body.contains("notes-pin-badge"));
@@ -96,7 +96,7 @@ async fn notes_list_shows_pinned_badge() {
 #[tokio::test]
 async fn notes_list_shows_preview_text() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     // The preview extracts the first non-empty, non-heading line.
@@ -132,7 +132,7 @@ async fn create_note_redirects_to_edit() {
 #[tokio::test]
 async fn edit_note_renders() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -149,7 +149,7 @@ async fn edit_note_renders() {
 #[tokio::test]
 async fn edit_note_has_full_page_structure() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -167,7 +167,7 @@ async fn edit_note_has_full_page_structure() {
 #[tokio::test]
 async fn edit_note_has_contenteditable_and_hidden_textarea() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -187,7 +187,7 @@ async fn edit_note_has_contenteditable_and_hidden_textarea() {
 #[tokio::test]
 async fn edit_note_has_editor_css_classes() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -208,7 +208,7 @@ async fn edit_note_has_editor_css_classes() {
 #[tokio::test]
 async fn edit_note_form_actions_point_to_correct_urls() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -226,7 +226,7 @@ async fn edit_note_form_actions_point_to_correct_urls() {
 #[tokio::test]
 async fn edit_note_no_nested_forms() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -253,7 +253,7 @@ async fn edit_note_no_nested_forms() {
 #[tokio::test]
 async fn edit_note_has_delete_form_with_class() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -270,7 +270,7 @@ async fn edit_note_has_delete_form_with_class() {
 #[tokio::test]
 async fn edit_note_has_back_link() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -287,7 +287,7 @@ async fn edit_note_has_back_link() {
 #[tokio::test]
 async fn edit_unpinned_note_shows_pin_button() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     // Rust Tips is unpinned in seed data
     let (id,): (i64,) = sqlx::query_as(
@@ -306,7 +306,7 @@ async fn edit_unpinned_note_shows_pin_button() {
 #[tokio::test]
 async fn edit_pinned_note_shows_unpin_button() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     // "Meeting Notes" is pinned in seed data
     let (id,): (i64,) = sqlx::query_as(
@@ -325,7 +325,7 @@ async fn edit_pinned_note_shows_unpin_button() {
 #[tokio::test]
 async fn edit_note_no_dictate_button_without_whisper() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -343,7 +343,7 @@ async fn edit_note_no_dictate_button_without_whisper() {
 #[tokio::test]
 async fn edit_note_has_data_attributes() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -360,7 +360,7 @@ async fn edit_note_has_data_attributes() {
 #[tokio::test]
 async fn edit_note_loads_editor_script() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -376,7 +376,7 @@ async fn edit_note_loads_editor_script() {
 #[tokio::test]
 async fn save_note() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -403,7 +403,7 @@ async fn save_note() {
 #[tokio::test]
 async fn delete_note() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Shopping List' LIMIT 1")
@@ -426,7 +426,7 @@ async fn delete_note() {
 #[tokio::test]
 async fn toggle_pin() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     // Find an unpinned note
     let (id,): (i64,) = sqlx::query_as(
@@ -474,7 +474,7 @@ async fn notes_empty_state() {
 #[tokio::test]
 async fn edit_note_renders_markdown_content() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     // "Rust Tips" has code blocks, lists, links in its body
     let (id,): (i64,) =
@@ -496,7 +496,7 @@ async fn edit_note_renders_markdown_content() {
 #[tokio::test]
 async fn edit_note_title_in_input_field() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -525,7 +525,7 @@ async fn notes_list_page_header() {
 #[tokio::test]
 async fn toggle_pin_then_check_edit_shows_unpin() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     // Start with an unpinned note
     let (id,): (i64,) = sqlx::query_as(
@@ -550,7 +550,7 @@ async fn toggle_pin_then_check_edit_shows_unpin() {
 #[tokio::test]
 async fn edit_note_renders_task_checkboxes_as_inputs() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    app.seed_and_login(&NotesApp::new()).await;
 
     // "Shopping List" has a mix of checked and unchecked task items.
     let (id,): (i64,) =

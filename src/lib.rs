@@ -29,7 +29,7 @@ pub fn all_app_instances() -> Vec<Box<dyn App>> {
         Box::new(myapps_mindflow::MindFlowApp),
         Box::new(myapps_voice_to_text::VoiceToTextApp),
         Box::new(myapps_form_input::FormInputApp),
-        Box::new(myapps_notes::NotesApp),
+        Box::new(myapps_notes::NotesApp::new()),
     ]
 }
 

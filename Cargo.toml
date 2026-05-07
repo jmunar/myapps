@@ -17,7 +17,7 @@ tracing = "0.1"
 tower-cookies = "0.11"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 uuid = { version = "1", features = ["v4"] }
-axum-test = "19"
+axum-test = { version = "19", features = ["ws"] }
 
 myapps-core = { path = "crates/myapps-core" }
 myapps-leanfin = { path = "crates/myapps-leanfin" }
