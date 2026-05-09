@@ -27,6 +27,21 @@
     min-width: 6rem;
 }
 
+/* "Show on its own row" toggle next to the column-type select. Only visible
+   for text columns; hidden via inline style when the type is non-text. */
+.ci-col-multiline-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    cursor: pointer;
+}
+.ci-col-multiline-toggle input[type="checkbox"] {
+    margin: 0;
+}
+
 /* ── Input grid (spreadsheet style) ───────────────────────────── */
 .ci-grid-container {
     overflow-x: auto;
@@ -199,21 +214,81 @@
     background: var(--accent-light);
 }
 
-.ci-filter-input {
-    flex: 1;
-    min-width: 3rem;
-    padding: 0.1rem 0.25rem;
-    font-size: 0.7rem;
-    font-weight: normal;
-    border: 1px solid var(--border-light);
-    border-radius: 2px;
+/* ── Global search bar (above the table) ──────────────────────── */
+.ci-search-bar {
+    margin: 0 0 0.75rem;
+}
+.ci-global-search {
+    width: 100%;
+    max-width: 24rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     background: var(--bg-card);
     color: var(--text);
 }
-
-.ci-filter-input.ci-filter-active {
+.ci-global-search:focus {
+    outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+/* ── Multi-line text row (rendered beneath its parent row) ────── */
+.ci-multiline-row > td {
+    padding: 0.6rem 0.75rem 0.8rem;
+    background: color-mix(in srgb, var(--bg) 92%, var(--bg-card));
+    border-bottom: 1px solid var(--border-light);
+    border-right: none;
+    height: auto;
+    vertical-align: top;
+}
+.ci-multiline-cell {
+    margin: 0 0 0.6rem;
+    cursor: pointer;
+}
+.ci-multiline-cell:last-child {
+    margin-bottom: 0;
+}
+.ci-multiline-cell > label {
+    display: block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin-bottom: 0.15rem;
+    cursor: inherit;
+}
+.ci-multiline-value {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.45;
+    min-height: 1.4em;
+    padding: 0.15rem 0.25rem;
+    border-radius: 3px;
+}
+.ci-multiline-cell:hover .ci-multiline-value {
     background: var(--accent-light);
+}
+.ci-multiline-cell.ci-cell-editing .ci-multiline-value {
+    padding: 0;
+    background: var(--accent-light);
+}
+.ci-cell-textarea {
+    display: block;
+    width: 100%;
+    min-height: 4rem;
+    padding: 0.35rem 0.5rem;
+    font-family: var(--font-body);
+    font-size: inherit;
+    line-height: 1.45;
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    background: var(--bg-card);
+    color: var(--text);
+    resize: vertical;
+    box-sizing: border-box;
 }
 
 /* ── Link cell ────────────────────────────────────────────────── */

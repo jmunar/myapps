@@ -113,7 +113,8 @@ async fn list(
             .find(|f| f.id == inp.form_type_id)
             .map(|f| f.name.as_str())
             .unwrap_or("?");
-        let row_count = inp.csv_data.lines().count().saturating_sub(1);
+        // Use parse_csv (not lines()) so multi-line text fields don't inflate the count.
+        let row_count = parse_csv(&inp.csv_data).len().saturating_sub(1);
         let date = &inp.created_at[..10.min(inp.created_at.len())];
 
         rows_html.push_str(&format!(
@@ -416,6 +417,17 @@ async fn new_input_page(
                 return rowSets.find(function(r) {{ return r.id === rsId; }});
             }}
 
+            function colIsMultiline(col) {{
+                var ct = col.type || col.col_type || 'text';
+                return ct === 'text' && col.multiline === true;
+            }}
+
+            function escapeHtml(s) {{
+                return String(s)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            }}
+
             function cellHtml(r, c, colType) {{
                 if (colType === 'bool') {{
                     var parts = lblBool.split(' / ');
@@ -434,33 +446,63 @@ async fn new_input_page(
                 return '<td><input type="text" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input"></td>';
             }}
 
+            function multilineRowHtml(r, cols, colspan) {{
+                var inner = '';
+                for (var c = 0; c < cols.length; c++) {{
+                    if (!colIsMultiline(cols[c])) continue;
+                    inner += '<div class="ci-multiline-cell">'
+                        + '<label>' + escapeHtml(cols[c].name) + '</label>'
+                        + '<textarea data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-textarea" rows="3"></textarea>'
+                        + '</div>';
+                }}
+                if (!inner) return '';
+                return '<tr class="ci-multiline-row" data-row="' + r + '"><td colspan="' + colspan + '">' + inner + '</td></tr>';
+            }}
+
             function buildFixedGrid(rs, ft) {{
                 var rows = rs.rows;
                 var cols = ft.columns;
+                var visibleCols = 1; // row-name column
                 var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">' + lblRow + '</th>';
-                for (var i = 0; i < cols.length; i++) html += '<th>' + cols[i].name + '</th>';
+                for (var i = 0; i < cols.length; i++) {{
+                    if (colIsMultiline(cols[i])) continue;
+                    html += '<th>' + escapeHtml(cols[i].name) + '</th>';
+                    visibleCols++;
+                }}
                 html += '</tr></thead><tbody>';
                 for (var r = 0; r < rows.length; r++) {{
-                    html += '<tr><td class="ci-pupil-name">' + rows[r] + '</td>';
+                    html += '<tr class="ci-main-row" data-row="' + r + '"><td class="ci-pupil-name">' + escapeHtml(rows[r]) + '</td>';
                     for (var c = 0; c < cols.length; c++) {{
+                        if (colIsMultiline(cols[c])) continue;
                         var colType = cols[c].type || cols[c].col_type || 'text';
                         html += cellHtml(r, c, colType);
                     }}
                     html += '</tr>';
+                    html += multilineRowHtml(r, cols, visibleCols);
                 }}
                 html += '</tbody></table>';
                 gridContainer.innerHTML = html;
             }}
 
-            function dynamicRowHtml(r, cols) {{
-                var html = '<tr data-row="' + r + '">';
+            function dynamicRowHtml(r, cols, visibleCols) {{
+                var html = '<tr class="ci-main-row" data-row="' + r + '">';
                 for (var c = 0; c < cols.length; c++) {{
+                    if (colIsMultiline(cols[c])) continue;
                     var colType = cols[c].type || cols[c].col_type || 'text';
                     html += cellHtml(r, c, colType);
                 }}
                 html += '<td style="padding:0 0.4rem"><button type="button" class="btn-icon btn-icon-danger remove-row-btn" data-row="' + r + '" title="' + lblRemoveRow + '">×</button></td>';
                 html += '</tr>';
+                html += multilineRowHtml(r, cols, visibleCols);
                 return html;
+            }}
+
+            function visibleColCountDynamic(cols) {{
+                var count = 1; // remove-button column
+                for (var i = 0; i < cols.length; i++) {{
+                    if (!colIsMultiline(cols[i])) count++;
+                }}
+                return count;
             }}
 
             function buildDynamicGrid(ft) {{
@@ -469,10 +511,14 @@ async fn new_input_page(
                     gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
                     return;
                 }}
+                var visibleCols = visibleColCountDynamic(cols);
                 var html = '<table class="ci-input-table"><thead><tr>';
-                for (var i = 0; i < cols.length; i++) html += '<th>' + cols[i].name + '</th>';
+                for (var i = 0; i < cols.length; i++) {{
+                    if (colIsMultiline(cols[i])) continue;
+                    html += '<th>' + escapeHtml(cols[i].name) + '</th>';
+                }}
                 html += '<th></th></tr></thead><tbody id="dynamic-rows">';
-                html += dynamicRowHtml(0, cols);
+                html += dynamicRowHtml(0, cols, visibleCols);
                 html += '</tbody></table>';
                 gridContainer.innerHTML = html;
                 dynamicRowCount = 1;
@@ -484,9 +530,10 @@ async fn new_input_page(
                     btn.onclick = function() {{
                         var tbody = document.getElementById('dynamic-rows');
                         if (!tbody) return;
-                        if (tbody.children.length <= 1) return;
-                        var row = btn.closest('tr');
-                        if (row) row.remove();
+                        var mainRows = tbody.querySelectorAll('tr.ci-main-row');
+                        if (mainRows.length <= 1) return;
+                        var r = btn.dataset.row;
+                        tbody.querySelectorAll('tr[data-row="' + r + '"]').forEach(function(tr) {{ tr.remove(); }});
                     }};
                 }});
             }}
@@ -531,7 +578,8 @@ async fn new_input_page(
                 if (!ft || ft.columns.length === 0) return;
                 var tbody = document.getElementById('dynamic-rows');
                 if (!tbody) return;
-                tbody.insertAdjacentHTML('beforeend', dynamicRowHtml(dynamicRowCount, ft.columns));
+                var visibleCols = visibleColCountDynamic(ft.columns);
+                tbody.insertAdjacentHTML('beforeend', dynamicRowHtml(dynamicRowCount, ft.columns, visibleCols));
                 dynamicRowCount++;
                 wireRemoveButtons(ft.columns);
             }});
@@ -565,11 +613,15 @@ async fn new_input_page(
                     var header2 = [];
                     for (var i2 = 0; i2 < cols.length; i2++) header2.push(csvEscape(cols[i2].name));
                     lines.push(header2.join(','));
-                    var trs = gridContainer.querySelectorAll('#dynamic-rows tr');
-                    trs.forEach(function(tr) {{
+                    var mainTrs = gridContainer.querySelectorAll('#dynamic-rows tr.ci-main-row');
+                    mainTrs.forEach(function(tr) {{
+                        var rIdx = tr.dataset.row;
                         var rowVals = [];
                         for (var c2 = 0; c2 < cols.length; c2++) {{
-                            var cell2 = tr.querySelector('[data-c="' + c2 + '"]');
+                            // Multiline cells live in a follow-up tr, so look them
+                            // up by the (data-r, data-c) attribute pair rather than
+                            // restricting the search to the main tr.
+                            var cell2 = gridContainer.querySelector('[data-r="' + rIdx + '"][data-c="' + c2 + '"]');
                             rowVals.push(csvEscape(cell2 ? cell2.value : ''));
                         }}
                         lines.push(rowVals.join(','));
@@ -819,7 +871,26 @@ async fn view(
     let ft_columns: Vec<ColumnDef> = serde_json::from_str(&columns_json).unwrap_or_default();
 
     let highlight_first_col = inp.row_set_id.is_some();
-    let lines: Vec<Vec<String>> = inp.csv_data.lines().map(parse_csv_line).collect();
+    let lines: Vec<Vec<String>> = parse_csv(&inp.csv_data);
+
+    // Map each CSV column index to (col_type, multiline). In fixed-row mode the
+    // leading CSV column is the row identifier (text, never multiline) and the
+    // form-type columns shift by one.
+    let csv_col_meta = |i: usize| -> (&str, bool) {
+        if i == 0 && highlight_first_col {
+            return ("text", false);
+        }
+        let col_idx = if highlight_first_col { i - 1 } else { i };
+        match ft_columns.get(col_idx) {
+            Some(cd) => (cd.col_type.as_str(), cd.multiline),
+            None => ("text", false),
+        }
+    };
+
+    // Visible (non-multiline) main-row column count drives the colspan of the
+    // follow-up <tr> that holds expanded text cells.
+    let total_cols = lines.first().map(|h| h.len()).unwrap_or(0);
+    let visible_col_count = (0..total_cols).filter(|i| !csv_col_meta(*i).1).count();
 
     // Build the grid. The first column is the row identifier when fixed-row mode is on,
     // mirroring the new-input page's layout. Editable cells get data-row/data-col/data-type
@@ -827,17 +898,10 @@ async fn view(
     let mut table_html = String::from(r#"<table class="ci-input-table"><thead><tr>"#);
     if let Some(header) = lines.first() {
         for (i, col) in header.iter().enumerate() {
-            // The leading column in fixed-row mode is the row identifier (text);
-            // user columns shift by one in that layout.
-            let col_type = if i == 0 && highlight_first_col {
-                "text"
-            } else {
-                let col_idx = if highlight_first_col { i - 1 } else { i };
-                ft_columns
-                    .get(col_idx)
-                    .map(|cd| cd.col_type.as_str())
-                    .unwrap_or("text")
-            };
+            let (col_type, multiline) = csv_col_meta(i);
+            if multiline {
+                continue;
+            }
             let th_class = if i == 0 && highlight_first_col {
                 r#" class="ci-th-pupil""#
             } else {
@@ -850,36 +914,32 @@ async fn view(
                         <span class="ci-th-controls">
                             <button type="button" class="ci-sort-btn" data-col="{i}" data-dir="asc" title="{sort_asc}">▲</button>
                             <button type="button" class="ci-sort-btn" data-col="{i}" data-dir="desc" title="{sort_desc}">▼</button>
-                            <input type="text" class="ci-filter-input" data-col="{i}" placeholder="{filter_ph}">
                         </span>
                     </div>
                 </th>"##,
                 col = html_escape(col),
                 sort_asc = t.inp_sort_asc,
                 sort_desc = t.inp_sort_desc,
-                filter_ph = t.inp_filter_placeholder,
             ));
         }
     }
     table_html.push_str("</tr></thead><tbody>");
     for (r, line) in lines.iter().enumerate().skip(1) {
         let original_index = r - 1;
-        table_html.push_str(&format!(r#"<tr data-original-index="{original_index}">"#));
+        table_html.push_str(&format!(
+            r#"<tr class="ci-main-row" data-row="{r}" data-original-index="{original_index}">"#
+        ));
         for (c, field) in line.iter().enumerate() {
+            let (col_type, multiline) = csv_col_meta(c);
+            if multiline {
+                continue;
+            }
             if c == 0 && highlight_first_col {
                 table_html.push_str(&format!(
-                    r#"<td class="ci-pupil-name">{field}</td>"#,
+                    r#"<td class="ci-pupil-name" data-col="0">{field}</td>"#,
                     field = html_escape(field)
                 ));
             } else {
-                // Editable. Cell type comes from the form-type column at the matching
-                // index. For fixed-row mode the leading column is the row id, so user
-                // columns are offset by 1.
-                let col_idx = if highlight_first_col { c - 1 } else { c };
-                let col_type = ft_columns
-                    .get(col_idx)
-                    .map(|cd| cd.col_type.as_str())
-                    .unwrap_or("text");
                 let cell_class = match col_type {
                     "number" => "ci-cell-editable ci-col-number",
                     "bool" => "ci-cell-editable ci-col-bool",
@@ -915,6 +975,35 @@ async fn view(
             }
         }
         table_html.push_str("</tr>");
+
+        // Follow-up row holding any multiline cells for this row.
+        let multiline_cells: Vec<(usize, &str, &String)> = line
+            .iter()
+            .enumerate()
+            .filter_map(|(c, field)| {
+                if !csv_col_meta(c).1 {
+                    return None;
+                }
+                let header_label = lines
+                    .first()
+                    .and_then(|h| h.get(c).map(String::as_str))
+                    .unwrap_or("");
+                Some((c, header_label, field))
+            })
+            .collect();
+        if !multiline_cells.is_empty() {
+            table_html.push_str(&format!(
+                r#"<tr class="ci-multiline-row" data-row="{r}"><td colspan="{visible_col_count}">"#
+            ));
+            for (c, label, field) in multiline_cells {
+                table_html.push_str(&format!(
+                    r#"<div class="ci-multiline-cell ci-cell-editable" data-row="{r}" data-col="{c}" data-type="text"><label>{label}</label><div class="ci-multiline-value">{value}</div></div>"#,
+                    label = html_escape(label),
+                    value = html_escape(field),
+                ));
+            }
+            table_html.push_str("</td></tr>");
+        }
     }
     table_html.push_str("</tbody></table>");
 
@@ -939,6 +1028,7 @@ async fn view(
 
     let col_bool = t.ft_col_bool;
     let link_default_text = t.link_default_text;
+    let search_placeholder = t.inp_search_placeholder;
     let modal_html = render_link_modal(t);
 
     let body = format!(
@@ -947,6 +1037,10 @@ async fn view(
             <p>
                 {rs_badge}{ft_name} — {date}
             </p>
+        </div>
+
+        <div class="ci-search-bar">
+            <input type="search" id="ci-global-search" class="ci-global-search" placeholder="{search_placeholder}" autocomplete="off">
         </div>
 
         <div class="card">
@@ -967,32 +1061,37 @@ async fn view(
             var lblLinkDefault = '{link_default_text}';
             var saveUrl = '{base}/forms/inputs/{id}/cell';
 
-            // ── Sort & filter ──────────────────────────────────────────
+            // ── Sort & search ──────────────────────────────────────────
             // Operates purely on the DOM. Cells keep their original
             // data-row/data-col, so saves still hit the underlying CSV row
             // regardless of the visible order or which rows are filtered out.
             var tbody = document.querySelector('.ci-input-table tbody');
-            var allRows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
-            var activeFilters = {{}};   // colIdx -> filter substring (lowercase)
+            var mainRows = tbody ? Array.from(tbody.querySelectorAll('tr.ci-main-row')) : [];
+            // Pair each main row with its (optional) multiline follow-up so
+            // sort moves them together and search hides them together.
+            var rowGroups = mainRows.map(function(tr) {{
+                var follow = tbody.querySelector('tr.ci-multiline-row[data-row="' + tr.dataset.row + '"]');
+                return {{ main: tr, follow: follow }};
+            }});
             var activeSort = null;      // {{ col: idx, dir: 'asc'|'desc', type: '...' }}
+            var activeSearch = '';
 
             function cellTextAt(tr, colIdx) {{
-                var c = tr.children[colIdx];
+                var c = tr.querySelector('[data-col="' + colIdx + '"]');
                 return c ? (c.textContent || '').trim() : '';
             }}
 
-            function applyFilters() {{
-                var filterCols = Object.keys(activeFilters);
-                allRows.forEach(function(tr) {{
-                    var visible = true;
-                    for (var i = 0; i < filterCols.length; i++) {{
-                        var col = filterCols[i];
-                        var needle = activeFilters[col];
-                        if (!needle) continue;
-                        var hay = cellTextAt(tr, parseInt(col)).toLowerCase();
-                        if (hay.indexOf(needle) < 0) {{ visible = false; break; }}
-                    }}
-                    tr.style.display = visible ? '' : 'none';
+            function rowHaystack(g) {{
+                var s = g.main.textContent;
+                if (g.follow) s += ' ' + g.follow.textContent;
+                return s.toLowerCase();
+            }}
+
+            function applySearch() {{
+                rowGroups.forEach(function(g) {{
+                    var visible = !activeSearch || rowHaystack(g).indexOf(activeSearch) >= 0;
+                    g.main.style.display = visible ? '' : 'none';
+                    if (g.follow) g.follow.style.display = visible ? '' : 'none';
                 }});
             }}
 
@@ -1000,13 +1099,13 @@ async fn view(
                 if (!tbody) return;
                 var ordered;
                 if (!activeSort) {{
-                    ordered = allRows.slice().sort(function(a, b) {{
-                        return parseInt(a.dataset.originalIndex) - parseInt(b.dataset.originalIndex);
+                    ordered = rowGroups.slice().sort(function(a, b) {{
+                        return parseInt(a.main.dataset.originalIndex) - parseInt(b.main.dataset.originalIndex);
                     }});
                 }} else {{
                     var col = activeSort.col, dir = activeSort.dir, type = activeSort.type;
-                    ordered = allRows.slice().sort(function(a, b) {{
-                        var va = cellTextAt(a, col), vb = cellTextAt(b, col);
+                    ordered = rowGroups.slice().sort(function(a, b) {{
+                        var va = cellTextAt(a.main, col), vb = cellTextAt(b.main, col);
                         var cmp;
                         if (type === 'number') {{
                             var na = parseFloat(va), nb = parseFloat(vb);
@@ -1021,7 +1120,10 @@ async fn view(
                         return dir === 'asc' ? cmp : -cmp;
                     }});
                 }}
-                ordered.forEach(function(tr) {{ tbody.appendChild(tr); }});
+                ordered.forEach(function(g) {{
+                    tbody.appendChild(g.main);
+                    if (g.follow) tbody.appendChild(g.follow);
+                }});
             }}
 
             function refreshSortBtnStates() {{
@@ -1049,16 +1151,13 @@ async fn view(
                 }});
             }});
 
-            document.querySelectorAll('.ci-filter-input').forEach(function(inp) {{
-                inp.addEventListener('input', function() {{
-                    var col = parseInt(inp.dataset.col);
-                    var v = inp.value.trim().toLowerCase();
-                    if (v) activeFilters[col] = v;
-                    else delete activeFilters[col];
-                    inp.classList.toggle('ci-filter-active', !!v);
-                    applyFilters();
+            var searchInput = document.getElementById('ci-global-search');
+            if (searchInput) {{
+                searchInput.addEventListener('input', function() {{
+                    activeSearch = searchInput.value.trim().toLowerCase();
+                    applySearch();
                 }});
-            }});
+            }}
 
             // ── Link modal ─────────────────────────────────────────────
             var modal = document.getElementById('link-modal');
@@ -1133,6 +1232,16 @@ async fn view(
             }}
 
             // ── Cell editing ───────────────────────────────────────────
+            // Multiline cells wrap the editable value in a <div class="ci-multiline-value">
+            // alongside a label, so the edit/save logic operates on that inner element.
+            // Regular cells edit the cell itself.
+            function valueEl(cell) {{
+                return cell.querySelector('.ci-multiline-value') || cell;
+            }}
+            function isMultiline(cell) {{
+                return cell.classList.contains('ci-multiline-cell');
+            }}
+
             document.querySelectorAll('.ci-cell-editable').forEach(function(cell) {{
                 cell.addEventListener('dblclick', function() {{
                     if (cell.classList.contains('ci-cell-editing')) return;
@@ -1150,7 +1259,8 @@ async fn view(
             }});
 
             function startEdit(cell) {{
-                var oldValue = cell.textContent;
+                var target = valueEl(cell);
+                var oldValue = target.textContent;
                 var colType = cell.dataset.type || 'text';
                 cell.classList.add('ci-cell-editing');
                 cell.dataset.oldValue = oldValue;
@@ -1172,14 +1282,19 @@ async fn view(
                     control.inputMode = 'decimal';
                     control.className = 'ci-cell ci-cell-input';
                     control.value = oldValue;
+                }} else if (isMultiline(cell)) {{
+                    control = document.createElement('textarea');
+                    control.className = 'ci-cell ci-cell-textarea';
+                    control.rows = Math.max(3, oldValue.split('\n').length);
+                    control.value = oldValue;
                 }} else {{
                     control = document.createElement('input');
                     control.type = 'text';
                     control.className = 'ci-cell ci-cell-input';
                     control.value = oldValue;
                 }}
-                cell.textContent = '';
-                cell.appendChild(control);
+                target.textContent = '';
+                target.appendChild(control);
                 control.focus();
                 if (control.select) control.select();
 
@@ -1190,14 +1305,18 @@ async fn view(
                     if (commit) {{
                         save(cell, control.value);
                     }} else {{
-                        cell.textContent = cell.dataset.oldValue || '';
+                        valueEl(cell).textContent = cell.dataset.oldValue || '';
                         cell.classList.remove('ci-cell-editing');
                         delete cell.dataset.oldValue;
                     }}
                 }}
                 control.addEventListener('keydown', function(e) {{
-                    if (e.key === 'Enter') {{ e.preventDefault(); finish(true); }}
-                    else if (e.key === 'Escape') {{ e.preventDefault(); finish(false); }}
+                    // In a textarea Enter inserts a newline; only Ctrl/Cmd+Enter commits.
+                    if (e.key === 'Enter' && (control.tagName !== 'TEXTAREA' || e.ctrlKey || e.metaKey)) {{
+                        e.preventDefault(); finish(true);
+                    }} else if (e.key === 'Escape') {{
+                        e.preventDefault(); finish(false);
+                    }}
                 }});
                 control.addEventListener('blur', function() {{ finish(true); }});
             }}
@@ -1213,14 +1332,14 @@ async fn view(
                     credentials: 'same-origin',
                 }}).then(function(res) {{
                     if (res.ok) {{
-                        cell.textContent = newValue;
+                        valueEl(cell).textContent = newValue;
                     }} else {{
                         alert('Save failed (' + res.status + ')');
-                        cell.textContent = cell.dataset.oldValue || '';
+                        valueEl(cell).textContent = cell.dataset.oldValue || '';
                     }}
                 }}).catch(function() {{
                     alert('Save failed (network error)');
-                    cell.textContent = cell.dataset.oldValue || '';
+                    valueEl(cell).textContent = cell.dataset.oldValue || '';
                 }}).finally(function() {{
                     cell.classList.remove('ci-cell-editing');
                     delete cell.dataset.oldValue;
@@ -1298,35 +1417,60 @@ fn parse_link_value(value: &str) -> (&str, &str) {
     }
 }
 
-/// Simple CSV line parser that handles quoted fields.
-fn parse_csv_line(line: &str) -> Vec<String> {
-    let mut fields = Vec::new();
-    let mut current = String::new();
+/// Parse a CSV body into rows, treating `\n` inside quoted fields as part of
+/// the field (RFC 4180). Multi-line text columns rely on this — without it,
+/// `csv_data.lines()` would split a quoted multi-line value across rows.
+/// `\r\n` line endings are normalised to `\n`. Trailing blank rows are dropped.
+fn parse_csv(text: &str) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut current_row: Vec<String> = Vec::new();
+    let mut current_field = String::new();
     let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
+    let mut chars = text.chars().peekable();
 
     while let Some(ch) = chars.next() {
         if in_quotes {
             if ch == '"' {
                 if chars.peek() == Some(&'"') {
-                    current.push('"');
+                    current_field.push('"');
                     chars.next();
                 } else {
                     in_quotes = false;
                 }
+            } else if ch == '\r' {
+                // Normalise CRLF inside a quoted field to LF.
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                current_field.push('\n');
             } else {
-                current.push(ch);
+                current_field.push(ch);
             }
         } else if ch == '"' {
             in_quotes = true;
         } else if ch == ',' {
-            fields.push(std::mem::take(&mut current));
+            current_row.push(std::mem::take(&mut current_field));
+        } else if ch == '\n' || ch == '\r' {
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            current_row.push(std::mem::take(&mut current_field));
+            rows.push(std::mem::take(&mut current_row));
         } else {
-            current.push(ch);
+            current_field.push(ch);
         }
     }
-    fields.push(current);
-    fields
+    // Flush the final field if the input did not end with a newline.
+    if !current_field.is_empty() || !current_row.is_empty() {
+        current_row.push(current_field);
+        rows.push(current_row);
+    }
+    // Drop trailing rows that consist only of a single empty field — those are
+    // artefacts of trailing newlines, not real records.
+    while matches!(rows.last(), Some(r) if r.len() == 1 && r[0].is_empty()) {
+        rows.pop();
+    }
+    rows
 }
 
 /// Mirror of the JS csvEscape: quote when the value contains a comma, quote, or newline.
@@ -1360,7 +1504,7 @@ fn update_csv_cell(
     if row == 0 {
         return Err("header row is not editable");
     }
-    let mut lines: Vec<Vec<String>> = csv_data.lines().map(parse_csv_line).collect();
+    let mut lines: Vec<Vec<String>> = parse_csv(csv_data);
     if row >= lines.len() {
         return Err("row out of range");
     }
@@ -1575,10 +1719,12 @@ fn build_csv_from_upload(
     row_set_rows: Option<&[String]>,
     t: &super::i18n::Translations,
 ) -> Result<String, String> {
-    let parsed: Vec<Vec<String>> = csv_text
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(parse_csv_line)
+    // Multi-line aware: a quoted field may contain `\n`, so we can't pre-split
+    // on lines. After parsing, drop fully-empty rows (artefacts of blank lines
+    // between records).
+    let parsed: Vec<Vec<String>> = parse_csv(csv_text)
+        .into_iter()
+        .filter(|r| !r.iter().all(|f| f.trim().is_empty()))
         .collect();
     if parsed.is_empty() {
         return Err(t.inp_csv_err_no_data_rows.to_string());

@@ -23,9 +23,17 @@ pub fn routes() -> Router<AppState> {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ColumnDef {
     pub name: String,
-    /// "text", "number", or "bool"
+    /// "text", "number", "bool", or "link"
     #[serde(rename = "type")]
     pub col_type: String,
+    /// When true (text columns only), the cell is rendered on its own row
+    /// beneath the main row so long values like a movie synopsis can wrap.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub multiline: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(sqlx::FromRow)]
@@ -54,8 +62,13 @@ fn render_column_list(cols: &[ColumnDef], lang: Lang) -> String {
             "link" => t.ft_col_link,
             _ => t.ft_col_text,
         };
+        let multiline_suffix = if c.multiline {
+            format!(", {}", t.ft_col_multiline_badge)
+        } else {
+            String::new()
+        };
         out.push_str(&format!(
-            r#"<span class="label-badge" style="--label-color:#3182CE">{name} <small>({type_label})</small></span> "#,
+            r#"<span class="label-badge" style="--label-color:#3182CE">{name} <small>({type_label}{multiline_suffix})</small></span> "#,
             name = html_escape(&c.name),
         ));
     }
@@ -160,6 +173,10 @@ async fn list(
                                     <option value="bool">{col_bool}</option>
                                     <option value="link">{col_link}</option>
                                 </select>
+                                <label class="ci-col-multiline-toggle">
+                                    <input type="checkbox" data-col-multiline>
+                                    <span>{multiline_lbl}</span>
+                                </label>
                                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
                             </div>
                         </div>
@@ -178,8 +195,23 @@ async fn list(
             row.className = 'ci-column-row';
             row.innerHTML = '<input type="text" data-col-name placeholder="{col_name_ph}" required>'
                 + '<select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
+                + '<label class="ci-col-multiline-toggle"><input type="checkbox" data-col-multiline><span>{multiline_lbl}</span></label>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
+            wireMultilineToggle(row);
+        }}
+        function wireMultilineToggle(row) {{
+            var typeEl = row.querySelector('[data-col-type]');
+            var toggleLabel = row.querySelector('.ci-col-multiline-toggle');
+            var checkbox = row.querySelector('[data-col-multiline]');
+            if (!typeEl || !toggleLabel || !checkbox) return;
+            function refresh() {{
+                var isText = typeEl.value === 'text';
+                toggleLabel.style.visibility = isText ? '' : 'hidden';
+                if (!isText) checkbox.checked = false;
+            }}
+            typeEl.addEventListener('change', refresh);
+            refresh();
         }}
         function serializeColumns(editorEl) {{
             var rows = editorEl.querySelectorAll('.ci-column-row');
@@ -187,13 +219,23 @@ async fn list(
             rows.forEach(function(row) {{
                 var nameEl = row.querySelector('[data-col-name]');
                 var typeEl = row.querySelector('[data-col-type]');
+                var multilineEl = row.querySelector('[data-col-multiline]');
                 var name = nameEl ? nameEl.value.trim() : '';
                 if (!name) return;
-                out.push({{ name: name, type: typeEl ? typeEl.value : 'text' }});
+                var type = typeEl ? typeEl.value : 'text';
+                var entry = {{ name: name, type: type }};
+                if (type === 'text' && multilineEl && multilineEl.checked) {{
+                    entry.multiline = true;
+                }}
+                out.push(entry);
             }});
             return JSON.stringify(out);
         }}
         (function() {{
+            var editor = document.getElementById('columns-editor');
+            if (editor) {{
+                editor.querySelectorAll('.ci-column-row').forEach(wireMultilineToggle);
+            }}
             var form = document.getElementById('ft-create-form');
             if (!form) return;
             form.addEventListener('submit', function() {{
@@ -215,6 +257,7 @@ async fn list(
         col_number = t.ft_col_number,
         col_bool = t.ft_col_bool,
         col_link = t.ft_col_link,
+        multiline_lbl = t.ft_col_multiline,
         add_column = t.ft_add_column,
         create_btn = t.ft_create_btn,
     );
@@ -250,6 +293,7 @@ async fn create(
         .filter(|c| !c.name.trim().is_empty())
         .map(|c| ColumnDef {
             name: c.name.trim().to_string(),
+            multiline: c.multiline && c.col_type == "text",
             col_type: c.col_type,
         })
         .collect();
@@ -305,6 +349,7 @@ async fn edit_page(
     let col_number = t.ft_col_number;
     let col_bool = t.ft_col_bool;
     let col_name_ph = t.ft_col_name;
+    let multiline_lbl = t.ft_col_multiline;
 
     let col_link = t.ft_col_link;
     let mut col_rows = String::new();
@@ -329,6 +374,7 @@ async fn edit_page(
         } else {
             ""
         };
+        let multiline_checked = if c.multiline { " checked" } else { "" };
         col_rows.push_str(&format!(
             r#"<div class="ci-column-row">
                 <input type="text" data-col-name value="{name}" required>
@@ -338,6 +384,10 @@ async fn edit_page(
                     <option value="bool"{sel_bool}>{col_bool}</option>
                     <option value="link"{sel_link}>{col_link}</option>
                 </select>
+                <label class="ci-col-multiline-toggle">
+                    <input type="checkbox" data-col-multiline{multiline_checked}>
+                    <span>{multiline_lbl}</span>
+                </label>
                 <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
             </div>"#,
             name = html_escape(&c.name),
@@ -349,6 +399,7 @@ async fn edit_page(
             r#"<div class="ci-column-row">
             <input type="text" data-col-name placeholder="{col_name_ph}" required>
             <select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>
+            <label class="ci-col-multiline-toggle"><input type="checkbox" data-col-multiline><span>{multiline_lbl}</span></label>
             <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
         </div>"#
         );
@@ -396,8 +447,23 @@ async fn edit_page(
             row.className = 'ci-column-row';
             row.innerHTML = '<input type="text" data-col-name placeholder="{col_name_ph}" required>'
                 + '<select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
+                + '<label class="ci-col-multiline-toggle"><input type="checkbox" data-col-multiline><span>{multiline_lbl}</span></label>'
                 + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
             container.appendChild(row);
+            wireMultilineToggle(row);
+        }}
+        function wireMultilineToggle(row) {{
+            var typeEl = row.querySelector('[data-col-type]');
+            var toggleLabel = row.querySelector('.ci-col-multiline-toggle');
+            var checkbox = row.querySelector('[data-col-multiline]');
+            if (!typeEl || !toggleLabel || !checkbox) return;
+            function refresh() {{
+                var isText = typeEl.value === 'text';
+                toggleLabel.style.visibility = isText ? '' : 'hidden';
+                if (!isText) checkbox.checked = false;
+            }}
+            typeEl.addEventListener('change', refresh);
+            refresh();
         }}
         function serializeColumns(editorEl) {{
             var rows = editorEl.querySelectorAll('.ci-column-row');
@@ -405,13 +471,23 @@ async fn edit_page(
             rows.forEach(function(row) {{
                 var nameEl = row.querySelector('[data-col-name]');
                 var typeEl = row.querySelector('[data-col-type]');
+                var multilineEl = row.querySelector('[data-col-multiline]');
                 var name = nameEl ? nameEl.value.trim() : '';
                 if (!name) return;
-                out.push({{ name: name, type: typeEl ? typeEl.value : 'text' }});
+                var type = typeEl ? typeEl.value : 'text';
+                var entry = {{ name: name, type: type }};
+                if (type === 'text' && multilineEl && multilineEl.checked) {{
+                    entry.multiline = true;
+                }}
+                out.push(entry);
             }});
             return JSON.stringify(out);
         }}
         (function() {{
+            var editor = document.getElementById('columns-editor');
+            if (editor) {{
+                editor.querySelectorAll('.ci-column-row').forEach(wireMultilineToggle);
+            }}
             var form = document.getElementById('ft-edit-form');
             if (!form) return;
             form.addEventListener('submit', function() {{
@@ -462,6 +538,7 @@ async fn edit(
         .filter(|c| !c.name.trim().is_empty())
         .map(|c| ColumnDef {
             name: c.name.trim().to_string(),
+            multiline: c.multiline && c.col_type == "text",
             col_type: c.col_type,
         })
         .collect();

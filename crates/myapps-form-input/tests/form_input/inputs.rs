@@ -223,8 +223,9 @@ async fn view_page_renders_grid_with_editable_cells() {
     let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
     // Same grid table the new-input page uses
     assert!(body.contains(r#"class="ci-input-table""#));
-    // Row identifier (col 0) is non-editable in fixed-row mode
-    assert!(body.contains(r#"class="ci-pupil-name">Alba García</td>"#));
+    // Row identifier (col 0) is non-editable in fixed-row mode. data-col="0"
+    // is set so the global sort logic can read its text by attribute lookup.
+    assert!(body.contains(r#"class="ci-pupil-name" data-col="0">Alba García</td>"#));
     // Data cells are tagged for the JS double-click handler
     assert!(body.contains(r#"data-row="1" data-col="1""#));
     // Number column carries its type annotation so the JS spawns the right control
@@ -544,6 +545,108 @@ async fn view_page_renders_link_cell_as_anchor() {
 }
 
 #[tokio::test]
+async fn view_page_renders_multiline_text_column_in_separate_row() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let columns_json =
+        r#"[{"name":"Title","type":"text"},{"name":"Synopsis","type":"text","multiline":true}]"#;
+    let ft_id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0) RETURNING id",
+    )
+    .bind(uid)
+    .bind("Movies")
+    .bind(columns_json)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let csv = "Title,Synopsis\nInception,A thief enters dreams.";
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_inputs (user_id, row_set_id, form_type_id, name, csv_data) VALUES (?, NULL, ?, ?, ?) RETURNING id",
+    )
+    .bind(uid)
+    .bind(ft_id)
+    .bind("My movies")
+    .bind(csv)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    // The multiline column gets its own row beneath the main row, with the
+    // value wrapped in a .ci-multiline-value element.
+    assert!(body.contains(r#"class="ci-multiline-row""#));
+    assert!(body.contains(r#"<div class="ci-multiline-value">A thief enters dreams.</div>"#));
+    // The Synopsis column is removed from the table header (it's only shown in
+    // the follow-up row) — only the Title <th> should be present.
+    assert!(body.contains(r#"<span class="ci-th-label">Title</span>"#));
+    assert!(!body.contains(r#"<span class="ci-th-label">Synopsis</span>"#));
+    // Multiline cells stay editable: data-type="text" + ci-cell-editable.
+    assert!(body.contains(r#"data-row="1" data-col="1" data-type="text""#));
+}
+
+#[tokio::test]
+async fn form_type_with_multiline_column_persists_flag() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let response = app
+        .server
+        .post("/forms/form-types/create")
+        .form(&serde_json::json!({
+            "name": "Notes",
+            "columns": r#"[{"name":"Body","type":"text","multiline":true}]"#,
+        }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+
+    let stored: String =
+        sqlx::query_scalar("SELECT columns_json FROM form_input_form_types WHERE name = 'Notes'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert!(
+        stored.contains(r#""multiline":true"#),
+        "multiline flag should round-trip through the create handler, got: {stored}"
+    );
+}
+
+#[tokio::test]
+async fn form_type_create_drops_multiline_flag_for_non_text_columns() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let response = app
+        .server
+        .post("/forms/form-types/create")
+        .form(&serde_json::json!({
+            "name": "BadCols",
+            "columns": r#"[{"name":"Score","type":"number","multiline":true}]"#,
+        }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+
+    let stored: String =
+        sqlx::query_scalar("SELECT columns_json FROM form_input_form_types WHERE name = 'BadCols'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    // multiline is text-only; the server strips the flag for other types.
+    assert!(
+        !stored.contains(r#""multiline":true"#),
+        "non-text columns must not store multiline=true, got: {stored}"
+    );
+}
+
+#[tokio::test]
 async fn update_cell_persists_link_value_with_pipe() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
     app.seed_and_login(&myapps_form_input::FormInputApp).await;
@@ -608,7 +711,7 @@ async fn update_cell_endpoint_requires_authentication() {
 }
 
 #[tokio::test]
-async fn view_page_renders_sort_and_filter_controls() {
+async fn view_page_renders_sort_and_search_controls() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
     app.seed_and_login(&myapps_form_input::FormInputApp).await;
 
@@ -623,11 +726,14 @@ async fn view_page_renders_sort_and_filter_controls() {
     // when appropriate.
     assert!(body.contains(r#"data-col-type="text""#));
     assert!(body.contains(r#"data-col-type="number""#));
-    // Sort buttons (one asc + one desc) and a filter input per column.
+    // Sort buttons (one asc + one desc) per column.
     assert!(body.contains("ci-sort-btn"));
     assert!(body.contains(r#"data-dir="asc""#));
     assert!(body.contains(r#"data-dir="desc""#));
-    assert!(body.contains("ci-filter-input"));
+    // A single global search input sits above the table — per-column filters were
+    // dropped in favour of one box that searches every column at once.
+    assert!(body.contains(r#"id="ci-global-search""#));
+    assert!(!body.contains("ci-filter-input"));
     // Each row records its original CSV index so sort can be cleared / saves
     // hit the right underlying row.
     assert!(body.contains(r#"data-original-index="0""#));
