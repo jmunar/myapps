@@ -188,6 +188,27 @@
     transform: translateY(0.15em);
 }
 
+/* Tiptap TaskItem renders <li><label>checkbox</label><div><p>content</p></div></li>.
+   Without this the <div> drops to the next line, separating the checkbox from its text. */
+.notes-markdown-editor ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0;
+}
+.notes-markdown-editor ul[data-type="taskList"] > li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5em;
+}
+.notes-markdown-editor ul[data-type="taskList"] > li > label {
+    flex-shrink: 0;
+}
+.notes-markdown-editor ul[data-type="taskList"] > li > div {
+    flex: 1 1 auto;
+}
+.notes-markdown-editor ul[data-type="taskList"] > li > div > p {
+    margin: 0;
+}
+
 .notes-markdown-editor hr {
     border: none;
     border-top: 1px solid var(--border);

@@ -165,7 +165,7 @@ async fn edit_note_has_full_page_structure() {
 }
 
 #[tokio::test]
-async fn edit_note_has_contenteditable_and_hidden_textarea() {
+async fn edit_note_has_tiptap_mount() {
     let app = app().await;
     app.seed_and_login(&NotesApp::new()).await;
 
@@ -177,11 +177,12 @@ async fn edit_note_has_contenteditable_and_hidden_textarea() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    assert!(body.contains(r#"contenteditable="true""#));
+    // Tiptap mounts itself into an empty #notes-editor; no contenteditable
+    // attribute, no hidden textarea, no body field in the form.
     assert!(body.contains(r#"id="notes-editor""#));
-    assert!(body.contains(r#"id="notes-raw""#));
-    assert!(body.contains(r#"name="body""#));
-    assert!(body.contains(r#"style="display:none""#));
+    assert!(!body.contains(r#"contenteditable="true""#));
+    assert!(!body.contains(r#"id="notes-raw""#));
+    assert!(!body.contains(r#"name="body""#));
 }
 
 #[tokio::test]
@@ -236,16 +237,13 @@ async fn edit_note_no_nested_forms() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    // The save form should not contain a nested form for toggle-pin;
-    // pin uses formaction on the button instead.
+    // The save form should close before the next <form (toggle-pin uses
+    // formaction on its button; delete is its own sibling form).
     let save_form_start = body.find(r#"id="notes-form""#).unwrap();
-    let save_form_body = &body[save_form_start..];
-    // After the opening <form id="notes-form">, the next </form> should close it.
-    // There should be no <form inside the save form before the hidden textarea.
-    let textarea_pos = save_form_body.find(r#"id="notes-raw""#).unwrap();
-    let between = &save_form_body[..textarea_pos];
+    let save_form_end = save_form_start + body[save_form_start..].find("</form>").unwrap();
+    let inside = &body[save_form_start..save_form_end];
     assert!(
-        !between.contains("<form "),
+        !inside.contains("<form "),
         "save form should not contain nested forms"
     );
 }
@@ -323,42 +321,24 @@ async fn edit_pinned_note_shows_unpin_button() {
 }
 
 #[tokio::test]
-async fn edit_note_no_dictate_button_without_whisper() {
-    let app = app().await;
-    app.seed_and_login(&NotesApp::new()).await;
-
-    let (id,): (i64,) =
-        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
-
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-    // Whisper is not configured in tests, so dictate button should be absent
-    assert!(!body.contains("notes-dictate-btn"));
-    assert!(body.contains(r#"data-whisper="false""#));
-}
-
-#[tokio::test]
 async fn edit_note_has_data_attributes() {
     let app = app().await;
     app.seed_and_login(&NotesApp::new()).await;
 
-    let (id,): (i64,) =
-        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
+    let (id, uuid): (i64, String) =
+        sqlx::query_as("SELECT id, client_uuid FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
             .fetch_one(&app.pool)
             .await
             .unwrap();
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    assert!(body.contains(&format!(r#"data-note-id="{id}""#)));
     assert!(body.contains(r#"data-base=""#));
+    assert!(body.contains(&format!(r#"data-client-uuid="{uuid}""#)));
 }
 
 #[tokio::test]
-async fn edit_note_loads_editor_script() {
+async fn edit_note_loads_vendor_bundle_and_bootstrap() {
     let app = app().await;
     app.seed_and_login(&NotesApp::new()).await;
 
@@ -370,7 +350,10 @@ async fn edit_note_loads_editor_script() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    assert!(body.contains("notes-editor.js"));
+    assert!(body.contains("notes-vendor.bundle.js"));
+    assert!(body.contains("notes-tiptap-bootstrap.js"));
+    // The legacy contenteditable editor script must not be loaded.
+    assert!(!body.contains("notes-editor.js"));
 }
 
 #[tokio::test]
@@ -472,28 +455,6 @@ async fn notes_empty_state() {
 }
 
 #[tokio::test]
-async fn edit_note_renders_markdown_content() {
-    let app = app().await;
-    app.seed_and_login(&NotesApp::new()).await;
-
-    // "Rust Tips" has code blocks, lists, links in its body
-    let (id,): (i64,) =
-        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
-
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-    // Code block should be rendered as <pre> with notes-code-block class
-    assert!(body.contains("notes-code-block"));
-    // List items should be rendered
-    assert!(body.contains("<li>"));
-    // The raw body should be in the hidden textarea
-    assert!(body.contains("Pattern Matching"));
-}
-
-#[tokio::test]
 async fn edit_note_title_in_input_field() {
     let app = app().await;
     app.seed_and_login(&NotesApp::new()).await;
@@ -548,126 +509,39 @@ async fn toggle_pin_then_check_edit_shows_unpin() {
 }
 
 #[tokio::test]
-async fn edit_note_renders_task_checkboxes_as_inputs() {
-    let app = app().await;
-    app.seed_and_login(&NotesApp::new()).await;
-
-    // "Shopping List" has a mix of checked and unchecked task items.
-    let (id,): (i64,) =
-        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Shopping List' LIMIT 1")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
-
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-
-    // Task items are rendered with the .notes-task-item class.
-    assert!(body.contains(r#"<li class="notes-task-item">"#));
-    // Both checked and unchecked variants are emitted as real checkbox inputs.
-    assert!(body.contains(r#"<input type="checkbox" checked contenteditable="false">"#));
-    assert!(body.contains(r#"<input type="checkbox" contenteditable="false">"#));
-    // The old Unicode-glyph rendering should be gone.
-    assert!(!body.contains("&#9745;"));
-    assert!(!body.contains("&#9744;"));
-}
-
-#[tokio::test]
-async fn edit_note_task_checkbox_pairs_with_its_text() {
+async fn save_updates_title_only_leaves_body_alone() {
     let app = app().await;
     app.login_as("test", "pass").await;
 
-    // Write a minimal note we fully control so we can assert exact HTML.
     sqlx::query(
-        "INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Tasks', '- [x] Done item\n- [ ] Todo item')",
+        "INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Old', 'original body content')",
     )
     .execute(&app.pool)
     .await
     .unwrap();
 
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Tasks' LIMIT 1")
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Old' LIMIT 1")
         .fetch_one(&app.pool)
         .await
         .unwrap();
 
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-
-    assert!(body.contains(
-        r#"<li class="notes-task-item"><input type="checkbox" checked contenteditable="false">Done item</li>"#,
-    ));
-    assert!(body.contains(
-        r#"<li class="notes-task-item"><input type="checkbox" contenteditable="false">Todo item</li>"#,
-    ));
-}
-
-#[tokio::test]
-async fn edit_note_renders_bare_task_checkbox_syntax() {
-    let app = app().await;
-    app.login_as("test", "pass").await;
-
-    // The current convention (what tiptap-markdown serializes) drops the leading
-    // bullet: "[x] foo" / "[ ] foo". The renderer must recognize it just like
-    // the legacy "- [x]" / "- [ ]" form.
-    sqlx::query(
-        "INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Bare', '[x] Done item\n[ ] Todo item')",
-    )
-    .execute(&app.pool)
-    .await
-    .unwrap();
-
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Bare' LIMIT 1")
-        .fetch_one(&app.pool)
-        .await
-        .unwrap();
-
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-
-    assert!(body.contains(
-        r#"<li class="notes-task-item"><input type="checkbox" checked contenteditable="false">Done item</li>"#,
-    ));
-    assert!(body.contains(
-        r#"<li class="notes-task-item"><input type="checkbox" contenteditable="false">Todo item</li>"#,
-    ));
-}
-
-#[tokio::test]
-async fn edit_note_task_checkbox_markdown_round_trips_through_save() {
-    let app = app().await;
-    app.login_as("test", "pass").await;
-
-    sqlx::query("INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Tasks', '')")
-        .execute(&app.pool)
-        .await
-        .unwrap();
-
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Tasks' LIMIT 1")
-        .fetch_one(&app.pool)
-        .await
-        .unwrap();
-
-    // Simulate the form the JS would submit after a checkbox toggle:
-    // the textarea carries the markdown with [x]/[ ] preserved.
+    // Body now flows via WebSocket into the CRDT log; even if old clients
+    // POST a `body` field, /save must ignore it and only touch the title.
     app.server
         .post(&format!("/notes/{id}/save"))
         .form(&serde_json::json!({
-            "title": "Tasks",
-            "body": "- [x] First\n- [ ] Second",
+            "title": "New",
+            "body": "this should be ignored",
         }))
         .expect_failure()
         .await;
 
-    let (body,): (String,) = sqlx::query_as("SELECT body FROM notes_notes WHERE id = ?")
-        .bind(id)
-        .fetch_one(&app.pool)
-        .await
-        .unwrap();
-    assert_eq!(body, "- [x] First\n- [ ] Second");
-
-    // And re-rendering produces the expected HTML.
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let html = r.text();
-    assert!(html.contains(r#"<input type="checkbox" checked contenteditable="false">First"#));
-    assert!(html.contains(r#"<input type="checkbox" contenteditable="false">Second"#));
+    let (title, body): (String, String) =
+        sqlx::query_as("SELECT title, body FROM notes_notes WHERE id = ?")
+            .bind(id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(title, "New");
+    assert_eq!(body, "original body content");
 }
