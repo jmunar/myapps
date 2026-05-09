@@ -181,7 +181,9 @@ After login, the top-level router serves:
     (multipart). Validates column count; in fixed-row mode also enforces row
     count and first-column key alignment with the selected row set.
   - `/forms/inputs/{id}` — View input detail (editable spreadsheet grid with
-    per-column sort/filter; double-click any cell to edit in place)
+    per-column sort and a single global search box; double-click any cell to
+    edit in place; text columns flagged as multi-line render on their own row
+    beneath the main row)
   - `POST /forms/inputs/{id}/cell` — Persist a single-cell edit (row, col, value)
   - `POST /forms/inputs/{id}/delete` — Delete input
   - `/forms/row-sets` — Row set list + create form
