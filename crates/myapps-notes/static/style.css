@@ -127,6 +127,16 @@
     color: var(--text);
 }
 
+/* Tiptap renders a .ProseMirror element inside the mount; suppress the
+   default browser focus outline that otherwise frames the editor area. */
+.notes-markdown-editor .ProseMirror {
+    outline: none;
+    min-height: 60vh;
+}
+.notes-markdown-editor .ProseMirror:focus {
+    outline: none;
+}
+
 /* ── Editor markdown rendered styles ─────────────────────────── */
 .notes-markdown-editor h1 {
     font-size: 1.6rem;

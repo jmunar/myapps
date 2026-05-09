@@ -20,6 +20,7 @@ pub fn routes() -> Router<AppState> {
         .route("/{id}/save", post(save))
         .route("/{id}/delete", post(delete))
         .route("/{id}/toggle-pin", post(toggle_pin))
+        .route("/{id}/dictate", post(dictate))
 }
 
 #[derive(sqlx::FromRow)]
@@ -174,6 +175,21 @@ async fn edit(
 
     let pin_label = if note.pinned != 0 { t.unpin } else { t.pin };
     let sv = &state.config.static_version;
+    let whisper_available = state.config.whisper_available();
+
+    let dictate_btn = if whisper_available {
+        format!(
+            r##"<button type="button" id="notes-dictate-btn" class="btn btn-secondary"
+                    data-url="{base}/notes/{id}/dictate"
+                    data-recording-label="{dictating}"
+                    data-transcribing-label="{transcribing}">{dictate}</button>"##,
+            dictate = t.dictate,
+            dictating = t.dictating,
+            transcribing = t.transcribing,
+        )
+    } else {
+        String::new()
+    };
 
     let body = format!(
         r#"<div class="notes-editor-container">
@@ -182,6 +198,7 @@ async fn edit(
                     <input type="text" name="title" value="{title}" placeholder="{untitled}"
                            class="notes-title-input" autocomplete="off">
                     <div class="notes-editor-actions">
+                        {dictate_btn}
                         <button type="submit" formaction="{base}/notes/{id}/toggle-pin" class="btn btn-secondary">{pin_label}</button>
                         <button type="submit" class="btn btn-primary">{save}</button>
                         <a href="{base}/notes" class="btn btn-secondary">{back}</a>
@@ -265,6 +282,50 @@ async fn toggle_pin(
         .await
         .ok();
     Redirect::to(&format!("{base}/notes/{id}/edit"))
+}
+
+async fn dictate(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(id): Path<i64>,
+    multipart: axum::extract::Multipart,
+) -> impl IntoResponse {
+    let _ = (user_id, id);
+    match handle_dictation(&state, multipart).await {
+        Ok(text) => Html(text),
+        Err(e) => Html(format!("Error: {e}")),
+    }
+}
+
+async fn handle_dictation(
+    state: &axum::extract::State<AppState>,
+    mut multipart: axum::extract::Multipart,
+) -> anyhow::Result<String> {
+    use std::io::Write;
+
+    let mut audio_data = None;
+    while let Some(field) = multipart.next_field().await? {
+        if field.name() == Some("audio") {
+            audio_data = Some(field.bytes().await?);
+        }
+    }
+
+    let data = audio_data.ok_or_else(|| anyhow::anyhow!("No audio data"))?;
+
+    let tmp_dir = std::path::PathBuf::from("data/notes_tmp");
+    std::fs::create_dir_all(&tmp_dir)?;
+    let input_path = tmp_dir.join(format!("dictate-{}.webm", uuid::Uuid::new_v4()));
+    let mut f = std::fs::File::create(&input_path)?;
+    f.write_all(&data)?;
+    drop(f);
+
+    let wav_path = myapps_core::services::whisper::convert_to_wav(&input_path).await?;
+    let text = myapps_core::services::whisper::transcribe(&state.config, &wav_path, "base").await?;
+
+    let _ = std::fs::remove_file(&input_path);
+    let _ = std::fs::remove_file(&wav_path);
+
+    Ok(text)
 }
 
 // ── Helpers ─────────────────────────────────────────────────

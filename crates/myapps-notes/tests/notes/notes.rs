@@ -321,6 +321,23 @@ async fn edit_pinned_note_shows_unpin_button() {
 }
 
 #[tokio::test]
+async fn edit_note_no_dictate_button_without_whisper() {
+    let app = app().await;
+    app.seed_and_login(&NotesApp::new()).await;
+
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let r = app.server.get(&format!("/notes/{id}/edit")).await;
+    let body = r.text();
+    // Whisper is not configured in tests, so the dictate button must be absent.
+    assert!(!body.contains("notes-dictate-btn"));
+}
+
+#[tokio::test]
 async fn edit_note_has_data_attributes() {
     let app = app().await;
     app.seed_and_login(&NotesApp::new()).await;

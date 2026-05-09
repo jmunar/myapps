@@ -151,4 +151,63 @@
   });
 
   window.notesEditor = { editor, ydoc, ws, indexeddb };
+
+  wireDictate(editor);
+
+  // ── Dictation ─────────────────────────────────────────────
+  // Records audio via MediaRecorder, POSTs the blob to the dictate
+  // endpoint, then inserts the transcribed text at the editor's cursor.
+  // The CRDT propagates the edit to other peers as usual.
+  function wireDictate(editor) {
+    const btn = document.getElementById('notes-dictate-btn');
+    if (!btn) return;
+    const url = btn.dataset.url;
+    const idleLabel = btn.textContent;
+    const recordingLabel = btn.dataset.recordingLabel;
+    const transcribingLabel = btn.dataset.transcribingLabel;
+
+    let recorder = null;
+    let chunks = [];
+
+    btn.addEventListener('click', async () => {
+      if (recorder && recorder.state === 'recording') {
+        recorder.stop();
+        return;
+      }
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        console.error('mic access denied:', e);
+        return;
+      }
+      recorder = new MediaRecorder(stream);
+      chunks = [];
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        btn.textContent = transcribingLabel;
+        btn.disabled = true;
+        try {
+          const fd = new FormData();
+          fd.append('audio', new Blob(chunks, { type: 'audio/webm' }));
+          const r = await fetch(url, { method: 'POST', body: fd });
+          const text = await r.text();
+          if (text && !text.startsWith('Error:')) {
+            editor.commands.insertContent(text);
+          } else {
+            console.error('dictate failed:', text);
+          }
+        } catch (e) {
+          console.error('dictate request failed:', e);
+        } finally {
+          btn.textContent = idleLabel;
+          btn.disabled = false;
+          recorder = null;
+        }
+      };
+      recorder.start();
+      btn.textContent = recordingLabel;
+    });
+  }
 })();
