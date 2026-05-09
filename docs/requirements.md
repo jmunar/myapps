@@ -326,8 +326,11 @@ form type's mode), then fills in a spreadsheet-like grid that saves data as CSV.
   per line, empty lines stripped).
 - **Form type management** — create, edit, and delete form types. Each form type
   defines a set of columns with name and type (text, number, yes/no boolean, or
-  link). A form type also has a `fixed_rows` flag: when on, every input picks
-  a row set and gets one row per item; when off, the user adds rows freely.
+  link). Text columns can additionally be flagged as **multi-line**, which
+  renders the cell on its own row beneath the main row both in the view and
+  the entry grid. A form type also has a `fixed_rows` flag: when on, every
+  input picks a row set and gets one row per item; when off, the user adds
+  rows freely.
 - **Link column type** — link cells open a small modal for URL + optional
   display text (default "link"/"enlace"). The view renders an anchor; storage
   is a single CSV cell formatted as `url|text`.
@@ -345,11 +348,13 @@ form type's mode), then fills in a spreadsheet-like grid that saves data as CSV.
   Double-click any data cell to edit it; one cell save is persisted via AJAX
   (`POST /forms/inputs/{id}/cell`). The row identifier in fixed-row mode stays
   read-only.
-- **Per-column sort and filter on the view** — every column header carries
-  small sort buttons (A→Z, Z→A) and a filter input. Sort is exclusive across
-  columns, filters stack. Numeric columns sort by parsed value with empty
-  cells last. Sorting and filtering are presentation-only — saves still hit
-  the underlying CSV row regardless of the visible order.
+- **Sort and global search on the view** — every column header carries
+  small sort buttons (A→Z, Z→A); sort is exclusive across columns. Numeric
+  columns sort by parsed value with empty cells last. A single search input
+  above the table filters rows by matching the term against every cell's
+  text (including multi-line cells); main rows and their multi-line follow-up
+  rows are shown/hidden together. Sorting and search are presentation-only —
+  saves still hit the underlying CSV row regardless of the visible order.
 - **Input list and detail** — all inputs are listed with row set, form type,
   row count, and date. Each input can be viewed (and edited cell by cell) or
   deleted.

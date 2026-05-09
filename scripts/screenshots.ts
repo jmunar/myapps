@@ -98,6 +98,15 @@ test.describe("README screenshots", () => {
     await page.goto(`${BASE_URL}/forms`);
     await snap(page, "form-input-inputs");
 
+    // Open the first input so the spreadsheet view (with the global search
+    // box and per-column sort buttons) is captured.
+    const firstInput = page.locator("table tbody tr td a").first();
+    if (await firstInput.isVisible()) {
+      await firstInput.click();
+      await page.waitForTimeout(300);
+      await snap(page, "form-input-view");
+    }
+
     await page.goto(`${BASE_URL}/forms/row-sets`);
     await snap(page, "form-input-row-sets");
 
