@@ -5,10 +5,10 @@
 //! SyncStep2 → Update. Every received update is applied to the in-memory
 //! doc, persisted to `notes_note_updates`, and broadcast to other peers.
 //!
-//! The room is created lazily on first connection. If the persisted update
-//! log is empty but the legacy markdown `body` column is non-empty, the
-//! body is seeded into a `Y.Text` named "body" and persisted as the first
-//! update — a one-way migration of pre-CRDT notes.
+//! The room is created lazily on first connection with an empty Doc.
+//! Pre-CRDT notes still have their markdown in `notes_notes.body` (used by
+//! the list-view preview); a future client-side migration will pipe that
+//! through Tiptap's markdown parser into the CRDT on first open.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,12 +26,11 @@ use tokio::sync::{broadcast, mpsc};
 use yrs::sync::{Message as SyncWrapper, SyncMessage};
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
-use yrs::{Doc, ReadTxn, Text, Transact, Update};
+use yrs::{Doc, ReadTxn, Transact, Update};
 
 use myapps_core::auth::UserId;
 use myapps_core::routes::AppState;
 
-const TEXT_FIELD: &str = "body";
 const BROADCAST_CAPACITY: usize = 64;
 
 pub type Rooms = Arc<tokio::sync::RwLock<HashMap<String, Arc<Room>>>>;
@@ -82,25 +81,7 @@ pub async fn acquire_room(
             .await?;
 
     let doc = Doc::new();
-    if updates.is_empty() {
-        let (body,): (String,) = sqlx::query_as("SELECT body FROM notes_notes WHERE id = ?")
-            .bind(note_id)
-            .fetch_one(pool)
-            .await?;
-        if !body.is_empty() {
-            let text = doc.get_or_insert_text(TEXT_FIELD);
-            let seed = {
-                let mut txn = doc.transact_mut();
-                text.insert(&mut txn, 0, &body);
-                txn.encode_update_v1()
-            };
-            sqlx::query("INSERT INTO notes_note_updates (note_id, update_blob) VALUES (?, ?)")
-                .bind(note_id)
-                .bind(&seed)
-                .execute(pool)
-                .await?;
-        }
-    } else {
+    {
         let mut txn = doc.transact_mut();
         for (blob,) in updates {
             txn.apply_update(Update::decode_v1(&blob)?)?;

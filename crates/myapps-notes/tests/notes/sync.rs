@@ -22,11 +22,14 @@ fn decode(bytes: &[u8]) -> SyncWrapper {
 }
 
 #[tokio::test]
-async fn ws_seeds_existing_body_into_y_text() {
+async fn ws_initial_doc_is_empty_when_no_updates_persisted() {
     let app = app().await;
     app.login_as("test", "pass").await;
 
     let uuid = "abcdef0123456789abcdef0123456789";
+    // Insert a note with legacy markdown body. The server must NOT seed this
+    // into the CRDT — Tiptap's collaboration extension expects the field to
+    // be a Y.XmlFragment and would crash on a Y.Text seeded by the server.
     sqlx::query(
         "INSERT INTO notes_notes (user_id, client_uuid, title, body) VALUES (1, ?, 'Seed', 'Hello world')",
     )
@@ -43,28 +46,34 @@ async fn ws_seeds_existing_body_into_y_text() {
         .into_websocket()
         .await;
 
-    // Discard server's initial SyncStep1 (its current state vector).
+    // Discard server's initial SyncStep1.
     let _ = ws.receive_bytes().await;
 
-    // Ask for everything we don't have (we have nothing).
     ws.send_message(WsMessage::Binary(
         encode_step1(StateVector::default()).into(),
     ))
     .await;
 
-    // Server replies with SyncStep2 carrying the seeded content.
     let bytes = ws.receive_bytes().await;
     let SyncWrapper::Sync(SyncMessage::SyncStep2(diff)) = decode(&bytes) else {
         panic!("expected SyncStep2, got {:?}", decode(&bytes));
     };
 
-    let local = Doc::new();
-    let text = local.get_or_insert_text("body");
-    {
-        let mut txn = local.transact_mut();
-        txn.apply_update(Update::decode_v1(&diff).unwrap()).unwrap();
-    }
-    assert_eq!(text.get_string(&local.transact()), "Hello world");
+    // Empty doc → empty diff (no operations to ship).
+    assert!(
+        diff.is_empty() || diff == vec![0, 0],
+        "expected empty diff, got {diff:?}"
+    );
+
+    // And the persisted update log is still empty.
+    let count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM notes_note_updates WHERE note_id = (SELECT id FROM notes_notes WHERE client_uuid = ?)",
+    )
+    .bind(uuid)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert_eq!(count.0, 0);
 }
 
 #[tokio::test]
