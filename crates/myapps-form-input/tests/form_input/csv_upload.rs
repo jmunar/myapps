@@ -277,6 +277,55 @@ async fn csv_upload_rejects_missing_file() {
 }
 
 #[tokio::test]
+async fn csv_upload_preserves_quoted_multiline_field() {
+    // build_csv_from_upload now uses parse_csv, so a quoted multi-line cell in
+    // the uploaded CSV must round-trip into storage as a single row, with the
+    // embedded newline preserved (and the value re-quoted by the serializer).
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let ft_id = dynamic_form_type(&app).await;
+
+    // 4 columns to match Expense log; the Notes field spans two lines.
+    let csv = "Train,12.50,Yes,\"first line\nsecond line\"\nLunch,8.20,No,Quick";
+    let response = app
+        .server
+        .post("/forms/inputs/create-from-csv")
+        .multipart(
+            MultipartForm::new()
+                .add_text("name", "Multi-line CSV")
+                .add_text("form_type_id", ft_id.to_string())
+                .add_part("file", csv_part(csv)),
+        )
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+
+    let stored: String = sqlx::query_scalar(
+        "SELECT csv_data FROM form_input_inputs WHERE name = 'Multi-line CSV' LIMIT 1",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    // Multi-line value must be quoted on the way out so re-parsing recovers it.
+    assert!(
+        stored.contains("\"first line\nsecond line\""),
+        "multi-line cell should be quoted in stored CSV, got: {stored:?}"
+    );
+    // The lines() count alone would be misleading — count rows via parse-style:
+    // header + 2 data rows means 3 records, but raw newlines = 4. Use a rough
+    // check on the actual record content instead.
+    assert!(
+        stored.contains("Lunch,8.20,No,Quick"),
+        "second record should be intact, got: {stored:?}"
+    );
+    // The embedded newline must not have produced a phantom 3-column row.
+    assert!(
+        !stored.contains("\nsecond line,"),
+        "embedded newline must not be treated as a record separator, got: {stored:?}"
+    );
+}
+
+#[tokio::test]
 async fn csv_upload_endpoint_requires_authentication() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
     let response = app

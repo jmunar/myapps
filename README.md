@@ -63,6 +63,7 @@ hide per-user.
 
 <p align="center">
   <img src="docs/screenshots/form-input-inputs.png" width="270" alt="FormInput – Inputs" />
+  <img src="docs/screenshots/form-input-view.png" width="270" alt="FormInput – Input view" />
   <img src="docs/screenshots/form-input-row-sets.png" width="270" alt="FormInput – Row sets" />
   <img src="docs/screenshots/form-input-form-types.png" width="270" alt="FormInput – Form types" />
 </p>

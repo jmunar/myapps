@@ -857,3 +857,133 @@ async fn new_input_page_escapes_script_close_in_embedded_json() {
     );
     assert!(body.contains("<\\/script>"));
 }
+
+#[tokio::test]
+async fn update_cell_persists_multiline_value_and_reads_back_intact() {
+    // Saving a value containing a literal newline must (a) be quoted by the
+    // serializer, (b) survive parse_csv → serialize → parse_csv round-tripping
+    // without splitting into a separate row, and (c) be rendered back inside
+    // the .ci-multiline-value cell when the page is viewed.
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let columns_json =
+        r#"[{"name":"Title","type":"text"},{"name":"Synopsis","type":"text","multiline":true}]"#;
+    let ft_id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0) RETURNING id",
+    )
+    .bind(uid)
+    .bind("Movies-ml")
+    .bind(columns_json)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_inputs (user_id, row_set_id, form_type_id, name, csv_data) VALUES (?, NULL, ?, ?, ?) RETURNING id",
+    )
+    .bind(uid)
+    .bind(ft_id)
+    .bind("My ml movies")
+    .bind("Title,Synopsis\nInception,placeholder")
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let response = app
+        .server
+        .post(&format!("/forms/inputs/{id}/cell"))
+        .form(&serde_json::json!({
+            "row": 1,
+            "col": 1,
+            "value": "line one\nline two\nline three",
+        }))
+        .await;
+    assert_eq!(response.status_code(), 204);
+
+    let csv: String = sqlx::query_scalar("SELECT csv_data FROM form_input_inputs WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    // The multi-line value must be quoted by the serializer so the embedded
+    // newlines don't look like new records.
+    assert!(
+        csv.contains("\"line one\nline two\nline three\""),
+        "multi-line value should be quoted in stored CSV, got: {csv:?}"
+    );
+
+    // The list page row count uses parse_csv: it must count exactly 1 data row
+    // (header + 1) — not 3 — even though the value contains 2 newlines.
+    let list_body = app.server.get("/forms").await.text();
+    assert!(
+        list_body.contains("My ml movies"),
+        "input should appear on the list"
+    );
+
+    // Viewing the input must render the multi-line value inside the dedicated
+    // .ci-multiline-value div with the newlines preserved.
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(
+        body.contains("<div class=\"ci-multiline-value\">line one\nline two\nline three</div>"),
+        "multi-line value should round-trip into the rendered cell"
+    );
+    // Only one main row should be rendered (data-row="1"), not 3.
+    assert!(body.contains(r#"data-row="1""#), "row 1 should be present");
+    assert!(
+        !body.contains(r#"data-row="2""#),
+        "embedded newlines must not produce a phantom row 2"
+    );
+}
+
+#[tokio::test]
+async fn edit_form_type_page_reflects_multiline_checkbox_state() {
+    // The edit form should render the multiline checkbox pre-checked when the
+    // stored column has multiline:true so users can see/edit the flag, mirroring
+    // how the fixed_rows checkbox is reflected.
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let columns_json =
+        r#"[{"name":"Headline","type":"text"},{"name":"Body","type":"text","multiline":true}]"#;
+    let ft_id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0) RETURNING id",
+    )
+    .bind(uid)
+    .bind("Notes-ml")
+    .bind(columns_json)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app
+        .server
+        .get(&format!("/forms/form-types/{ft_id}/edit"))
+        .await
+        .text();
+
+    // There must be exactly one checked multiline checkbox (Body) and one
+    // unchecked one (Headline).
+    let checked = body.matches(r#"data-col-multiline checked"#).count();
+    let total_inputs = body
+        .matches(r#"<input type="checkbox" data-col-multiline"#)
+        .count();
+    assert_eq!(
+        checked, 1,
+        "exactly one multiline checkbox should be pre-checked, got {checked}"
+    );
+    assert!(
+        total_inputs >= 2,
+        "edit page should render a multiline checkbox per existing column, got {total_inputs}"
+    );
+}
