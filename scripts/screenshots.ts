@@ -98,11 +98,28 @@ test.describe("README screenshots", () => {
     await page.goto(`${BASE_URL}/forms`);
     await snap(page, "form-input-inputs");
 
+    // Open the first input so the spreadsheet view (with the global search
+    // box and per-column sort buttons) is captured.
+    const firstInput = page.locator("table tbody tr td a").first();
+    if (await firstInput.isVisible()) {
+      await firstInput.click();
+      await page.waitForTimeout(300);
+      await snap(page, "form-input-view");
+    }
+
     await page.goto(`${BASE_URL}/forms/row-sets`);
     await snap(page, "form-input-row-sets");
 
     await page.goto(`${BASE_URL}/forms/form-types`);
     await snap(page, "form-input-form-types");
+
+    // CSV-upload tab on the new-input page. Pick a fixed-row form type so
+    // the help hint shows the more informative "first column is the key" copy.
+    await page.goto(`${BASE_URL}/forms/new`);
+    await page.locator("#tab-btn-csv").click();
+    await page.locator("#csv_form_type_id").selectOption({ label: "Weekly quiz" });
+    await page.locator("#csv_input_name").fill("Week 12 quiz");
+    await snap(page, "form-input-csv-upload");
 
     // ── Notes ──
     await page.goto(`${BASE_URL}/notes`);

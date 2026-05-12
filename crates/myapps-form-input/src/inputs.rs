@@ -1,6 +1,6 @@
 use axum::{
     Extension, Form, Router,
-    extract::Path,
+    extract::{Multipart, Path},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
@@ -19,6 +19,7 @@ pub fn routes() -> Router<AppState> {
         .route("/", get(list))
         .route("/new", get(new_input_page))
         .route("/inputs/create", post(create))
+        .route("/inputs/create-from-csv", post(create_from_csv))
         .route("/inputs/{id}", get(view))
         .route("/inputs/{id}/cell", post(update_cell))
         .route("/inputs/{id}/delete", post(delete))
@@ -112,7 +113,8 @@ async fn list(
             .find(|f| f.id == inp.form_type_id)
             .map(|f| f.name.as_str())
             .unwrap_or("?");
-        let row_count = inp.csv_data.lines().count().saturating_sub(1);
+        // Use parse_csv (not lines()) so multi-line text fields don't inflate the count.
+        let row_count = parse_csv(&inp.csv_data).len().saturating_sub(1);
         let date = &inp.created_at[..10.min(inp.created_at.len())];
 
         rows_html.push_str(&format!(
@@ -312,29 +314,69 @@ async fn new_input_page(
 
         <div class="card" style="max-width:60rem;">
             <div class="card-body">
-                <form method="POST" action="{base}/forms/inputs/create" id="input-form">
-                    <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
-                        <div class="form-group" id="row-set-group">
-                            <label for="row_set_id">{row_set_lbl}</label>
-                            <select id="row_set_id" name="row_set_id">{rs_opts}</select>
-                        </div>
-                        <div class="form-group">
-                            <label for="form_type_id">{form_type_lbl}</label>
-                            <select id="form_type_id" name="form_type_id" required>{ft_opts}</select>
-                        </div>
-                        <div class="form-group" style="flex:1">
-                            <label for="input_name">{name_lbl}</label>
-                            <input type="text" id="input_name" name="name" required placeholder="e.g. Week 12 quiz">
-                        </div>
-                    </div>
+                <div class="ci-tabs" role="tablist" style="display:flex;gap:0.5rem;margin-bottom:1rem;border-bottom:1px solid var(--border-color, #ddd)">
+                    <button type="button" class="ci-tab-btn" id="tab-btn-manual" data-tab="manual" aria-selected="true" style="background:none;border:none;padding:0.5rem 1rem;border-bottom:2px solid var(--accent-color, #1A6B5A);font-weight:600;cursor:pointer">{tab_manual}</button>
+                    <button type="button" class="ci-tab-btn" id="tab-btn-csv" data-tab="csv" aria-selected="false" style="background:none;border:none;padding:0.5rem 1rem;border-bottom:2px solid transparent;cursor:pointer">{tab_csv}</button>
+                </div>
 
-                    <div id="row-set-warning" class="text-secondary mt-2" style="display:none">{need_row_set}</div>
-                    <div id="grid-container" class="ci-grid-container mt-2"></div>
-                    <button type="button" id="add-row-btn" class="btn btn-secondary btn-sm mt-1" style="display:none">{add_row_label}</button>
+                <div id="tab-pane-manual">
+                    <form method="POST" action="{base}/forms/inputs/create" id="input-form">
+                        <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
+                            <div class="form-group" id="row-set-group">
+                                <label for="row_set_id">{row_set_lbl}</label>
+                                <select id="row_set_id" name="row_set_id">{rs_opts}</select>
+                            </div>
+                            <div class="form-group">
+                                <label for="form_type_id">{form_type_lbl}</label>
+                                <select id="form_type_id" name="form_type_id" required>{ft_opts}</select>
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label for="input_name">{name_lbl}</label>
+                                <input type="text" id="input_name" name="name" required placeholder="e.g. Week 12 quiz">
+                            </div>
+                        </div>
 
-                    <input type="hidden" name="csv_data" id="csv_data">
-                    <button type="submit" class="btn btn-primary mt-2" id="submit-btn">{save_btn}</button>
-                </form>
+                        <div id="row-set-warning" class="text-secondary mt-2" style="display:none">{need_row_set}</div>
+                        <div id="grid-container" class="ci-grid-container mt-2"></div>
+                        <button type="button" id="add-row-btn" class="btn btn-secondary btn-sm mt-1" style="display:none">{add_row_label}</button>
+
+                        <input type="hidden" name="csv_data" id="csv_data">
+                        <button type="submit" class="btn btn-primary mt-2" id="submit-btn">{save_btn}</button>
+                    </form>
+                </div>
+
+                <div id="tab-pane-csv" style="display:none">
+                    <form method="POST" action="{base}/forms/inputs/create-from-csv" enctype="multipart/form-data" id="input-csv-form">
+                        <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap">
+                            <div class="form-group" id="csv-row-set-group">
+                                <label for="csv_row_set_id">{row_set_lbl}</label>
+                                <select id="csv_row_set_id" name="row_set_id">{rs_opts}</select>
+                            </div>
+                            <div class="form-group">
+                                <label for="csv_form_type_id">{form_type_lbl}</label>
+                                <select id="csv_form_type_id" name="form_type_id" required>{ft_opts}</select>
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label for="csv_input_name">{name_lbl}</label>
+                                <input type="text" id="csv_input_name" name="name" required placeholder="e.g. Week 12 quiz">
+                            </div>
+                        </div>
+
+                        <div id="csv-row-set-warning" class="text-secondary mt-2" style="display:none">{need_row_set}</div>
+
+                        <div class="form-group mt-2">
+                            <label for="csv_file">{csv_file_lbl}</label>
+                            <input type="file" id="csv_file" name="file" accept=".csv,text/csv" required>
+                        </div>
+
+                        <div class="csv-format-help" style="margin:1rem 0;padding:0.75rem;background:var(--surface-secondary,#f5f5f5);border-radius:0.375rem;font-size:0.875rem">
+                            <strong>{csv_format_help}</strong>
+                            <p id="csv-format-hint" style="margin:0.25rem 0 0">{csv_format_dynamic}</p>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary mt-2" id="csv-submit-btn">{csv_upload_btn}</button>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -375,6 +417,17 @@ async fn new_input_page(
                 return rowSets.find(function(r) {{ return r.id === rsId; }});
             }}
 
+            function colIsMultiline(col) {{
+                var ct = col.type || col.col_type || 'text';
+                return ct === 'text' && col.multiline === true;
+            }}
+
+            function escapeHtml(s) {{
+                return String(s)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+            }}
+
             function cellHtml(r, c, colType) {{
                 if (colType === 'bool') {{
                     var parts = lblBool.split(' / ');
@@ -393,33 +446,63 @@ async fn new_input_page(
                 return '<td><input type="text" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input"></td>';
             }}
 
+            function multilineRowHtml(r, cols, colspan) {{
+                var inner = '';
+                for (var c = 0; c < cols.length; c++) {{
+                    if (!colIsMultiline(cols[c])) continue;
+                    inner += '<div class="ci-multiline-cell">'
+                        + '<label>' + escapeHtml(cols[c].name) + '</label>'
+                        + '<textarea data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-textarea" rows="3"></textarea>'
+                        + '</div>';
+                }}
+                if (!inner) return '';
+                return '<tr class="ci-multiline-row" data-row="' + r + '"><td colspan="' + colspan + '">' + inner + '</td></tr>';
+            }}
+
             function buildFixedGrid(rs, ft) {{
                 var rows = rs.rows;
                 var cols = ft.columns;
+                var visibleCols = 1; // row-name column
                 var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">' + lblRow + '</th>';
-                for (var i = 0; i < cols.length; i++) html += '<th>' + cols[i].name + '</th>';
+                for (var i = 0; i < cols.length; i++) {{
+                    if (colIsMultiline(cols[i])) continue;
+                    html += '<th>' + escapeHtml(cols[i].name) + '</th>';
+                    visibleCols++;
+                }}
                 html += '</tr></thead><tbody>';
                 for (var r = 0; r < rows.length; r++) {{
-                    html += '<tr><td class="ci-pupil-name">' + rows[r] + '</td>';
+                    html += '<tr class="ci-main-row" data-row="' + r + '"><td class="ci-pupil-name">' + escapeHtml(rows[r]) + '</td>';
                     for (var c = 0; c < cols.length; c++) {{
+                        if (colIsMultiline(cols[c])) continue;
                         var colType = cols[c].type || cols[c].col_type || 'text';
                         html += cellHtml(r, c, colType);
                     }}
                     html += '</tr>';
+                    html += multilineRowHtml(r, cols, visibleCols);
                 }}
                 html += '</tbody></table>';
                 gridContainer.innerHTML = html;
             }}
 
-            function dynamicRowHtml(r, cols) {{
-                var html = '<tr data-row="' + r + '">';
+            function dynamicRowHtml(r, cols, visibleCols) {{
+                var html = '<tr class="ci-main-row" data-row="' + r + '">';
                 for (var c = 0; c < cols.length; c++) {{
+                    if (colIsMultiline(cols[c])) continue;
                     var colType = cols[c].type || cols[c].col_type || 'text';
                     html += cellHtml(r, c, colType);
                 }}
                 html += '<td style="padding:0 0.4rem"><button type="button" class="btn-icon btn-icon-danger remove-row-btn" data-row="' + r + '" title="' + lblRemoveRow + '">×</button></td>';
                 html += '</tr>';
+                html += multilineRowHtml(r, cols, visibleCols);
                 return html;
+            }}
+
+            function visibleColCountDynamic(cols) {{
+                var count = 1; // remove-button column
+                for (var i = 0; i < cols.length; i++) {{
+                    if (!colIsMultiline(cols[i])) count++;
+                }}
+                return count;
             }}
 
             function buildDynamicGrid(ft) {{
@@ -428,10 +511,14 @@ async fn new_input_page(
                     gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
                     return;
                 }}
+                var visibleCols = visibleColCountDynamic(cols);
                 var html = '<table class="ci-input-table"><thead><tr>';
-                for (var i = 0; i < cols.length; i++) html += '<th>' + cols[i].name + '</th>';
+                for (var i = 0; i < cols.length; i++) {{
+                    if (colIsMultiline(cols[i])) continue;
+                    html += '<th>' + escapeHtml(cols[i].name) + '</th>';
+                }}
                 html += '<th></th></tr></thead><tbody id="dynamic-rows">';
-                html += dynamicRowHtml(0, cols);
+                html += dynamicRowHtml(0, cols, visibleCols);
                 html += '</tbody></table>';
                 gridContainer.innerHTML = html;
                 dynamicRowCount = 1;
@@ -443,9 +530,10 @@ async fn new_input_page(
                     btn.onclick = function() {{
                         var tbody = document.getElementById('dynamic-rows');
                         if (!tbody) return;
-                        if (tbody.children.length <= 1) return;
-                        var row = btn.closest('tr');
-                        if (row) row.remove();
+                        var mainRows = tbody.querySelectorAll('tr.ci-main-row');
+                        if (mainRows.length <= 1) return;
+                        var r = btn.dataset.row;
+                        tbody.querySelectorAll('tr[data-row="' + r + '"]').forEach(function(tr) {{ tr.remove(); }});
                     }};
                 }});
             }}
@@ -490,7 +578,8 @@ async fn new_input_page(
                 if (!ft || ft.columns.length === 0) return;
                 var tbody = document.getElementById('dynamic-rows');
                 if (!tbody) return;
-                tbody.insertAdjacentHTML('beforeend', dynamicRowHtml(dynamicRowCount, ft.columns));
+                var visibleCols = visibleColCountDynamic(ft.columns);
+                tbody.insertAdjacentHTML('beforeend', dynamicRowHtml(dynamicRowCount, ft.columns, visibleCols));
                 dynamicRowCount++;
                 wireRemoveButtons(ft.columns);
             }});
@@ -524,11 +613,15 @@ async fn new_input_page(
                     var header2 = [];
                     for (var i2 = 0; i2 < cols.length; i2++) header2.push(csvEscape(cols[i2].name));
                     lines.push(header2.join(','));
-                    var trs = gridContainer.querySelectorAll('#dynamic-rows tr');
-                    trs.forEach(function(tr) {{
+                    var mainTrs = gridContainer.querySelectorAll('#dynamic-rows tr.ci-main-row');
+                    mainTrs.forEach(function(tr) {{
+                        var rIdx = tr.dataset.row;
                         var rowVals = [];
                         for (var c2 = 0; c2 < cols.length; c2++) {{
-                            var cell2 = tr.querySelector('[data-c="' + c2 + '"]');
+                            // Multiline cells live in a follow-up tr, so look them
+                            // up by the (data-r, data-c) attribute pair rather than
+                            // restricting the search to the main tr.
+                            var cell2 = gridContainer.querySelector('[data-r="' + rIdx + '"][data-c="' + c2 + '"]');
                             rowVals.push(csvEscape(cell2 ? cell2.value : ''));
                         }}
                         lines.push(rowVals.join(','));
@@ -595,6 +688,64 @@ async fn new_input_page(
                 modalActiveBtn = null;
                 if (modal && modal.close) modal.close();
             }});
+
+            // ── Tabs (manual entry vs CSV upload) ────────────────────────
+            var tabBtnManual = document.getElementById('tab-btn-manual');
+            var tabBtnCsv = document.getElementById('tab-btn-csv');
+            var tabPaneManual = document.getElementById('tab-pane-manual');
+            var tabPaneCsv = document.getElementById('tab-pane-csv');
+            function activateTab(name) {{
+                var manual = name === 'manual';
+                tabPaneManual.style.display = manual ? '' : 'none';
+                tabPaneCsv.style.display = manual ? 'none' : '';
+                tabBtnManual.style.borderBottomColor = manual ? 'var(--accent-color, #1A6B5A)' : 'transparent';
+                tabBtnManual.style.fontWeight = manual ? '600' : '';
+                tabBtnManual.setAttribute('aria-selected', manual ? 'true' : 'false');
+                tabBtnCsv.style.borderBottomColor = manual ? 'transparent' : 'var(--accent-color, #1A6B5A)';
+                tabBtnCsv.style.fontWeight = manual ? '' : '600';
+                tabBtnCsv.setAttribute('aria-selected', manual ? 'false' : 'true');
+            }}
+            tabBtnManual.addEventListener('click', function() {{ activateTab('manual'); }});
+            tabBtnCsv.addEventListener('click', function() {{ activateTab('csv'); }});
+
+            // ── CSV form: mirror the row-set visibility logic ────────────
+            var csvRsSel = document.getElementById('csv_row_set_id');
+            var csvFtSel = document.getElementById('csv_form_type_id');
+            var csvRsGroup = document.getElementById('csv-row-set-group');
+            var csvRsWarning = document.getElementById('csv-row-set-warning');
+            var csvSubmitBtn = document.getElementById('csv-submit-btn');
+            var csvFormatHint = document.getElementById('csv-format-hint');
+            var lblCsvFormatDynamic = '{csv_format_dynamic}';
+            var lblCsvFormatFixed = '{csv_format_fixed}';
+
+            function applyCsvMode() {{
+                var ftId = parseInt(csvFtSel.value);
+                var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
+                if (!ft) {{
+                    csvSubmitBtn.disabled = true;
+                    return;
+                }}
+                if (ft.fixed_rows) {{
+                    csvRsGroup.style.display = '';
+                    csvRsSel.required = true;
+                    csvFormatHint.textContent = lblCsvFormatFixed;
+                    if (rowSets.length === 0) {{
+                        csvRsWarning.style.display = '';
+                        csvSubmitBtn.disabled = true;
+                        return;
+                    }}
+                    csvRsWarning.style.display = 'none';
+                    csvSubmitBtn.disabled = false;
+                }} else {{
+                    csvRsGroup.style.display = 'none';
+                    csvRsSel.required = false;
+                    csvRsWarning.style.display = 'none';
+                    csvSubmitBtn.disabled = false;
+                    csvFormatHint.textContent = lblCsvFormatDynamic;
+                }}
+            }}
+            csvFtSel.addEventListener('change', applyCsvMode);
+            applyCsvMode();
         }})();
         </script>"##,
         new_title = t.inp_new_title,
@@ -603,6 +754,13 @@ async fn new_input_page(
         form_type_lbl = t.inp_form_type,
         name_lbl = t.inp_name,
         save_btn = t.inp_save,
+        tab_manual = t.inp_tab_manual,
+        tab_csv = t.inp_tab_csv,
+        csv_file_lbl = t.inp_csv_file,
+        csv_upload_btn = t.inp_csv_upload_btn,
+        csv_format_help = t.inp_csv_format_help,
+        csv_format_dynamic = t.inp_csv_format_dynamic,
+        csv_format_fixed = t.inp_csv_format_fixed,
         add_row_label = add_row_label,
         remove_row_label = remove_row_label,
         no_rows_yet = no_rows_yet,
@@ -713,7 +871,26 @@ async fn view(
     let ft_columns: Vec<ColumnDef> = serde_json::from_str(&columns_json).unwrap_or_default();
 
     let highlight_first_col = inp.row_set_id.is_some();
-    let lines: Vec<Vec<String>> = inp.csv_data.lines().map(parse_csv_line).collect();
+    let lines: Vec<Vec<String>> = parse_csv(&inp.csv_data);
+
+    // Map each CSV column index to (col_type, multiline). In fixed-row mode the
+    // leading CSV column is the row identifier (text, never multiline) and the
+    // form-type columns shift by one.
+    let csv_col_meta = |i: usize| -> (&str, bool) {
+        if i == 0 && highlight_first_col {
+            return ("text", false);
+        }
+        let col_idx = if highlight_first_col { i - 1 } else { i };
+        match ft_columns.get(col_idx) {
+            Some(cd) => (cd.col_type.as_str(), cd.multiline),
+            None => ("text", false),
+        }
+    };
+
+    // Visible (non-multiline) main-row column count drives the colspan of the
+    // follow-up <tr> that holds expanded text cells.
+    let total_cols = lines.first().map(|h| h.len()).unwrap_or(0);
+    let visible_col_count = (0..total_cols).filter(|i| !csv_col_meta(*i).1).count();
 
     // Build the grid. The first column is the row identifier when fixed-row mode is on,
     // mirroring the new-input page's layout. Editable cells get data-row/data-col/data-type
@@ -721,17 +898,10 @@ async fn view(
     let mut table_html = String::from(r#"<table class="ci-input-table"><thead><tr>"#);
     if let Some(header) = lines.first() {
         for (i, col) in header.iter().enumerate() {
-            // The leading column in fixed-row mode is the row identifier (text);
-            // user columns shift by one in that layout.
-            let col_type = if i == 0 && highlight_first_col {
-                "text"
-            } else {
-                let col_idx = if highlight_first_col { i - 1 } else { i };
-                ft_columns
-                    .get(col_idx)
-                    .map(|cd| cd.col_type.as_str())
-                    .unwrap_or("text")
-            };
+            let (col_type, multiline) = csv_col_meta(i);
+            if multiline {
+                continue;
+            }
             let th_class = if i == 0 && highlight_first_col {
                 r#" class="ci-th-pupil""#
             } else {
@@ -744,36 +914,32 @@ async fn view(
                         <span class="ci-th-controls">
                             <button type="button" class="ci-sort-btn" data-col="{i}" data-dir="asc" title="{sort_asc}">▲</button>
                             <button type="button" class="ci-sort-btn" data-col="{i}" data-dir="desc" title="{sort_desc}">▼</button>
-                            <input type="text" class="ci-filter-input" data-col="{i}" placeholder="{filter_ph}">
                         </span>
                     </div>
                 </th>"##,
                 col = html_escape(col),
                 sort_asc = t.inp_sort_asc,
                 sort_desc = t.inp_sort_desc,
-                filter_ph = t.inp_filter_placeholder,
             ));
         }
     }
     table_html.push_str("</tr></thead><tbody>");
     for (r, line) in lines.iter().enumerate().skip(1) {
         let original_index = r - 1;
-        table_html.push_str(&format!(r#"<tr data-original-index="{original_index}">"#));
+        table_html.push_str(&format!(
+            r#"<tr class="ci-main-row" data-row="{r}" data-original-index="{original_index}">"#
+        ));
         for (c, field) in line.iter().enumerate() {
+            let (col_type, multiline) = csv_col_meta(c);
+            if multiline {
+                continue;
+            }
             if c == 0 && highlight_first_col {
                 table_html.push_str(&format!(
-                    r#"<td class="ci-pupil-name">{field}</td>"#,
+                    r#"<td class="ci-pupil-name" data-col="0">{field}</td>"#,
                     field = html_escape(field)
                 ));
             } else {
-                // Editable. Cell type comes from the form-type column at the matching
-                // index. For fixed-row mode the leading column is the row id, so user
-                // columns are offset by 1.
-                let col_idx = if highlight_first_col { c - 1 } else { c };
-                let col_type = ft_columns
-                    .get(col_idx)
-                    .map(|cd| cd.col_type.as_str())
-                    .unwrap_or("text");
                 let cell_class = match col_type {
                     "number" => "ci-cell-editable ci-col-number",
                     "bool" => "ci-cell-editable ci-col-bool",
@@ -809,6 +975,35 @@ async fn view(
             }
         }
         table_html.push_str("</tr>");
+
+        // Follow-up row holding any multiline cells for this row.
+        let multiline_cells: Vec<(usize, &str, &String)> = line
+            .iter()
+            .enumerate()
+            .filter_map(|(c, field)| {
+                if !csv_col_meta(c).1 {
+                    return None;
+                }
+                let header_label = lines
+                    .first()
+                    .and_then(|h| h.get(c).map(String::as_str))
+                    .unwrap_or("");
+                Some((c, header_label, field))
+            })
+            .collect();
+        if !multiline_cells.is_empty() {
+            table_html.push_str(&format!(
+                r#"<tr class="ci-multiline-row" data-row="{r}"><td colspan="{visible_col_count}">"#
+            ));
+            for (c, label, field) in multiline_cells {
+                table_html.push_str(&format!(
+                    r#"<div class="ci-multiline-cell ci-cell-editable" data-row="{r}" data-col="{c}" data-type="text"><label>{label}</label><div class="ci-multiline-value">{value}</div></div>"#,
+                    label = html_escape(label),
+                    value = html_escape(field),
+                ));
+            }
+            table_html.push_str("</td></tr>");
+        }
     }
     table_html.push_str("</tbody></table>");
 
@@ -833,6 +1028,7 @@ async fn view(
 
     let col_bool = t.ft_col_bool;
     let link_default_text = t.link_default_text;
+    let search_placeholder = t.inp_search_placeholder;
     let modal_html = render_link_modal(t);
 
     let body = format!(
@@ -841,6 +1037,10 @@ async fn view(
             <p>
                 {rs_badge}{ft_name} — {date}
             </p>
+        </div>
+
+        <div class="ci-search-bar">
+            <input type="search" id="ci-global-search" class="ci-global-search" placeholder="{search_placeholder}" autocomplete="off">
         </div>
 
         <div class="card">
@@ -861,32 +1061,37 @@ async fn view(
             var lblLinkDefault = '{link_default_text}';
             var saveUrl = '{base}/forms/inputs/{id}/cell';
 
-            // ── Sort & filter ──────────────────────────────────────────
+            // ── Sort & search ──────────────────────────────────────────
             // Operates purely on the DOM. Cells keep their original
             // data-row/data-col, so saves still hit the underlying CSV row
             // regardless of the visible order or which rows are filtered out.
             var tbody = document.querySelector('.ci-input-table tbody');
-            var allRows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
-            var activeFilters = {{}};   // colIdx -> filter substring (lowercase)
+            var mainRows = tbody ? Array.from(tbody.querySelectorAll('tr.ci-main-row')) : [];
+            // Pair each main row with its (optional) multiline follow-up so
+            // sort moves them together and search hides them together.
+            var rowGroups = mainRows.map(function(tr) {{
+                var follow = tbody.querySelector('tr.ci-multiline-row[data-row="' + tr.dataset.row + '"]');
+                return {{ main: tr, follow: follow }};
+            }});
             var activeSort = null;      // {{ col: idx, dir: 'asc'|'desc', type: '...' }}
+            var activeSearch = '';
 
             function cellTextAt(tr, colIdx) {{
-                var c = tr.children[colIdx];
+                var c = tr.querySelector('[data-col="' + colIdx + '"]');
                 return c ? (c.textContent || '').trim() : '';
             }}
 
-            function applyFilters() {{
-                var filterCols = Object.keys(activeFilters);
-                allRows.forEach(function(tr) {{
-                    var visible = true;
-                    for (var i = 0; i < filterCols.length; i++) {{
-                        var col = filterCols[i];
-                        var needle = activeFilters[col];
-                        if (!needle) continue;
-                        var hay = cellTextAt(tr, parseInt(col)).toLowerCase();
-                        if (hay.indexOf(needle) < 0) {{ visible = false; break; }}
-                    }}
-                    tr.style.display = visible ? '' : 'none';
+            function rowHaystack(g) {{
+                var s = g.main.textContent;
+                if (g.follow) s += ' ' + g.follow.textContent;
+                return s.toLowerCase();
+            }}
+
+            function applySearch() {{
+                rowGroups.forEach(function(g) {{
+                    var visible = !activeSearch || rowHaystack(g).indexOf(activeSearch) >= 0;
+                    g.main.style.display = visible ? '' : 'none';
+                    if (g.follow) g.follow.style.display = visible ? '' : 'none';
                 }});
             }}
 
@@ -894,13 +1099,13 @@ async fn view(
                 if (!tbody) return;
                 var ordered;
                 if (!activeSort) {{
-                    ordered = allRows.slice().sort(function(a, b) {{
-                        return parseInt(a.dataset.originalIndex) - parseInt(b.dataset.originalIndex);
+                    ordered = rowGroups.slice().sort(function(a, b) {{
+                        return parseInt(a.main.dataset.originalIndex) - parseInt(b.main.dataset.originalIndex);
                     }});
                 }} else {{
                     var col = activeSort.col, dir = activeSort.dir, type = activeSort.type;
-                    ordered = allRows.slice().sort(function(a, b) {{
-                        var va = cellTextAt(a, col), vb = cellTextAt(b, col);
+                    ordered = rowGroups.slice().sort(function(a, b) {{
+                        var va = cellTextAt(a.main, col), vb = cellTextAt(b.main, col);
                         var cmp;
                         if (type === 'number') {{
                             var na = parseFloat(va), nb = parseFloat(vb);
@@ -915,7 +1120,10 @@ async fn view(
                         return dir === 'asc' ? cmp : -cmp;
                     }});
                 }}
-                ordered.forEach(function(tr) {{ tbody.appendChild(tr); }});
+                ordered.forEach(function(g) {{
+                    tbody.appendChild(g.main);
+                    if (g.follow) tbody.appendChild(g.follow);
+                }});
             }}
 
             function refreshSortBtnStates() {{
@@ -943,16 +1151,13 @@ async fn view(
                 }});
             }});
 
-            document.querySelectorAll('.ci-filter-input').forEach(function(inp) {{
-                inp.addEventListener('input', function() {{
-                    var col = parseInt(inp.dataset.col);
-                    var v = inp.value.trim().toLowerCase();
-                    if (v) activeFilters[col] = v;
-                    else delete activeFilters[col];
-                    inp.classList.toggle('ci-filter-active', !!v);
-                    applyFilters();
+            var searchInput = document.getElementById('ci-global-search');
+            if (searchInput) {{
+                searchInput.addEventListener('input', function() {{
+                    activeSearch = searchInput.value.trim().toLowerCase();
+                    applySearch();
                 }});
-            }});
+            }}
 
             // ── Link modal ─────────────────────────────────────────────
             var modal = document.getElementById('link-modal');
@@ -1027,6 +1232,16 @@ async fn view(
             }}
 
             // ── Cell editing ───────────────────────────────────────────
+            // Multiline cells wrap the editable value in a <div class="ci-multiline-value">
+            // alongside a label, so the edit/save logic operates on that inner element.
+            // Regular cells edit the cell itself.
+            function valueEl(cell) {{
+                return cell.querySelector('.ci-multiline-value') || cell;
+            }}
+            function isMultiline(cell) {{
+                return cell.classList.contains('ci-multiline-cell');
+            }}
+
             document.querySelectorAll('.ci-cell-editable').forEach(function(cell) {{
                 cell.addEventListener('dblclick', function() {{
                     if (cell.classList.contains('ci-cell-editing')) return;
@@ -1044,7 +1259,8 @@ async fn view(
             }});
 
             function startEdit(cell) {{
-                var oldValue = cell.textContent;
+                var target = valueEl(cell);
+                var oldValue = target.textContent;
                 var colType = cell.dataset.type || 'text';
                 cell.classList.add('ci-cell-editing');
                 cell.dataset.oldValue = oldValue;
@@ -1066,14 +1282,19 @@ async fn view(
                     control.inputMode = 'decimal';
                     control.className = 'ci-cell ci-cell-input';
                     control.value = oldValue;
+                }} else if (isMultiline(cell)) {{
+                    control = document.createElement('textarea');
+                    control.className = 'ci-cell ci-cell-textarea';
+                    control.rows = Math.max(3, oldValue.split('\n').length);
+                    control.value = oldValue;
                 }} else {{
                     control = document.createElement('input');
                     control.type = 'text';
                     control.className = 'ci-cell ci-cell-input';
                     control.value = oldValue;
                 }}
-                cell.textContent = '';
-                cell.appendChild(control);
+                target.textContent = '';
+                target.appendChild(control);
                 control.focus();
                 if (control.select) control.select();
 
@@ -1084,14 +1305,18 @@ async fn view(
                     if (commit) {{
                         save(cell, control.value);
                     }} else {{
-                        cell.textContent = cell.dataset.oldValue || '';
+                        valueEl(cell).textContent = cell.dataset.oldValue || '';
                         cell.classList.remove('ci-cell-editing');
                         delete cell.dataset.oldValue;
                     }}
                 }}
                 control.addEventListener('keydown', function(e) {{
-                    if (e.key === 'Enter') {{ e.preventDefault(); finish(true); }}
-                    else if (e.key === 'Escape') {{ e.preventDefault(); finish(false); }}
+                    // In a textarea Enter inserts a newline; only Ctrl/Cmd+Enter commits.
+                    if (e.key === 'Enter' && (control.tagName !== 'TEXTAREA' || e.ctrlKey || e.metaKey)) {{
+                        e.preventDefault(); finish(true);
+                    }} else if (e.key === 'Escape') {{
+                        e.preventDefault(); finish(false);
+                    }}
                 }});
                 control.addEventListener('blur', function() {{ finish(true); }});
             }}
@@ -1107,14 +1332,14 @@ async fn view(
                     credentials: 'same-origin',
                 }}).then(function(res) {{
                     if (res.ok) {{
-                        cell.textContent = newValue;
+                        valueEl(cell).textContent = newValue;
                     }} else {{
                         alert('Save failed (' + res.status + ')');
-                        cell.textContent = cell.dataset.oldValue || '';
+                        valueEl(cell).textContent = cell.dataset.oldValue || '';
                     }}
                 }}).catch(function() {{
                     alert('Save failed (network error)');
-                    cell.textContent = cell.dataset.oldValue || '';
+                    valueEl(cell).textContent = cell.dataset.oldValue || '';
                 }}).finally(function() {{
                     cell.classList.remove('ci-cell-editing');
                     delete cell.dataset.oldValue;
@@ -1192,35 +1417,60 @@ fn parse_link_value(value: &str) -> (&str, &str) {
     }
 }
 
-/// Simple CSV line parser that handles quoted fields.
-fn parse_csv_line(line: &str) -> Vec<String> {
-    let mut fields = Vec::new();
-    let mut current = String::new();
+/// Parse a CSV body into rows, treating `\n` inside quoted fields as part of
+/// the field (RFC 4180). Multi-line text columns rely on this — without it,
+/// `csv_data.lines()` would split a quoted multi-line value across rows.
+/// `\r\n` line endings are normalised to `\n`. Trailing blank rows are dropped.
+fn parse_csv(text: &str) -> Vec<Vec<String>> {
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut current_row: Vec<String> = Vec::new();
+    let mut current_field = String::new();
     let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
+    let mut chars = text.chars().peekable();
 
     while let Some(ch) = chars.next() {
         if in_quotes {
             if ch == '"' {
                 if chars.peek() == Some(&'"') {
-                    current.push('"');
+                    current_field.push('"');
                     chars.next();
                 } else {
                     in_quotes = false;
                 }
+            } else if ch == '\r' {
+                // Normalise CRLF inside a quoted field to LF.
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                current_field.push('\n');
             } else {
-                current.push(ch);
+                current_field.push(ch);
             }
         } else if ch == '"' {
             in_quotes = true;
         } else if ch == ',' {
-            fields.push(std::mem::take(&mut current));
+            current_row.push(std::mem::take(&mut current_field));
+        } else if ch == '\n' || ch == '\r' {
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            current_row.push(std::mem::take(&mut current_field));
+            rows.push(std::mem::take(&mut current_row));
         } else {
-            current.push(ch);
+            current_field.push(ch);
         }
     }
-    fields.push(current);
-    fields
+    // Flush the final field if the input did not end with a newline.
+    if !current_field.is_empty() || !current_row.is_empty() {
+        current_row.push(current_field);
+        rows.push(current_row);
+    }
+    // Drop trailing rows that consist only of a single empty field — those are
+    // artefacts of trailing newlines, not real records.
+    while matches!(rows.last(), Some(r) if r.len() == 1 && r[0].is_empty()) {
+        rows.pop();
+    }
+    rows
 }
 
 /// Mirror of the JS csvEscape: quote when the value contains a comma, quote, or newline.
@@ -1254,7 +1504,7 @@ fn update_csv_cell(
     if row == 0 {
         return Err("header row is not editable");
     }
-    let mut lines: Vec<Vec<String>> = csv_data.lines().map(parse_csv_line).collect();
+    let mut lines: Vec<Vec<String>> = parse_csv(csv_data);
     if row >= lines.len() {
         return Err("row out of range");
     }
@@ -1321,4 +1571,267 @@ async fn update_cell(
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
+}
+
+// ── CSV upload ──────────────────────────────────────────────
+
+/// Cap the uploaded CSV at 1 MiB. Larger uploads are rejected before parsing.
+const MAX_CSV_BYTES: usize = 1_048_576;
+
+async fn create_from_csv(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+    let t = super::i18n::t(lang);
+
+    let mut name: Option<String> = None;
+    let mut form_type_id: Option<i64> = None;
+    let mut row_set_id: Option<i64> = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let field_name = field.name().unwrap_or("").to_string();
+        match field_name.as_str() {
+            "name" => name = field.text().await.ok(),
+            "form_type_id" => {
+                if let Ok(v) = field.text().await {
+                    form_type_id = v.trim().parse().ok();
+                }
+            }
+            "row_set_id" => {
+                if let Ok(v) = field.text().await {
+                    row_set_id = v.trim().parse::<i64>().ok().filter(|&x| x > 0);
+                }
+            }
+            "file" => {
+                if let Ok(bytes) = field.bytes().await
+                    && bytes.len() <= MAX_CSV_BYTES
+                {
+                    file_bytes = Some(bytes.to_vec());
+                } else {
+                    return render_csv_error(&state.config, lang, t.inp_csv_err_too_large)
+                        .into_response();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let name = name.map(|s| s.trim().to_string()).unwrap_or_default();
+    if name.is_empty() {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_no_name).into_response();
+    }
+    let Some(form_type_id) = form_type_id else {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_no_form_type).into_response();
+    };
+    let Some(file_bytes) = file_bytes else {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_no_file).into_response();
+    };
+    if file_bytes.is_empty() {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_empty).into_response();
+    }
+
+    let ft: Option<(String, bool)> = sqlx::query_as(
+        "SELECT columns_json, fixed_rows FROM form_input_form_types WHERE id = ? AND user_id = ?",
+    )
+    .bind(form_type_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+    let Some((columns_json, fixed_rows)) = ft else {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_no_form_type).into_response();
+    };
+    let columns: Vec<ColumnDef> = serde_json::from_str(&columns_json).unwrap_or_default();
+    if columns.is_empty() {
+        return render_csv_error(&state.config, lang, t.inp_csv_err_form_type_no_columns)
+            .into_response();
+    }
+
+    let row_set_rows: Option<Vec<String>> = if fixed_rows {
+        let Some(rsid) = row_set_id else {
+            return render_csv_error(&state.config, lang, t.inp_csv_err_no_row_set).into_response();
+        };
+        let rs_rows: Option<String> =
+            sqlx::query_scalar("SELECT rows FROM form_input_row_sets WHERE id = ? AND user_id = ?")
+                .bind(rsid)
+                .bind(user_id.0)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
+        let Some(rs_rows) = rs_rows else {
+            return render_csv_error(&state.config, lang, t.inp_csv_err_no_row_set).into_response();
+        };
+        Some(
+            rs_rows
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.trim().to_string())
+                .collect(),
+        )
+    } else {
+        None
+    };
+
+    let csv_text = match std::str::from_utf8(&file_bytes) {
+        Ok(s) => s,
+        Err(_) => {
+            return render_csv_error(&state.config, lang, t.inp_csv_err_invalid_utf8)
+                .into_response();
+        }
+    };
+
+    let canonical_csv = match build_csv_from_upload(csv_text, &columns, row_set_rows.as_deref(), t)
+    {
+        Ok(s) => s,
+        Err(msg) => return render_csv_error(&state.config, lang, &msg).into_response(),
+    };
+
+    let stored_row_set_id = if fixed_rows { row_set_id } else { None };
+
+    if let Err(e) = super::ops::create_input(
+        &state.pool,
+        user_id.0,
+        stored_row_set_id,
+        form_type_id,
+        &name,
+        &canonical_csv,
+    )
+    .await
+    {
+        tracing::error!("DB insert failed: {e:#}");
+        return render_csv_error(&state.config, lang, "Database error.").into_response();
+    }
+
+    Redirect::to(&format!("{base}/forms")).into_response()
+}
+
+/// Parse the uploaded CSV, validate against the form type (and row-set entries
+/// when `fixed_rows`), and return the canonical csv_data string used for
+/// storage. The canonical form mirrors what the JS submit code on /forms/new
+/// produces: a header row, then one data row per entry.
+fn build_csv_from_upload(
+    csv_text: &str,
+    columns: &[ColumnDef],
+    row_set_rows: Option<&[String]>,
+    t: &super::i18n::Translations,
+) -> Result<String, String> {
+    // Multi-line aware: a quoted field may contain `\n`, so we can't pre-split
+    // on lines. After parsing, drop fully-empty rows (artefacts of blank lines
+    // between records).
+    let parsed: Vec<Vec<String>> = parse_csv(csv_text)
+        .into_iter()
+        .filter(|r| !r.iter().all(|f| f.trim().is_empty()))
+        .collect();
+    if parsed.is_empty() {
+        return Err(t.inp_csv_err_no_data_rows.to_string());
+    }
+
+    let fixed_rows = row_set_rows.is_some();
+    let expected_cols = if fixed_rows {
+        columns.len() + 1
+    } else {
+        columns.len()
+    };
+
+    let has_header = looks_like_header(&parsed[0], columns, fixed_rows);
+    let data: &[Vec<String>] = if has_header {
+        &parsed[1..]
+    } else {
+        &parsed[..]
+    };
+    if data.is_empty() {
+        return Err(t.inp_csv_err_no_data_rows.to_string());
+    }
+
+    for (idx, line) in data.iter().enumerate() {
+        if line.len() != expected_cols {
+            return Err(t
+                .inp_csv_err_col_count
+                .replace("{row}", &(idx + 1).to_string())
+                .replace("{expected}", &expected_cols.to_string())
+                .replace("{got}", &line.len().to_string()));
+        }
+    }
+
+    if let Some(rs_rows) = row_set_rows {
+        if data.len() != rs_rows.len() {
+            return Err(t
+                .inp_csv_err_row_count
+                .replace("{got}", &data.len().to_string())
+                .replace("{expected}", &rs_rows.len().to_string()));
+        }
+        for (idx, line) in data.iter().enumerate() {
+            if line[0].trim() != rs_rows[idx] {
+                return Err(t
+                    .inp_csv_err_key_mismatch
+                    .replace("{row}", &(idx + 1).to_string())
+                    .replace("{got}", line[0].trim())
+                    .replace("{expected}", &rs_rows[idx]));
+            }
+        }
+    }
+
+    let mut header_cells: Vec<String> = Vec::with_capacity(expected_cols);
+    if fixed_rows {
+        header_cells.push(t.inp_row.to_string());
+    }
+    for col in columns {
+        header_cells.push(col.name.clone());
+    }
+
+    let mut out = serialize_csv_line(&header_cells);
+    for line in data {
+        out.push('\n');
+        out.push_str(&serialize_csv_line(line));
+    }
+    Ok(out)
+}
+
+/// Detect a header row by comparing the column-name cells (skipping the leading
+/// key cell in fixed-row mode) against the form-type column names,
+/// case-insensitively. Anything else is treated as a data row.
+fn looks_like_header(row: &[String], columns: &[ColumnDef], fixed_rows: bool) -> bool {
+    let offset = usize::from(fixed_rows);
+    if row.len() < offset + columns.len() {
+        return false;
+    }
+    for (i, col) in columns.iter().enumerate() {
+        let cell = row.get(offset + i).map(|s| s.trim()).unwrap_or("");
+        if !cell.eq_ignore_ascii_case(col.name.trim()) {
+            return false;
+        }
+    }
+    true
+}
+
+fn render_csv_error(config: &myapps_core::config::Config, lang: Lang, error: &str) -> Html<String> {
+    let base = &config.base_path;
+    let t = super::i18n::t(lang);
+    let body = format!(
+        r#"<div class="page-header">
+            <h1>{title}</h1>
+        </div>
+        <div class="card" style="max-width:36rem">
+            <div class="card-body">
+                <div class="alert alert-error">{error}</div>
+                <div style="margin-top:1rem">
+                    <a href="{base}/forms/new" class="btn btn-secondary">{back}</a>
+                </div>
+            </div>
+        </div>"#,
+        title = t.inp_csv_import_failed,
+        error = html_escape(error),
+        back = t.inp_csv_back,
+    );
+    Html(render_page(
+        &format!("Forms — {}", t.inp_csv_import_failed),
+        &forms_nav(base, "inputs", lang),
+        &body,
+        config,
+        lang,
+    ))
 }

@@ -162,9 +162,11 @@ visibility into spending patterns.
 ### Deployment
 
 - Development happens on a separate machine (not the server).
-- Release binaries are cross-compiled in GitHub Actions for aarch64 and
-  deployed directly to the server. Manual deploys can still build natively
-  on the Odroid via `deploy.sh deploy`.
+- Release binaries are cross-compiled for aarch64 (in GitHub Actions on
+  merge to `main`, or locally via `make deploy-stage` / `make deploy-prod`
+  using `cross` + Docker + `sccache`) and deployed directly to the server.
+  Manual deploys can still build natively on the Odroid via
+  `deploy.sh deploy` as a fallback.
 - The application runs as a systemd service on the server.
 - The cron job is a system crontab entry that invokes the same binary with the
   `cron` subcommand, which runs each deployed app's scheduled tasks.
@@ -326,8 +328,11 @@ form type's mode), then fills in a spreadsheet-like grid that saves data as CSV.
   per line, empty lines stripped).
 - **Form type management** — create, edit, and delete form types. Each form type
   defines a set of columns with name and type (text, number, yes/no boolean, or
-  link). A form type also has a `fixed_rows` flag: when on, every input picks
-  a row set and gets one row per item; when off, the user adds rows freely.
+  link). Text columns can additionally be flagged as **multi-line**, which
+  renders the cell on its own row beneath the main row both in the view and
+  the entry grid. A form type also has a `fixed_rows` flag: when on, every
+  input picks a row set and gets one row per item; when off, the user adds
+  rows freely.
 - **Link column type** — link cells open a small modal for URL + optional
   display text (default "link"/"enlace"). The view renders an anchor; storage
   is a single CSV cell formatted as `url|text`.
@@ -336,15 +341,22 @@ form type's mode), then fills in a spreadsheet-like grid that saves data as CSV.
   identifiers form a frozen left column; in dynamic mode the user adds and
   removes rows freely. On submit, the grid is serialized as CSV and stored in
   the database.
+- **CSV upload** — alternatively, the new-input page exposes an "Upload CSV"
+  tab that creates an input from a CSV file (multipart upload). Column count
+  must match the form type; an optional header row matching the column names
+  is detected and dropped. For fixed-row form types the CSV's first column is
+  the row-set key and must match the row-set entries in order.
 - **Input editing in place** — the view page reuses the input grid layout.
   Double-click any data cell to edit it; one cell save is persisted via AJAX
   (`POST /forms/inputs/{id}/cell`). The row identifier in fixed-row mode stays
   read-only.
-- **Per-column sort and filter on the view** — every column header carries
-  small sort buttons (A→Z, Z→A) and a filter input. Sort is exclusive across
-  columns, filters stack. Numeric columns sort by parsed value with empty
-  cells last. Sorting and filtering are presentation-only — saves still hit
-  the underlying CSV row regardless of the visible order.
+- **Sort and global search on the view** — every column header carries
+  small sort buttons (A→Z, Z→A); sort is exclusive across columns. Numeric
+  columns sort by parsed value with empty cells last. A single search input
+  above the table filters rows by matching the term against every cell's
+  text (including multi-line cells); main rows and their multi-line follow-up
+  rows are shown/hidden together. Sorting and search are presentation-only —
+  saves still hit the underlying CSV row regardless of the visible order.
 - **Input list and detail** — all inputs are listed with row set, form type,
   row count, and date. Each input can be viewed (and edited cell by cell) or
   deleted.

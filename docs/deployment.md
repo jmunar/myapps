@@ -10,21 +10,29 @@
 
 ## Build Strategy
 
-Release binaries are **cross-compiled in GitHub Actions** for
-`aarch64-unknown-linux-gnu` using [`cross`](https://github.com/cross-rs/cross).
-Each merge to `main` automatically bumps the version, creates a GitHub Release
+Release binaries are **cross-compiled** for `aarch64-unknown-linux-gnu` using
+[`cross`](https://github.com/cross-rs/cross) plus `sccache`. Each merge to
+`main` triggers GitHub Actions to bump the version, create a GitHub Release
 with a tarball (`myapps-<tag>-aarch64.tar.gz`) containing the binary and
-`static/` folder, and deploys it to staging then production.
+`static/` folder, and deploy it to staging then production.
 
-For local development deploys, `deploy.sh deploy` can still build natively on
-the Odroid if needed.
+The same pipeline runs locally from any x86_64 dev machine with Docker:
+`make build-arm64` produces the aarch64 binary, `make deploy-stage` packages
+and ships it to the Odroid via `deploy.sh release-deploy`. As a fallback,
+`deploy.sh deploy` can still rsync source and build natively on the Odroid.
 
 ## Prerequisites
 
-### Development machine (macOS)
+### Development machine (Linux or macOS)
 
 - SSH access to the Odroid via the `deploy` user (key-based auth)
-- `rsync` (pre-installed on macOS)
+- `rsync`
+- For local cross-compilation (recommended over on-device build):
+  Docker (or Podman with `CROSS_CONTAINER_ENGINE=podman`),
+  [`cross`](https://github.com/cross-rs/cross)
+  (`cargo install cross --git https://github.com/cross-rs/cross`),
+  and `sccache`. `make build-arm64` self-bootstraps a musl-static sccache
+  binary into `~/.cache/cross-tools/` for use inside the cross container.
 
 ### Server (Odroid N2)
 
@@ -147,7 +155,7 @@ Usage: `./deploy.sh <env> <command>`
 
 | Command                      | Description                                              |
 |------------------------------|----------------------------------------------------------|
-| `release-deploy <dir>`      | Upload pre-built binary + static from extracted tarball to target dir, restart (used by CD) |
+| `release-deploy <dir>`      | Upload pre-built binary + static from a local directory, restart (used by CD and `make deploy-stage`) |
 | `setup`                     | First-time server provisioning                           |
 | `deploy`                    | Rsync source + build on server + install + restart       |
 | `install`                   | Rsync source + install + restart (skip build)            |
@@ -155,6 +163,11 @@ Usage: `./deploy.sh <env> <command>`
 | `restart`                   | Restart the service                                      |
 | `logs`                      | Tail the service logs (journalctl)                       |
 | `status`                    | Show service status                                      |
+
+Outside CI, `deploy.sh` multiplexes SSH (one TCP connection shared across the
+many ssh/scp/rsync calls) via `ControlMaster=auto` to avoid tripping sshd
+`MaxStartups` / fail2ban during a deploy. CI keeps a single connection per
+step and skips multiplexing.
 
 The `release-deploy` command is used by the CD pipeline — it takes a directory
 (extracted from the release tarball) containing the binary and `static/` folder,
@@ -201,6 +214,25 @@ push to main
 ```
 
 ### Manual deploy (from dev machine)
+
+Preferred path — local cross-compile, ship binary:
+
+```
+Dev machine                              Odroid N2
+───────────                              ─────────
+make deploy-stage           (or deploy-prod)
+  │
+  ├─ cross build --target aarch64    (Docker + sccache cache)
+  ├─ package release-pkg/ (binary + static/)
+  │
+  ├─ scp binary  ──────────────────▸  /opt/myapps-stage/myapps
+  ├─ rsync static ─────────────────▸  /opt/myapps-stage/static/
+  ├─ ssh: sudo systemctl restart       └─ service running
+  │
+  └─ done
+```
+
+Fallback — rsync source, build on the Odroid (slow, kept for emergencies):
 
 ```
 Dev machine                         Odroid N2

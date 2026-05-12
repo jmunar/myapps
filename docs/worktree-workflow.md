@@ -18,12 +18,8 @@ a full working copy on its own branch, sharing the same git history.
 
 ## Starting a Claude Session per Ticket
 
-If you're using iTerm2, `worktree.sh create` automatically opens a new tab in
-the worktree directory and launches `claude`. It uses a dedicated "Worktree"
-iTerm2 profile if available (create one with the Title set to "Session Name"
-and "Applications in terminal may change the title" disabled, so Claude cannot
-override the tab name). Otherwise,
-open a separate terminal and start Claude Code manually:
+After `worktree.sh create`, open a terminal in the worktree and start Claude
+Code manually:
 
 ```bash
 cd ../myapps-<ticket>
@@ -37,9 +33,17 @@ Each session is fully isolated — changes in one worktree don't affect others.
 Each worktree has its own `target/` directory, so the first build in a new
 worktree starts with a cold cache for project crates.
 
-**sccache** is configured in `.cargo/config.toml` to share compiled artifacts
-(dependencies) across all worktrees. This means only your project crates
-recompile from scratch — the dependency tree is cached globally.
+**sccache** can share compiled artifacts (dependencies) across all worktrees.
+This means only your project crates recompile from scratch — the dependency
+tree is cached globally. Enable it by exporting `RUSTC_WRAPPER=sccache` in
+your shell rc (`~/.bashrc` / `~/.zshrc`):
+
+```bash
+export RUSTC_WRAPPER=sccache
+```
+
+(It is not set via `.cargo/config.toml` because that would force sccache
+inside the `cross` build container, where it isn't installed.)
 
 To check sccache stats:
 

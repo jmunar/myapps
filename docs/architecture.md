@@ -177,10 +177,15 @@ After login, the top-level router serves:
   - `POST /mindflow/actions/{id}/delete` — Delete action
 - `/forms/` — FormInput sub-app (nested router)
   - `/forms/` — Input list (all saved inputs)
-  - `/forms/new` — New input page (select row set + form type, fill grid)
+  - `/forms/new` — New input page (tabs: fill grid manually, or upload CSV)
   - `POST /forms/inputs/create` — Save input as CSV
+  - `POST /forms/inputs/create-from-csv` — Create an input by uploading a CSV
+    (multipart). Validates column count; in fixed-row mode also enforces row
+    count and first-column key alignment with the selected row set.
   - `/forms/inputs/{id}` — View input detail (editable spreadsheet grid with
-    per-column sort/filter; double-click any cell to edit in place)
+    per-column sort and a single global search box; double-click any cell to
+    edit in place; text columns flagged as multi-line render on their own row
+    beneath the main row)
   - `POST /forms/inputs/{id}/cell` — Persist a single-cell edit (row, col, value)
   - `POST /forms/inputs/{id}/delete` — Delete input
   - `/forms/row-sets` — Row set list + create form
@@ -421,6 +426,8 @@ Development machine and server are separate. The workflow is:
    which auto-bumps the version, cross-compiles for aarch64, packages a release
    tarball (binary + static assets), creates a GitHub Release, then deploys to
    staging and production (with smoke tests).
-3. Manual deploys are also possible via `./deploy.sh <env> deploy`, which
-   rsyncs source to the Odroid, builds natively, and installs + restarts the
-   service.
+3. Manual deploys from a dev machine: `make deploy-stage` / `make deploy-prod`
+   runs the same cross-compile (`cross` + Docker + sccache) locally, packages
+   the binary + `static/`, and ships it via `./deploy.sh <env> release-deploy`.
+   `./deploy.sh <env> deploy` (rsync + build on the Odroid) remains as a
+   fallback.

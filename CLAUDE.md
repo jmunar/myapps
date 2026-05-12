@@ -33,7 +33,11 @@ make fmt                            # Auto-format code
 make lint                           # Run clippy with -D warnings
 make test                           # Run all tests
 make audit                          # Security audit (cargo audit)
-make build                          # Release build
+make build                          # Release build (native, x86_64)
+make build-arm64                    # Cross-compile aarch64 binary (Docker + cross + sccache)
+make package-arm64                  # Cross-build + assemble release bundle
+make deploy-stage                   # Cross-build + package + push to staging
+make deploy-prod                    # Same for production (CI is the usual path)
 make run                            # Start dev server
 make screenshots                    # Regenerate README screenshots (needs Node.js)
 

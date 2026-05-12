@@ -82,8 +82,6 @@ jobs:
       - name: Cross-compile for aarch64
         if: steps.tag_check.outputs.exists == 'false'
         run: |
-          sed -i '/rustc-wrapper/d' .cargo/config.toml
-
           export SCCACHE_GHA_ENABLED=true
           if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null; then
             echo "sccache backend is available — building with compilation cache"
