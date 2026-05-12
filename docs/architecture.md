@@ -96,7 +96,9 @@ myapps/
 │   ├── harness/mod.rs       # Root test harness (uses all apps)
 │   └── auth_tests.rs        # Platform auth, launcher, settings, invite tests
 ├── models/                  # Whisper GGML model files (gitignored)
-├── static/                  # core.css, JS (htmx, chart.js, d3), PWA assets
+├── static/                  # core.css, JS (htmx, chart.js, d3, notes-vendor bundle), PWA assets
+├── tools/
+│   └── notes-vendor/        # npm + esbuild setup that produces static/notes-vendor.bundle.js
 ├── .claude/agents/          # Claude Code agent prompts
 ├── .github/
 │   ├── workflows/           # CI, CD, audit
@@ -188,14 +190,26 @@ After login, the top-level router serves:
   - `POST /forms/form-types/create` — Create form type
   - `/forms/form-types/{id}/edit` — Edit form type (GET form, POST submit)
   - `POST /forms/form-types/{id}/delete` — Delete form type and its inputs
-- `/notes/` — Notes sub-app (nested router)
+- `/notes/` — Notes sub-app (nested router). Local-first: body content lives
+  in a Yjs CRDT per note, persisted to IndexedDB on each client and synced
+  between peers over a per-note WebSocket relay. See "Notes sync" below.
   - `/notes/` — Notes list (grid of note cards, pinned first)
   - `POST /notes/new` — Create empty note (redirects to edit)
-  - `/notes/{id}/edit` — Edit note (WYSIWYG Markdown editor)
-  - `POST /notes/{id}/save` — Save note title + body
+  - `/notes/{id}/edit` — Edit note (Tiptap + Yjs editor, mounted client-side)
+  - `POST /notes/{id}/save` — Save note title (body flows through the
+    WebSocket — this endpoint is title-only)
   - `POST /notes/{id}/delete` — Delete note
   - `POST /notes/{id}/toggle-pin` — Pin/unpin note
-  - `POST /notes/{id}/dictate` — Voice dictation (audio upload → whisper transcription)
+  - `POST /notes/{id}/dictate` — Voice dictation (audio upload → whisper
+    transcription; the result is inserted into the Tiptap editor by the
+    client bootstrap)
+  - `GET /notes/{uuid}/ws` — WebSocket sync endpoint. Speaks the
+    `y-protocols/sync` exchange (SyncStep1 / SyncStep2 / Update). Each note
+    has an in-memory `Room` (a `yrs::Doc` + a `tokio::broadcast` channel);
+    every accepted update is applied to the doc, persisted as a row in
+    `notes_note_updates`, and rebroadcast to other peers connected to the
+    same note. A background task evicts idle rooms (no subscribers for
+    ≥60s), snapshotting their update log into a single row.
 
 ## Database Schema
 
