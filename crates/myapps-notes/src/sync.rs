@@ -26,12 +26,14 @@ use tokio::sync::{broadcast, mpsc};
 use yrs::sync::{Message as SyncWrapper, SyncMessage};
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
-use yrs::{Doc, ReadTxn, Transact, Update};
+use yrs::{Doc, ReadTxn, StateVector, Transact, Update};
 
 use myapps_core::auth::UserId;
 use myapps_core::routes::AppState;
 
 const BROADCAST_CAPACITY: usize = 64;
+const IDLE_EVICTION_THRESHOLD_SECS: i64 = 60;
+const IDLE_EVICTION_INTERVAL_SECS: u64 = 30;
 
 pub type Rooms = Arc<tokio::sync::RwLock<HashMap<String, Arc<Room>>>>;
 
@@ -223,5 +225,64 @@ async fn apply_and_broadcast(
         .await?;
     let wire = SyncWrapper::Sync(SyncMessage::Update(update)).encode_v1();
     let _ = room.tx.send(wire);
+    Ok(())
+}
+
+/// Background task: every `IDLE_EVICTION_INTERVAL_SECS`, snapshot-and-evict
+/// any room with no subscribers that's been idle for at least
+/// `IDLE_EVICTION_THRESHOLD_SECS`. Spawned from `NotesApp::on_serve`.
+pub fn spawn_eviction_task(rooms: Rooms, pool: SqlitePool) {
+    tokio::spawn(async move {
+        let mut interval =
+            tokio::time::interval(std::time::Duration::from_secs(IDLE_EVICTION_INTERVAL_SECS));
+        interval.tick().await; // skip the immediate first tick
+        loop {
+            interval.tick().await;
+            if let Err(e) = evict_idle_rooms(&rooms, &pool, IDLE_EVICTION_THRESHOLD_SECS).await {
+                tracing::warn!("notes eviction task error: {e:#}");
+            }
+        }
+    });
+}
+
+/// For each room with zero subscribers and `last_active` older than
+/// `idle_threshold_secs`: encode the current doc as a single snapshot update,
+/// replace all rows in `notes_note_updates` for that note with the snapshot,
+/// and remove the room from the registry. Holds the registry write-lock for
+/// the duration, which keeps `acquire_room` from racing with the SQL replace.
+pub async fn evict_idle_rooms(
+    rooms: &Rooms,
+    pool: &SqlitePool,
+    idle_threshold_secs: i64,
+) -> anyhow::Result<()> {
+    let now = now_secs();
+    let mut w = rooms.write().await;
+    let to_evict: Vec<(String, Arc<Room>)> = w
+        .iter()
+        .filter(|(_, room)| {
+            room.subscribers.load(Ordering::Relaxed) == 0
+                && now - room.last_active.load(Ordering::Relaxed) >= idle_threshold_secs
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    for (uuid, room) in to_evict {
+        let snapshot = room
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let mut tx = pool.begin().await?;
+        sqlx::query("DELETE FROM notes_note_updates WHERE note_id = ?")
+            .bind(room.note_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("INSERT INTO notes_note_updates (note_id, update_blob) VALUES (?, ?)")
+            .bind(room.note_id)
+            .bind(&snapshot)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        w.remove(&uuid);
+    }
     Ok(())
 }

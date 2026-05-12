@@ -131,4 +131,12 @@ impl App for NotesApp {
     {
         Some(Box::pin(services::seed::run(pool, user_id, self)))
     }
+
+    fn on_serve(
+        &self,
+        pool: sqlx::SqlitePool,
+        _config: std::sync::Arc<myapps_core::config::Config>,
+    ) {
+        sync::spawn_eviction_task(self.rooms.clone(), pool);
+    }
 }

@@ -162,6 +162,89 @@ async fn ws_rejects_unknown_uuid() {
 }
 
 #[tokio::test]
+async fn idle_eviction_compacts_update_log_into_one_snapshot() {
+    use myapps_notes::sync;
+
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    let uuid = "22222222222222222222222222222222";
+    let note_id: (i64,) = sqlx::query_as(
+        "INSERT INTO notes_notes (user_id, client_uuid, title, body) VALUES (1, ?, 'Compact', '') RETURNING id",
+    )
+    .bind(uuid)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    let note_id = note_id.0;
+
+    // Generate three legitimate yrs updates from a fresh client doc and
+    // persist them straight to the update log (simulating three WS messages
+    // already absorbed by the server).
+    let client = Doc::new();
+    let text = client.get_or_insert_text("body");
+    for chunk in ["alpha ", "beta ", "gamma"] {
+        let update = {
+            let mut txn = client.transact_mut();
+            let end = text.get_string(&txn).len() as u32;
+            text.insert(&mut txn, end, chunk);
+            txn.encode_update_v1()
+        };
+        sqlx::query("INSERT INTO notes_note_updates (note_id, update_blob) VALUES (?, ?)")
+            .bind(note_id)
+            .bind(&update)
+            .execute(&app.pool)
+            .await
+            .unwrap();
+    }
+
+    let (before,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM notes_note_updates WHERE note_id = ?")
+            .bind(note_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(before, 3, "expected 3 persisted updates before compaction");
+
+    // Materialise the room (rebuilds the doc from the update log), then run
+    // eviction with idle_threshold_secs=0 so it qualifies immediately.
+    let rooms = sync::new_rooms();
+    sync::acquire_room(&rooms, &app.pool, uuid, note_id)
+        .await
+        .unwrap();
+    sync::evict_idle_rooms(&rooms, &app.pool, 0).await.unwrap();
+
+    let (after,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM notes_note_updates WHERE note_id = ?")
+            .bind(note_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(after, 1, "expected 1 row after compaction snapshot");
+
+    // The remaining row encodes the merged state.
+    let (blob,): (Vec<u8>,) =
+        sqlx::query_as("SELECT update_blob FROM notes_note_updates WHERE note_id = ?")
+            .bind(note_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    let restored = Doc::new();
+    let restored_text = restored.get_or_insert_text("body");
+    {
+        let mut txn = restored.transact_mut();
+        txn.apply_update(Update::decode_v1(&blob).unwrap()).unwrap();
+    }
+    assert_eq!(
+        restored_text.get_string(&restored.transact()),
+        "alpha beta gamma"
+    );
+
+    // And the room is gone from the registry.
+    assert!(rooms.read().await.is_empty());
+}
+
+#[tokio::test]
 async fn ws_rejects_unauthenticated() {
     let app = app().await;
     // No login.
