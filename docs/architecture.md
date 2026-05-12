@@ -412,6 +412,8 @@ Development machine and server are separate. The workflow is:
    which auto-bumps the version, cross-compiles for aarch64, packages a release
    tarball (binary + static assets), creates a GitHub Release, then deploys to
    staging and production (with smoke tests).
-3. Manual deploys are also possible via `./deploy.sh <env> deploy`, which
-   rsyncs source to the Odroid, builds natively, and installs + restarts the
-   service.
+3. Manual deploys from a dev machine: `make deploy-stage` / `make deploy-prod`
+   runs the same cross-compile (`cross` + Docker + sccache) locally, packages
+   the binary + `static/`, and ships it via `./deploy.sh <env> release-deploy`.
+   `./deploy.sh <env> deploy` (rsync + build on the Odroid) remains as a
+   fallback.

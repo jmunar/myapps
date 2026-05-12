@@ -162,9 +162,11 @@ visibility into spending patterns.
 ### Deployment
 
 - Development happens on a separate machine (not the server).
-- Release binaries are cross-compiled in GitHub Actions for aarch64 and
-  deployed directly to the server. Manual deploys can still build natively
-  on the Odroid via `deploy.sh deploy`.
+- Release binaries are cross-compiled for aarch64 (in GitHub Actions on
+  merge to `main`, or locally via `make deploy-stage` / `make deploy-prod`
+  using `cross` + Docker + `sccache`) and deployed directly to the server.
+  Manual deploys can still build natively on the Odroid via
+  `deploy.sh deploy` as a fallback.
 - The application runs as a systemd service on the server.
 - The cron job is a system crontab entry that invokes the same binary with the
   `cron` subcommand, which runs each deployed app's scheduled tasks.
