@@ -33,9 +33,17 @@ Each session is fully isolated — changes in one worktree don't affect others.
 Each worktree has its own `target/` directory, so the first build in a new
 worktree starts with a cold cache for project crates.
 
-**sccache** is configured in `.cargo/config.toml` to share compiled artifacts
-(dependencies) across all worktrees. This means only your project crates
-recompile from scratch — the dependency tree is cached globally.
+**sccache** can share compiled artifacts (dependencies) across all worktrees.
+This means only your project crates recompile from scratch — the dependency
+tree is cached globally. Enable it by exporting `RUSTC_WRAPPER=sccache` in
+your shell rc (`~/.bashrc` / `~/.zshrc`):
+
+```bash
+export RUSTC_WRAPPER=sccache
+```
+
+(It is not set via `.cargo/config.toml` because that would force sccache
+inside the `cross` build container, where it isn't installed.)
 
 To check sccache stats:
 

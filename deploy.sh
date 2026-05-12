@@ -45,22 +45,31 @@ SERVER="$DEPLOY_SERVER"
 SSH_PORT="${DEPLOY_SSH_PORT:-22}"
 EXTRA_ARG="${3:-}"
 
+# Multiplex SSH: one TCP connection shared across the many rapid ssh/scp/rsync
+# invocations a deploy makes. Avoids tripping sshd MaxStartups / fail2ban and
+# speeds things up (no repeated handshakes). Skipped in CI where each step runs
+# in a fresh runner with its own single connection.
+SSH_MUX_OPTS=""
+if [[ "${DEPLOY_CI:-false}" != "true" ]]; then
+    SSH_MUX_OPTS="-o ControlMaster=auto -o ControlPath=/tmp/myapps-ssh-%C -o ControlPersist=60s"
+fi
+
 # ── Helpers ────────────────────────────────────────────────────────
 
 # In CI (DEPLOY_CI=true) we skip -t (no TTY available for sudo prompts).
 # The deploy SSH user must have passwordless sudo configured on the server.
 ssh_server() {
     if [[ "${DEPLOY_CI:-false}" == "true" ]]; then
-        ssh -p "$SSH_PORT" "$SERVER" "$@"
+        ssh $SSH_MUX_OPTS -p "$SSH_PORT" "$SERVER" "$@"
     else
-        ssh -t -p "$SSH_PORT" "$SERVER" "$@"
+        ssh $SSH_MUX_OPTS -t -p "$SSH_PORT" "$SERVER" "$@"
     fi
 }
 
 sync_source() {
     echo "▸ Syncing source to $SERVER:$DEPLOY_REMOTE_BUILD_DIR..."
     rsync -az --delete \
-        -e "ssh -p $SSH_PORT" \
+        -e "ssh $SSH_MUX_OPTS -p $SSH_PORT" \
         --exclude target \
         --exclude .git \
         --exclude data \
@@ -74,7 +83,7 @@ release_install() {
     [[ -f "$release_dir/myapps" ]] || { echo "Error: binary not found: $release_dir/myapps"; exit 1; }
     [[ -d "$release_dir/static" ]] || { echo "Error: static dir not found: $release_dir/static"; exit 1; }
     echo "▸ Uploading release binary to $SERVER..."
-    scp -P "$SSH_PORT" "$release_dir/myapps" "$SERVER:/tmp/myapps.new"
+    scp $SSH_MUX_OPTS -P "$SSH_PORT" "$release_dir/myapps" "$SERVER:/tmp/myapps.new"
     echo "▸ Installing binary..."
     ssh_server DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" bash <<'INSTALL'
 set -euo pipefail
@@ -84,7 +93,7 @@ sudo chown myapps:myapps $DEPLOY_REMOTE_DIR/myapps
 sudo chmod +x $DEPLOY_REMOTE_DIR/myapps
 INSTALL
     echo "▸ Syncing static files..."
-    rsync -az --delete -e "ssh -p $SSH_PORT" "$release_dir/static/" "$SERVER:/tmp/myapps-static/"
+    rsync -az --delete -e "ssh $SSH_MUX_OPTS -p $SSH_PORT" "$release_dir/static/" "$SERVER:/tmp/myapps-static/"
     ssh_server DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'STATIC'
 set -euo pipefail
 sudo rsync -a --delete /tmp/myapps-static/ $DEPLOY_REMOTE_DIR/static/
@@ -99,7 +108,7 @@ STATIC
 build() {
     sync_source
     echo "▸ Building release on $SERVER..."
-    ssh -p "$SSH_PORT" "$SERVER" "source \$HOME/.cargo/env && cd $DEPLOY_REMOTE_BUILD_DIR && cargo build --release"
+    ssh $SSH_MUX_OPTS -p "$SSH_PORT" "$SERVER" "source \$HOME/.cargo/env && export RUSTC_WRAPPER=sccache && cd $DEPLOY_REMOTE_BUILD_DIR && cargo build --release"
 }
 
 install() {
