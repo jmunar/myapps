@@ -125,11 +125,19 @@ test.describe("README screenshots", () => {
     await page.goto(`${BASE_URL}/notes`);
     await snap(page, "notes-list");
 
-    // Open the first note for editing (click the first note link).
+    // Open the first note for editing. The editor is now Tiptap+Yjs and
+    // mounts client-side into an empty #notes-editor, so we wait for the
+    // .ProseMirror class Tiptap adds and type demo content into it before
+    // capturing — otherwise the screenshot would be an empty box.
     const firstNote = page.locator('a[href^="/notes/"]').first();
     if (await firstNote.isVisible()) {
       await firstNote.click();
-      await page.waitForTimeout(800); // Wait for editor to initialize.
+      await page.waitForSelector(".ProseMirror", { timeout: 8000 });
+      await page.click(".ProseMirror");
+      await page.keyboard.type(
+        "# Project Kickoff\n## Attendees\nAlice, Bob, Carol\n## Notes\nShip early, iterate fast.",
+      );
+      await page.waitForTimeout(500);
       await snap(page, "notes-editor");
     }
   });
