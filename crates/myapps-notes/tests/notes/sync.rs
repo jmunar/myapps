@@ -245,6 +245,59 @@ async fn idle_eviction_compacts_update_log_into_one_snapshot() {
 }
 
 #[tokio::test]
+async fn acquire_room_skips_corrupted_update_rows() {
+    use myapps_notes::sync;
+
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    let uuid = "33333333333333333333333333333333";
+    let (note_id,): (i64,) = sqlx::query_as(
+        "INSERT INTO notes_notes (user_id, client_uuid, title, body) VALUES (1, ?, 'Corrupt', '') RETURNING id",
+    )
+    .bind(uuid)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let client = Doc::new();
+    let text = client.get_or_insert_text("body");
+    let first = {
+        let mut txn = client.transact_mut();
+        text.insert(&mut txn, 0, "hello");
+        txn.encode_update_v1()
+    };
+    let second = {
+        let mut txn = client.transact_mut();
+        let end = text.get_string(&txn).len() as u32;
+        text.insert(&mut txn, end, " world");
+        txn.encode_update_v1()
+    };
+
+    // Sandwich a garbage row between two legitimate updates.
+    for blob in [&first[..], &[0xFF, 0xFF, 0xFF, 0xFF][..], &second[..]] {
+        sqlx::query("INSERT INTO notes_note_updates (note_id, update_blob) VALUES (?, ?)")
+            .bind(note_id)
+            .bind(blob)
+            .execute(&app.pool)
+            .await
+            .unwrap();
+    }
+
+    // acquire_room must NOT fail — one bad row should never brick a note.
+    let rooms = sync::new_rooms();
+    let room = sync::acquire_room(&rooms, &app.pool, uuid, note_id)
+        .await
+        .expect("acquire_room must tolerate a corrupted update row");
+    let room_text = room.doc.get_or_insert_text("body");
+    assert_eq!(
+        room_text.get_string(&room.doc.transact()),
+        "hello world",
+        "the two valid updates should still replay"
+    );
+}
+
+#[tokio::test]
 async fn ws_rejects_unauthenticated() {
     let app = app().await;
     // No login.

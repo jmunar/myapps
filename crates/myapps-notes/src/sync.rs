@@ -82,12 +82,36 @@ pub async fn acquire_room(
             .fetch_all(pool)
             .await?;
 
+    // Replay each persisted update in isolation: a single corrupted row must
+    // not brick the entire note. Log the offender and continue — the room
+    // ends up with whatever state the surviving updates encode, and the next
+    // idle eviction will snapshot that state into one clean row.
     let doc = Doc::new();
+    let mut skipped: usize = 0;
     {
         let mut txn = doc.transact_mut();
-        for (blob,) in updates {
-            txn.apply_update(Update::decode_v1(&blob)?)?;
+        for (blob,) in &updates {
+            match Update::decode_v1(blob) {
+                Ok(update) => {
+                    if let Err(e) = txn.apply_update(update) {
+                        tracing::warn!(
+                            "notes: skipping unapplyable update for note_id={note_id}: {e}"
+                        );
+                        skipped += 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("notes: skipping undecodable update for note_id={note_id}: {e}");
+                    skipped += 1;
+                }
+            }
         }
+    }
+    if skipped > 0 {
+        tracing::warn!(
+            "notes: note_id={note_id} replayed {applied} updates, skipped {skipped} corrupted rows",
+            applied = updates.len() - skipped,
+        );
     }
 
     let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
