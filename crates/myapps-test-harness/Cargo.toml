@@ -5,6 +5,6 @@ edition.workspace = true
 
 [dependencies]
 myapps-core.workspace = true
-axum-test = "19"
+axum-test.workspace = true
 sqlx.workspace = true
 serde_json.workspace = true

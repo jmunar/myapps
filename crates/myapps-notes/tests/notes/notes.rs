@@ -1,7 +1,44 @@
 use myapps_notes::NotesApp;
 
 async fn app() -> myapps_test_harness::TestApp {
-    myapps_test_harness::spawn_app(vec![Box::new(NotesApp)]).await
+    myapps_test_harness::spawn_app(vec![Box::new(NotesApp::new())]).await
+}
+
+/// Login + insert the four demo rows the UI tests query against by title.
+/// The production seed (`services::seed::run`) is a no-op now that title and
+/// body both live in the CRDT and we can't realistically serialize markdown
+/// → ProseMirror → Yjs from Rust; tests still want predictable rows, so we
+/// re-create them here from raw SQL.
+async fn setup_with_demos(app: &myapps_test_harness::TestApp) {
+    app.seed_and_login(&NotesApp::new()).await;
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let notes: &[(&str, &str, i64)] = &[
+        (
+            "Meeting Notes — Project Kickoff",
+            "# Kickoff\n\n- Alice, Bob, Carol",
+            1,
+        ),
+        ("Rust Tips", "# Rust\n\nPattern matching tips", 0),
+        ("Shopping List", "# Shop\n\n[ ] Tomatoes", 0),
+        (
+            "Book Notes — Designing Data-Intensive Applications",
+            "# DDIA\n\nReliability, scalability",
+            1,
+        ),
+    ];
+    for (title, body, pinned) in notes {
+        sqlx::query("INSERT INTO notes_notes (user_id, title, body, pinned) VALUES (?, ?, ?, ?)")
+            .bind(uid)
+            .bind(title)
+            .bind(body)
+            .bind(pinned)
+            .execute(&app.pool)
+            .await
+            .unwrap();
+    }
 }
 
 #[tokio::test]
@@ -35,7 +72,7 @@ async fn notes_list_has_nav_elements() {
 #[tokio::test]
 async fn notes_list_has_grid_and_new_note_form() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     assert!(body.contains("notes-grid"));
@@ -46,7 +83,7 @@ async fn notes_list_has_grid_and_new_note_form() {
 #[tokio::test]
 async fn notes_list_card_structure() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     assert!(body.contains("notes-card"));
@@ -59,7 +96,7 @@ async fn notes_list_card_structure() {
 #[tokio::test]
 async fn notes_list_card_links_to_edit() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -75,7 +112,7 @@ async fn notes_list_card_links_to_edit() {
 #[tokio::test]
 async fn notes_list_shows_seeded_notes() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     assert!(body.contains("Meeting Notes"));
@@ -86,7 +123,7 @@ async fn notes_list_shows_seeded_notes() {
 #[tokio::test]
 async fn notes_list_shows_pinned_badge() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     assert!(body.contains("notes-pin-badge"));
@@ -96,7 +133,7 @@ async fn notes_list_shows_pinned_badge() {
 #[tokio::test]
 async fn notes_list_shows_preview_text() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
     let r = app.server.get("/notes").await;
     let body = r.text();
     // The preview extracts the first non-empty, non-heading line.
@@ -132,7 +169,7 @@ async fn create_note_redirects_to_edit() {
 #[tokio::test]
 async fn edit_note_renders() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -149,7 +186,7 @@ async fn edit_note_renders() {
 #[tokio::test]
 async fn edit_note_has_full_page_structure() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -165,9 +202,9 @@ async fn edit_note_has_full_page_structure() {
 }
 
 #[tokio::test]
-async fn edit_note_has_contenteditable_and_hidden_textarea() {
+async fn edit_note_has_tiptap_mount() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -177,17 +214,18 @@ async fn edit_note_has_contenteditable_and_hidden_textarea() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    assert!(body.contains(r#"contenteditable="true""#));
+    // Tiptap mounts itself into an empty #notes-editor; no contenteditable
+    // attribute, no hidden textarea, no body field in the form.
     assert!(body.contains(r#"id="notes-editor""#));
-    assert!(body.contains(r#"id="notes-raw""#));
-    assert!(body.contains(r#"name="body""#));
-    assert!(body.contains(r#"style="display:none""#));
+    assert!(!body.contains(r#"contenteditable="true""#));
+    assert!(!body.contains(r#"id="notes-raw""#));
+    assert!(!body.contains(r#"name="body""#));
 }
 
 #[tokio::test]
 async fn edit_note_has_editor_css_classes() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -208,7 +246,7 @@ async fn edit_note_has_editor_css_classes() {
 #[tokio::test]
 async fn edit_note_form_actions_point_to_correct_urls() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -218,15 +256,18 @@ async fn edit_note_form_actions_point_to_correct_urls() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    assert!(body.contains(&format!(r#"action="/notes/{id}/save""#)));
+    // No Save endpoint anymore — title is CRDT-bound, denorm flush happens
+    // via sendBeacon to /denorm, not via a form submit. Only toggle-pin and
+    // delete remain as form actions.
+    assert!(!body.contains("/save"));
+    assert!(body.contains(&format!(r#"action="/notes/{id}/toggle-pin""#)));
     assert!(body.contains(&format!(r#"action="/notes/{id}/delete""#)));
-    assert!(body.contains(&format!(r#"formaction="/notes/{id}/toggle-pin""#)));
 }
 
 #[tokio::test]
 async fn edit_note_no_nested_forms() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -236,24 +277,23 @@ async fn edit_note_no_nested_forms() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    // The save form should not contain a nested form for toggle-pin;
-    // pin uses formaction on the button instead.
-    let save_form_start = body.find(r#"id="notes-form""#).unwrap();
-    let save_form_body = &body[save_form_start..];
-    // After the opening <form id="notes-form">, the next </form> should close it.
-    // There should be no <form inside the save form before the hidden textarea.
-    let textarea_pos = save_form_body.find(r#"id="notes-raw""#).unwrap();
-    let between = &save_form_body[..textarea_pos];
-    assert!(
-        !between.contains("<form "),
-        "save form should not contain nested forms"
-    );
+    // pin and delete are sibling forms, never nested.
+    for marker in ["notes-pin-form", "notes-delete-form"] {
+        let start = body
+            .find(marker)
+            .unwrap_or_else(|| panic!("{marker} missing"));
+        let end = start + body[start..].find("</form>").unwrap();
+        assert!(
+            !body[start..end].contains("<form "),
+            "{marker} block must not contain a nested form"
+        );
+    }
 }
 
 #[tokio::test]
 async fn edit_note_has_delete_form_with_class() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -270,7 +310,7 @@ async fn edit_note_has_delete_form_with_class() {
 #[tokio::test]
 async fn edit_note_has_back_link() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -287,7 +327,7 @@ async fn edit_note_has_back_link() {
 #[tokio::test]
 async fn edit_unpinned_note_shows_pin_button() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     // Rust Tips is unpinned in seed data
     let (id,): (i64,) = sqlx::query_as(
@@ -306,7 +346,7 @@ async fn edit_unpinned_note_shows_pin_button() {
 #[tokio::test]
 async fn edit_pinned_note_shows_unpin_button() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     // "Meeting Notes" is pinned in seed data
     let (id,): (i64,) = sqlx::query_as(
@@ -325,7 +365,7 @@ async fn edit_pinned_note_shows_unpin_button() {
 #[tokio::test]
 async fn edit_note_no_dictate_button_without_whisper() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -335,32 +375,31 @@ async fn edit_note_no_dictate_button_without_whisper() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    // Whisper is not configured in tests, so dictate button should be absent
+    // Whisper is not configured in tests, so the dictate button must be absent.
     assert!(!body.contains("notes-dictate-btn"));
-    assert!(body.contains(r#"data-whisper="false""#));
 }
 
 #[tokio::test]
 async fn edit_note_has_data_attributes() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
-    let (id,): (i64,) =
-        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
+    let (id, uuid): (i64, String) =
+        sqlx::query_as("SELECT id, client_uuid FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
             .fetch_one(&app.pool)
             .await
             .unwrap();
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    assert!(body.contains(&format!(r#"data-note-id="{id}""#)));
     assert!(body.contains(r#"data-base=""#));
+    assert!(body.contains(&format!(r#"data-client-uuid="{uuid}""#)));
 }
 
 #[tokio::test]
-async fn edit_note_loads_editor_script() {
+async fn edit_note_loads_vendor_bundle_and_bootstrap() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -370,13 +409,16 @@ async fn edit_note_loads_editor_script() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    assert!(body.contains("notes-editor.js"));
+    assert!(body.contains("notes-vendor.bundle.js"));
+    assert!(body.contains("notes-tiptap-bootstrap.js"));
+    // The legacy contenteditable editor script must not be loaded.
+    assert!(!body.contains("notes-editor.js"));
 }
 
 #[tokio::test]
-async fn save_note() {
+async fn denorm_endpoint_updates_title_and_body_and_refreshes_list() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -386,24 +428,76 @@ async fn save_note() {
 
     let r = app
         .server
-        .post(&format!("/notes/{id}/save"))
+        .post(&format!("/notes/{id}/denorm"))
         .form(&serde_json::json!({
-            "title": "Rust Tips Updated",
-            "body": "# Updated content",
+            "title": "Rust Tips — Renamed",
+            "body": "# Heading\n\nFreshly synced preview line",
         }))
-        .expect_failure()
         .await;
-    assert_eq!(r.status_code(), 303);
+    assert_eq!(r.status_code(), 204);
 
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-    assert!(body.contains("Rust Tips Updated"));
+    let (title, body): (String, String) =
+        sqlx::query_as("SELECT title, body FROM notes_notes WHERE id = ?")
+            .bind(id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(title, "Rust Tips — Renamed");
+    assert_eq!(body, "# Heading\n\nFreshly synced preview line");
+
+    // The list view should pick up both the renamed title and the new
+    // preview line (first non-empty non-heading line).
+    let list = app.server.get("/notes").await.text();
+    assert!(list.contains("Rust Tips — Renamed"));
+    assert!(list.contains("Freshly synced preview line"));
+}
+
+#[tokio::test]
+async fn denorm_endpoint_scopes_to_owner() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    // A second user (raw insert — we never authenticate as them, just need a
+    // row in `users` to satisfy the FK on `notes_notes.user_id`).
+    sqlx::query("INSERT INTO users (username, password_hash) VALUES ('other', 'irrelevant')")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    let (other_uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'other'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let (other_note,): (i64,) = sqlx::query_as(
+        "INSERT INTO notes_notes (user_id, client_uuid, title, body) VALUES (?, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'Theirs', 'orig') RETURNING id",
+    )
+    .bind(other_uid)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    // Logged in as `test`; POSTing a denorm for the other user's note must
+    // be a no-op (WHERE user_id = ? matches zero rows).
+    let r = app
+        .server
+        .post(&format!("/notes/{other_note}/denorm"))
+        .form(&serde_json::json!({ "title": "hijacked-title", "body": "hijacked-body" }))
+        .await;
+    assert_eq!(r.status_code(), 204);
+
+    let (title, body): (String, String) =
+        sqlx::query_as("SELECT title, body FROM notes_notes WHERE id = ?")
+            .bind(other_note)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(title, "Theirs", "must not overwrite another user's title");
+    assert_eq!(body, "orig", "must not overwrite another user's body");
 }
 
 #[tokio::test]
 async fn delete_note() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Shopping List' LIMIT 1")
@@ -426,7 +520,7 @@ async fn delete_note() {
 #[tokio::test]
 async fn toggle_pin() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     // Find an unpinned note
     let (id,): (i64,) = sqlx::query_as(
@@ -472,31 +566,9 @@ async fn notes_empty_state() {
 }
 
 #[tokio::test]
-async fn edit_note_renders_markdown_content() {
+async fn edit_note_has_crdt_bound_title_input() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
-
-    // "Rust Tips" has code blocks, lists, links in its body
-    let (id,): (i64,) =
-        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
-
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-    // Code block should be rendered as <pre> with notes-code-block class
-    assert!(body.contains("notes-code-block"));
-    // List items should be rendered
-    assert!(body.contains("<li>"));
-    // The raw body should be in the hidden textarea
-    assert!(body.contains("Pattern Matching"));
-}
-
-#[tokio::test]
-async fn edit_note_title_in_input_field() {
-    let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     let (id,): (i64,) =
         sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
@@ -506,9 +578,14 @@ async fn edit_note_title_in_input_field() {
 
     let r = app.server.get(&format!("/notes/{id}/edit")).await;
     let body = r.text();
-    // Title should be in the input field value attribute
-    assert!(body.contains(r#"value="Rust Tips""#));
-    assert!(body.contains(r#"name="title""#));
+    // Title now lives in the CRDT and is wired up by the bootstrap; the
+    // server-rendered input has no `value=` (would clobber the Y.Text on
+    // load) and no `name=` (no form submit). Just the id selector that
+    // the bootstrap binds against, and the editor's data-title-input
+    // pointer.
+    assert!(body.contains(r#"id="notes-title-input""#));
+    assert!(body.contains(r##"data-title-input="#notes-title-input""##));
+    assert!(!body.contains(r#"name="title""#));
 }
 
 #[tokio::test]
@@ -525,7 +602,7 @@ async fn notes_list_page_header() {
 #[tokio::test]
 async fn toggle_pin_then_check_edit_shows_unpin() {
     let app = app().await;
-    app.seed_and_login(&NotesApp).await;
+    setup_with_demos(&app).await;
 
     // Start with an unpinned note
     let (id,): (i64,) = sqlx::query_as(
@@ -548,95 +625,32 @@ async fn toggle_pin_then_check_edit_shows_unpin() {
 }
 
 #[tokio::test]
-async fn edit_note_renders_task_checkboxes_as_inputs() {
-    let app = app().await;
-    app.seed_and_login(&NotesApp).await;
-
-    // "Shopping List" has a mix of checked and unchecked task items.
-    let (id,): (i64,) =
-        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Shopping List' LIMIT 1")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
-
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-
-    // Task items are rendered with the .notes-task-item class.
-    assert!(body.contains(r#"<li class="notes-task-item">"#));
-    // Both checked and unchecked variants are emitted as real checkbox inputs.
-    assert!(body.contains(r#"<input type="checkbox" checked contenteditable="false">"#));
-    assert!(body.contains(r#"<input type="checkbox" contenteditable="false">"#));
-    // The old Unicode-glyph rendering should be gone.
-    assert!(!body.contains("&#9745;"));
-    assert!(!body.contains("&#9744;"));
-}
-
-#[tokio::test]
-async fn edit_note_task_checkbox_pairs_with_its_text() {
+async fn save_route_is_gone() {
     let app = app().await;
     app.login_as("test", "pass").await;
 
-    // Write a minimal note we fully control so we can assert exact HTML.
-    sqlx::query(
-        "INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Tasks', '- [x] Done item\n- [ ] Todo item')",
-    )
-    .execute(&app.pool)
-    .await
-    .unwrap();
-
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Tasks' LIMIT 1")
-        .fetch_one(&app.pool)
-        .await
-        .unwrap();
-
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let body = r.text();
-
-    assert!(body.contains(
-        r#"<li class="notes-task-item"><input type="checkbox" checked contenteditable="false">Done item</li>"#,
-    ));
-    assert!(body.contains(
-        r#"<li class="notes-task-item"><input type="checkbox" contenteditable="false">Todo item</li>"#,
-    ));
-}
-
-#[tokio::test]
-async fn edit_note_task_checkbox_markdown_round_trips_through_save() {
-    let app = app().await;
-    app.login_as("test", "pass").await;
-
-    sqlx::query("INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Tasks', '')")
+    sqlx::query("INSERT INTO notes_notes (user_id, title, body) VALUES (1, 'Old', 'orig')")
         .execute(&app.pool)
         .await
         .unwrap();
-
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Tasks' LIMIT 1")
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Old' LIMIT 1")
         .fetch_one(&app.pool)
         .await
         .unwrap();
 
-    // Simulate the form the JS would submit after a checkbox toggle:
-    // the textarea carries the markdown with [x]/[ ] preserved.
-    app.server
+    // /save used to take a title and redirect; it no longer exists.
+    let r = app
+        .server
         .post(&format!("/notes/{id}/save"))
-        .form(&serde_json::json!({
-            "title": "Tasks",
-            "body": "- [x] First\n- [ ] Second",
-        }))
+        .form(&serde_json::json!({ "title": "New" }))
         .expect_failure()
         .await;
-
-    let (body,): (String,) = sqlx::query_as("SELECT body FROM notes_notes WHERE id = ?")
+    let s = r.status_code();
+    assert!(s == 404 || s == 405, "expected 404/405, got {s}");
+    let (title,): (String,) = sqlx::query_as("SELECT title FROM notes_notes WHERE id = ?")
         .bind(id)
         .fetch_one(&app.pool)
         .await
         .unwrap();
-    assert_eq!(body, "- [x] First\n- [ ] Second");
-
-    // And re-rendering produces the expected HTML.
-    let r = app.server.get(&format!("/notes/{id}/edit")).await;
-    let html = r.text();
-    assert!(html.contains(r#"<input type="checkbox" checked contenteditable="false">First"#));
-    assert!(html.contains(r#"<input type="checkbox" contenteditable="false">Second"#));
+    assert_eq!(title, "Old", "title must not change");
 }

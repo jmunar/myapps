@@ -9,4 +9,6 @@ deploy/*.env
 node_modules/
 package.json
 package-lock.json
+!tools/notes-vendor/package.json
+!tools/notes-vendor/package-lock.json
 test-results/

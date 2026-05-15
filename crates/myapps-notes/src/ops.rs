@@ -21,18 +21,16 @@ pub async fn create_note(
     Ok(row.0)
 }
 
-pub async fn update_note(
+pub async fn update_title(
     pool: &SqlitePool,
     user_id: i64,
     id: i64,
     title: &str,
-    body: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE notes_notes SET title = ?, body = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        "UPDATE notes_notes SET title = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
     )
     .bind(title)
-    .bind(body)
     .bind(id)
     .bind(user_id)
     .execute(pool)

@@ -2,18 +2,13 @@ pub mod i18n;
 mod notes;
 pub mod ops;
 pub mod services;
+pub mod sync;
 
-use axum::Router;
+use axum::{Extension, Router};
 use myapps_core::i18n::Lang;
 use myapps_core::layout::NavItem;
 use myapps_core::registry::{App, AppInfo};
 use myapps_core::routes::AppState;
-
-/// Notes sub-application router.
-/// All routes are relative — the top-level router nests this under `/notes`.
-pub fn router() -> Router<AppState> {
-    Router::new().merge(notes::routes())
-}
 
 pub fn notes_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
@@ -40,7 +35,23 @@ pub fn notes_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     ]
 }
 
-pub struct NotesApp;
+pub struct NotesApp {
+    rooms: sync::Rooms,
+}
+
+impl Default for NotesApp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl NotesApp {
+    pub fn new() -> Self {
+        Self {
+            rooms: sync::new_rooms(),
+        }
+    }
+}
 
 impl App for NotesApp {
     fn info(&self) -> AppInfo {
@@ -73,7 +84,10 @@ impl App for NotesApp {
     }
 
     fn router(&self) -> Router<AppState> {
-        router()
+        Router::new()
+            .merge(notes::routes())
+            .merge(sync::routes())
+            .layer(Extension(self.rooms.clone()))
     }
 
     fn commands(&self) -> Vec<myapps_core::command::CommandAction> {
@@ -116,5 +130,13 @@ impl App for NotesApp {
     ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
     {
         Some(Box::pin(services::seed::run(pool, user_id, self)))
+    }
+
+    fn on_serve(
+        &self,
+        pool: sqlx::SqlitePool,
+        _config: std::sync::Arc<myapps_core::config::Config>,
+    ) {
+        sync::spawn_eviction_task(self.rooms.clone(), pool);
     }
 }

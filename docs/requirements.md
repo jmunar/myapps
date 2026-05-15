@@ -413,31 +413,60 @@ and voice dictation support.
 
 #### Implemented
 
-- **WYSIWYG Markdown editor** — contenteditable editor that converts Markdown
-  syntax on the fly. Typing `# ` + Enter becomes a heading, `---` becomes a
-  horizontal rule, triple backticks open a code block, `- ` starts a list,
-  `> ` starts a blockquote. Bold, italic, inline code, and links are rendered
-  in the editor. Server-side Markdown→HTML pre-rendering for initial page load.
-- **Task checkboxes** — Markdown task items (`- [ ]` / `- [x]`) render as real
-  `<input type="checkbox">` elements. Clicking a checkbox toggles the task and
-  saves immediately. Typing `[ ] ` or `[x] ` at the start of a list item
-  converts it to a task item; pressing Enter inside a task item continues the
-  task list.
-- **Note CRUD** — create, edit, save, and delete notes. Title and body stored
-  separately; untitled notes show a placeholder.
-- **Auto-save** — notes auto-save every 30 seconds via background fetch. Cmd/Ctrl+S
-  triggers an immediate save.
+- **WYSIWYG Markdown editor** — Tiptap editor (StarterKit + Link + TaskList +
+  TaskItem + Collaboration + tiptap-markdown) mounted into `#notes-editor`.
+  Typed/pasted markdown is parsed on input and round-trips back to markdown
+  on read, with a small set of cosmetic transformations (blank lines around
+  block elements, normalized bullet markers, task items serialized as `[x]` /
+  `[ ]` without the leading `-`). The legacy `- [x]` / `- [ ]` form is still
+  accepted on parse for backwards compatibility.
+- **Task checkboxes** — Markdown task items render as real `<input
+  type="checkbox">` elements. Checking/unchecking persists immediately.
+- **Local-first sync (Yjs CRDT)** — body content lives in a Yjs document. Per
+  note, a `Y.Doc` is persisted client-side to IndexedDB and shipped between
+  peers through a per-note WebSocket relay (`/notes/{uuid}/ws`). Offline
+  edits queue locally and converge with the server on reconnect; multiple
+  devices editing the same note simultaneously merge without conflicts.
+- **Update-log compaction** — the server's append-only
+  `notes_note_updates` table is snapshotted into a single row when a room has
+  zero subscribers and has been idle for ≥60s, so storage doesn't grow
+  monotonically with edits.
+- **Offline editor shell (PWA)** — service worker caches the editor HTML, the
+  vendored Yjs + Tiptap bundle (~600 KB), and the bootstrap so previously
+  visited notes open offline; the cache keys versioned-URLs and rotates on
+  every `STATIC_VERSION` bump.
+- **Note CRUD** — create, edit, and delete notes. Both title and body live
+  in the CRDT and sync over the WebSocket; there is no `Save` button. The
+  title input is bound two-way to a `Y.Text('title')` field with caret +
+  IME handling, and pressing Enter focuses the editor body. Untitled notes
+  show a placeholder.
 - **Pin notes** — pin important notes so they appear at the top of the list.
-- **Voice dictation** — when whisper.cpp is configured, a dictate button records
-  audio, transcribes it server-side, and inserts the text at the cursor position.
-- **Note list** — grid of note cards showing title, preview text, date, and pinned
-  badge. Pinned notes sort first, then by last updated.
-- **Seed data** — `cargo run -- seed --user <name>` populates 4 demo notes with
-  rich Markdown content (headings, code blocks, lists, blockquotes, links).
-- **Integration tests** — 10 tests covering auth, CRUD, pin toggle, empty state,
-  and seeded data rendering.
+  Pin state is server-side (not in the CRDT) and toggled via a dedicated
+  form POST.
+- **Voice dictation** — when whisper.cpp is configured, a dictate button
+  records audio, transcribes it server-side, and `editor.commands
+  .insertContent` inserts the text at the cursor; the CRDT propagates the
+  edit to other peers.
+- **Note list** — grid of note cards showing title, preview text, date, and
+  pinned badge. Pinned notes sort first, then by last updated.
+- **List-view denorm kept fresh** — the bootstrap POSTs the current title
+  and rendered markdown back to `/notes/{id}/denorm` on a 3 s debounce
+  after typing, on `pagehide`, and on `visibilitychange` (sendBeacon,
+  best-effort). The endpoint updates `notes_notes.title`/`body` +
+  `updated_at`, scoped to the owner.
+- **Seed data** — `cargo run -- seed --user <name>` is currently a no-op
+  for Notes (clears existing notes, inserts none). Producing realistic
+  seed bodies requires a Rust-side Markdown→ProseMirror→Yjs serializer
+  that doesn't exist yet (see backlog).
+- **Integration tests** — 41 tests covering auth, CRUD, pin toggle, empty
+  state, the WebSocket sync handshake, two-client convergence on body and
+  title, idle-eviction compaction, and corrupted-update-row tolerance.
 
 #### Not yet implemented
 - **Note sharing** — share notes with other users of the app.
 - **Full-text search** — search notes by content.
 - **Folders/tags** — organize notes into categories.
+- **Markdown→ProseMirror→Yjs serializer (Rust)** — needed to seed realistic
+  demo bodies as CRDT update blobs (vs. plain `notes_notes.body` columns
+  that the Tiptap editor would render as empty). Same blocker would
+  unlock migrating any future pre-CRDT note bodies into the CRDT.

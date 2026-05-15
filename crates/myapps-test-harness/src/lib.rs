@@ -73,7 +73,11 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
 
     let app = myapps_core::routes::build_router(pool.clone(), app_pools, config, apps);
 
+    // http_transport (over a random local port) is required for WebSocket
+    // upgrades to flow through axum's WebSocketUpgrade extractor; the default
+    // mock transport drops the upgrade state.
     let server = TestServer::builder()
+        .http_transport()
         .save_cookies()
         .expect_success_by_default()
         .build(app);
