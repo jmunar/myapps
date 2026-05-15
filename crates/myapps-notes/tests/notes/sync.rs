@@ -149,6 +149,64 @@ async fn ws_two_clients_converge_on_same_note() {
 }
 
 #[tokio::test]
+async fn ws_two_clients_converge_on_title() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    let uuid = "44444444444444444444444444444444";
+    sqlx::query(
+        "INSERT INTO notes_notes (user_id, client_uuid, title, body) VALUES (1, ?, '', '')",
+    )
+    .bind(uuid)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let mut a = app
+        .server
+        .get_websocket(&format!("/notes/{uuid}/ws"))
+        .expect_failure()
+        .await
+        .into_websocket()
+        .await;
+    let _ = a.receive_bytes().await;
+
+    let mut b = app
+        .server
+        .get_websocket(&format!("/notes/{uuid}/ws"))
+        .expect_failure()
+        .await
+        .into_websocket()
+        .await;
+    let _ = b.receive_bytes().await;
+
+    // Peer A mutates the `title` Y.Text and broadcasts the update.
+    let a_doc = Doc::new();
+    let a_title = a_doc.get_or_insert_text("title");
+    let update_bytes = {
+        let mut txn = a_doc.transact_mut();
+        a_title.insert(&mut txn, 0, "Hello, world");
+        txn.encode_update_v1()
+    };
+    a.send_message(WsMessage::Binary(encode_update(update_bytes).into()))
+        .await;
+
+    // Peer B receives the broadcast and applies it to its own doc.
+    let bytes = b.receive_bytes().await;
+    let SyncWrapper::Sync(SyncMessage::Update(received)) = decode(&bytes) else {
+        panic!("expected Update on B, got {:?}", decode(&bytes));
+    };
+    let b_doc = Doc::new();
+    let b_title = b_doc.get_or_insert_text("title");
+    {
+        let mut txn = b_doc.transact_mut();
+        txn.apply_update(Update::decode_v1(&received).unwrap())
+            .unwrap();
+    }
+    assert_eq!(b_title.get_string(&b_doc.transact()), "Hello, world");
+}
+
+#[tokio::test]
 async fn ws_rejects_unknown_uuid() {
     let app = app().await;
     app.login_as("test", "pass").await;

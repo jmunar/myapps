@@ -150,18 +150,88 @@
     ],
   });
 
-  window.notesEditor = { editor, ydoc, ws, indexeddb };
+  const ytitle = ydoc.getText('title');
+  const titleInput = mount.dataset.titleInput
+    ? document.querySelector(mount.dataset.titleInput)
+    : null;
+  if (titleInput) {
+    bindTitleToYText(titleInput, ytitle, editor);
+  }
 
-  wirePreviewFlush(editor, mount.dataset.previewUrl);
+  window.notesEditor = { editor, ydoc, ws, indexeddb, ytitle };
+
+  wireDenormFlush(editor, ytitle, mount.dataset.denormUrl);
   wireDictate(editor);
 
-  // ── Preview flush ─────────────────────────────────────────
-  // The CRDT is the source of truth for the body, but the list view's
-  // preview line is rendered server-side from notes_notes.body. Keep that
-  // column current by POSTing the rendered markdown back on a 3s debounce
-  // (typing pause), pagehide (navigation away / close), and visibilitychange
-  // (tab hidden). All requests use sendBeacon → best-effort, fire-and-forget.
-  function wirePreviewFlush(editor, url) {
+  // ── Title ↔ Y.Text binding ───────────────────────────────
+  // Two-way binding between a plain <input> and a Y.Text. Local edits diff
+  // the input value against the Y.Text and transact only the changed range
+  // (longest-common-prefix/suffix). Remote updates restore the input value
+  // and clamp the caret. IME composition is skipped to avoid scrambling
+  // mid-composition state. Pressing Enter focuses the editor body, since
+  // there's no form to submit anymore.
+  function bindTitleToYText(input, ytext, editor) {
+    input.value = ytext.toString();
+    let composing = false;
+    let applyingRemote = false;
+
+    const syncLocalToYText = () => {
+      if (composing || applyingRemote) return;
+      const next = input.value;
+      const prev = ytext.toString();
+      if (next === prev) return;
+      let start = 0;
+      const minLen = Math.min(prev.length, next.length);
+      while (start < minLen && prev[start] === next[start]) start++;
+      let prevEnd = prev.length;
+      let nextEnd = next.length;
+      while (prevEnd > start && nextEnd > start && prev[prevEnd - 1] === next[nextEnd - 1]) {
+        prevEnd--;
+        nextEnd--;
+      }
+      ydoc.transact(() => {
+        if (prevEnd > start) ytext.delete(start, prevEnd - start);
+        if (nextEnd > start) ytext.insert(start, next.slice(start, nextEnd));
+      }, 'local-title-input');
+    };
+
+    input.addEventListener('compositionstart', () => { composing = true; });
+    input.addEventListener('compositionend', () => {
+      composing = false;
+      syncLocalToYText();
+    });
+    input.addEventListener('input', syncLocalToYText);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        editor.commands.focus();
+      }
+    });
+
+    ytext.observe((_event, transaction) => {
+      if (transaction.origin === 'local-title-input') return;
+      const next = ytext.toString();
+      if (input.value === next) return;
+      const isFocused = document.activeElement === input;
+      const savedStart = isFocused ? input.selectionStart : null;
+      const savedEnd = isFocused ? input.selectionEnd : null;
+      applyingRemote = true;
+      input.value = next;
+      applyingRemote = false;
+      if (isFocused) {
+        const clamp = (n) => Math.max(0, Math.min(next.length, n ?? 0));
+        input.setSelectionRange(clamp(savedStart), clamp(savedEnd));
+      }
+    });
+  }
+
+  // ── Denorm flush ─────────────────────────────────────────
+  // CRDT is the source of truth for title and body; the list view renders
+  // notes_notes.{title,body} server-side. Keep those columns fresh by
+  // POSTing the current values on a 3s debounce (typing pause), pagehide
+  // (navigation away / close), and visibilitychange (tab hidden). All
+  // requests use sendBeacon → best-effort, fire-and-forget.
+  function wireDenormFlush(editor, ytitle, url) {
     if (!url) return;
     let dirty = false;
     let timer = null;
@@ -172,17 +242,20 @@
         const md = (editor.storage.markdown && editor.storage.markdown.getMarkdown())
           || editor.getText() || '';
         const params = new URLSearchParams();
+        params.set('title', ytitle.toString());
         params.set('body', md);
         navigator.sendBeacon(url, params);
       } catch (e) {
-        console.error('notes preview flush failed:', e);
+        console.error('notes denorm flush failed:', e);
       }
     };
-    editor.on('update', () => {
+    const markDirty = () => {
       dirty = true;
       if (timer) clearTimeout(timer);
       timer = setTimeout(flush, 3000);
-    });
+    };
+    editor.on('update', markDirty);
+    ytitle.observe(markDirty);
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') flush();

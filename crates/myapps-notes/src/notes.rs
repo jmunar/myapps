@@ -18,8 +18,7 @@ pub fn routes() -> Router<AppState> {
         .route("/", get(list))
         .route("/new", post(create))
         .route("/{id}/edit", get(edit))
-        .route("/{id}/save", post(save))
-        .route("/{id}/preview", post(preview))
+        .route("/{id}/denorm", post(denorm))
         .route("/{id}/delete", post(delete))
         .route("/{id}/toggle-pin", post(toggle_pin))
         .route("/{id}/dictate", post(dictate))
@@ -194,23 +193,23 @@ async fn edit(
     };
 
     let body = format!(
-        r#"<div class="notes-editor-container">
-            <form method="POST" action="{base}/notes/{id}/save" id="notes-form">
-                <div class="notes-editor-toolbar">
-                    <input type="text" name="title" value="{title}" placeholder="{untitled}"
-                           class="notes-title-input" autocomplete="off">
-                    <div class="notes-editor-actions">
-                        {dictate_btn}
-                        <button type="submit" formaction="{base}/notes/{id}/toggle-pin" class="btn btn-secondary">{pin_label}</button>
-                        <button type="submit" class="btn btn-primary">{save}</button>
-                        <a href="{base}/notes" class="btn btn-secondary">{back}</a>
-                    </div>
+        r##"<div class="notes-editor-container">
+            <div class="notes-editor-toolbar">
+                <input type="text" id="notes-title-input" placeholder="{untitled}"
+                       class="notes-title-input" autocomplete="off">
+                <div class="notes-editor-actions">
+                    {dictate_btn}
+                    <form method="POST" action="{base}/notes/{id}/toggle-pin" class="notes-pin-form">
+                        <button type="submit" class="btn btn-secondary">{pin_label}</button>
+                    </form>
+                    <a href="{base}/notes" class="btn btn-secondary">{back}</a>
                 </div>
-            </form>
+            </div>
             <div class="notes-editor-body">
                 <div id="notes-editor" class="notes-markdown-editor"
                      data-base="{base}" data-client-uuid="{uuid}"
-                     data-preview-url="{base}/notes/{id}/preview"></div>
+                     data-denorm-url="{base}/notes/{id}/denorm"
+                     data-title-input="#notes-title-input"></div>
             </div>
             <form method="POST" action="{base}/notes/{id}/delete" class="notes-delete-form"
                   onsubmit="return confirm('{delete_confirm}')">
@@ -218,12 +217,10 @@ async fn edit(
             </form>
         </div>
         <script src="{base}/static/notes-vendor.bundle.js?v={sv}"></script>
-        <script src="{base}/static/notes-tiptap-bootstrap.js?v={sv}"></script>"#,
+        <script src="{base}/static/notes-tiptap-bootstrap.js?v={sv}"></script>"##,
         id = note.id,
         uuid = html_attr_escape(&note.client_uuid),
-        title = html_attr_escape(&note.title),
         untitled = t.untitled,
-        save = t.save,
         back = t.back,
         delete = t.delete,
         delete_confirm = t.delete_confirm,
@@ -246,42 +243,26 @@ async fn edit(
 }
 
 #[derive(Deserialize)]
-struct SaveForm {
+struct DenormForm {
     title: String,
-}
-
-async fn save(
-    state: axum::extract::State<AppState>,
-    Extension(user_id): Extension<UserId>,
-    Path(id): Path<i64>,
-    Form(form): Form<SaveForm>,
-) -> impl IntoResponse {
-    let base = &state.config.base_path;
-    super::ops::update_title(&state.pool, user_id.0, id, form.title.trim())
-        .await
-        .ok();
-    Redirect::to(&format!("{base}/notes/{id}/edit"))
-}
-
-#[derive(Deserialize)]
-struct PreviewForm {
     body: String,
 }
 
-// Denormalises the current Tiptap markdown back into `notes_notes.body` so the
-// list-view preview stays fresh. The CRDT is the source of truth for the body;
-// this column exists only for the unauthenticated list render that can't
-// realistically replay every Y.Doc on each request. The bootstrap calls this
-// on a debounced timer + pagehide + visibilitychange (sendBeacon best-effort).
-async fn preview(
+// Denormalises the current CRDT state back into `notes_notes.title`/`body` so
+// the list view stays fresh. The CRDT is the source of truth for both; these
+// columns exist only for the list render that can't realistically replay every
+// Y.Doc on each request. The bootstrap calls this on a debounced timer +
+// pagehide + visibilitychange (sendBeacon best-effort).
+async fn denorm(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
     Path(id): Path<i64>,
-    Form(form): Form<PreviewForm>,
+    Form(form): Form<DenormForm>,
 ) -> StatusCode {
     match sqlx::query(
-        "UPDATE notes_notes SET body = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+        "UPDATE notes_notes SET title = ?, body = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
     )
+    .bind(form.title.trim())
     .bind(&form.body)
     .bind(id)
     .bind(user_id.0)
@@ -290,7 +271,7 @@ async fn preview(
     {
         Ok(_) => StatusCode::NO_CONTENT,
         Err(e) => {
-            tracing::warn!("notes preview update failed for id={id}: {e:#}");
+            tracing::warn!("notes denorm update failed for id={id}: {e:#}");
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
