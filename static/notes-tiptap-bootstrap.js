@@ -152,7 +152,42 @@
 
   window.notesEditor = { editor, ydoc, ws, indexeddb };
 
+  wirePreviewFlush(editor, mount.dataset.previewUrl);
   wireDictate(editor);
+
+  // ── Preview flush ─────────────────────────────────────────
+  // The CRDT is the source of truth for the body, but the list view's
+  // preview line is rendered server-side from notes_notes.body. Keep that
+  // column current by POSTing the rendered markdown back on a 3s debounce
+  // (typing pause), pagehide (navigation away / close), and visibilitychange
+  // (tab hidden). All requests use sendBeacon → best-effort, fire-and-forget.
+  function wirePreviewFlush(editor, url) {
+    if (!url) return;
+    let dirty = false;
+    let timer = null;
+    const flush = () => {
+      if (!dirty) return;
+      dirty = false;
+      try {
+        const md = (editor.storage.markdown && editor.storage.markdown.getMarkdown())
+          || editor.getText() || '';
+        const params = new URLSearchParams();
+        params.set('body', md);
+        navigator.sendBeacon(url, params);
+      } catch (e) {
+        console.error('notes preview flush failed:', e);
+      }
+    };
+    editor.on('update', () => {
+      dirty = true;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(flush, 3000);
+    });
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flush();
+    });
+  }
 
   // ── Dictation ─────────────────────────────────────────────
   // Records audio via MediaRecorder, POSTs the blob to the dictate

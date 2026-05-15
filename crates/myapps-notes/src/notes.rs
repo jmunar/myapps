@@ -1,6 +1,7 @@
 use axum::{
     Extension, Form, Router,
     extract::Path,
+    http::StatusCode,
     response::{Html, IntoResponse, Redirect},
     routing::{get, post},
 };
@@ -18,6 +19,7 @@ pub fn routes() -> Router<AppState> {
         .route("/new", post(create))
         .route("/{id}/edit", get(edit))
         .route("/{id}/save", post(save))
+        .route("/{id}/preview", post(preview))
         .route("/{id}/delete", post(delete))
         .route("/{id}/toggle-pin", post(toggle_pin))
         .route("/{id}/dictate", post(dictate))
@@ -207,7 +209,8 @@ async fn edit(
             </form>
             <div class="notes-editor-body">
                 <div id="notes-editor" class="notes-markdown-editor"
-                     data-base="{base}" data-client-uuid="{uuid}"></div>
+                     data-base="{base}" data-client-uuid="{uuid}"
+                     data-preview-url="{base}/notes/{id}/preview"></div>
             </div>
             <form method="POST" action="{base}/notes/{id}/delete" class="notes-delete-form"
                   onsubmit="return confirm('{delete_confirm}')">
@@ -258,6 +261,39 @@ async fn save(
         .await
         .ok();
     Redirect::to(&format!("{base}/notes/{id}/edit"))
+}
+
+#[derive(Deserialize)]
+struct PreviewForm {
+    body: String,
+}
+
+// Denormalises the current Tiptap markdown back into `notes_notes.body` so the
+// list-view preview stays fresh. The CRDT is the source of truth for the body;
+// this column exists only for the unauthenticated list render that can't
+// realistically replay every Y.Doc on each request. The bootstrap calls this
+// on a debounced timer + pagehide + visibilitychange (sendBeacon best-effort).
+async fn preview(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(id): Path<i64>,
+    Form(form): Form<PreviewForm>,
+) -> StatusCode {
+    match sqlx::query(
+        "UPDATE notes_notes SET body = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+    )
+    .bind(&form.body)
+    .bind(id)
+    .bind(user_id.0)
+    .execute(&state.pool)
+    .await
+    {
+        Ok(_) => StatusCode::NO_CONTENT,
+        Err(e) => {
+            tracing::warn!("notes preview update failed for id={id}: {e:#}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
 }
 
 async fn delete(

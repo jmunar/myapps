@@ -401,6 +401,82 @@ async fn save_note() {
 }
 
 #[tokio::test]
+async fn preview_endpoint_updates_body_and_refreshes_list() {
+    let app = app().await;
+    app.seed_and_login(&NotesApp::new()).await;
+
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM notes_notes WHERE title = 'Rust Tips' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let r = app
+        .server
+        .post(&format!("/notes/{id}/preview"))
+        .form(&serde_json::json!({
+            "body": "# Heading\n\nFreshly synced preview line",
+        }))
+        .await;
+    assert_eq!(r.status_code(), 204);
+
+    let (body,): (String,) = sqlx::query_as("SELECT body FROM notes_notes WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(body, "# Heading\n\nFreshly synced preview line");
+
+    // The list view's preview extraction (first non-empty non-heading line)
+    // should now show the new content.
+    let list = app.server.get("/notes").await;
+    assert!(
+        list.text().contains("Freshly synced preview line"),
+        "list view should render the freshly-synced preview text"
+    );
+}
+
+#[tokio::test]
+async fn preview_endpoint_scopes_to_owner() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    // A second user (raw insert — we never authenticate as them, just need a
+    // row in `users` to satisfy the FK on `notes_notes.user_id`).
+    sqlx::query("INSERT INTO users (username, password_hash) VALUES ('other', 'irrelevant')")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    let (other_uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'other'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let (other_note,): (i64,) = sqlx::query_as(
+        "INSERT INTO notes_notes (user_id, client_uuid, title, body) VALUES (?, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'Theirs', 'orig') RETURNING id",
+    )
+    .bind(other_uid)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    // Logged in as `test`; POSTing a preview for the other user's note must
+    // be a no-op (WHERE user_id = ? matches zero rows).
+    let r = app
+        .server
+        .post(&format!("/notes/{other_note}/preview"))
+        .form(&serde_json::json!({ "body": "hijacked" }))
+        .await;
+    assert_eq!(r.status_code(), 204);
+
+    let (body,): (String,) = sqlx::query_as("SELECT body FROM notes_notes WHERE id = ?")
+        .bind(other_note)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(body, "orig", "must not overwrite another user's body");
+}
+
+#[tokio::test]
 async fn delete_note() {
     let app = app().await;
     app.seed_and_login(&NotesApp::new()).await;

@@ -445,6 +445,10 @@ and voice dictation support.
   edit to other peers.
 - **Note list** — grid of note cards showing title, preview text, date, and
   pinned badge. Pinned notes sort first, then by last updated.
+- **List-view preview kept fresh** — the bootstrap POSTs the current markdown
+  back to `/notes/{id}/preview` on a 3 s debounce after typing, on
+  `pagehide`, and on `visibilitychange` (sendBeacon, best-effort). The
+  endpoint updates `notes_notes.body` + `updated_at`, scoped to the owner.
 - **Seed data** — `cargo run -- seed --user <name>` populates 4 demo notes
   with rich Markdown content (headings, code blocks, lists, blockquotes,
   links).
@@ -456,14 +460,6 @@ and voice dictation support.
 - **Note sharing** — share notes with other users of the app.
 - **Full-text search** — search notes by content.
 - **Folders/tags** — organize notes into categories.
-- **Keep the list-view preview fresh after CRDT edits** — once a note is
-  edited via the Tiptap editor, `notes_notes.body` (the column the list view
-  reads for its preview line) no longer reflects the current content.
-  Options: (a) the bootstrap POSTs the current markdown to a
-  `/notes/{id}/denormalize-body` endpoint on `visibilitychange` /
-  `beforeunload`; (b) port `tiptap-markdown`'s ProseMirror→markdown
-  serializer to Rust and run it during idle eviction. (a) is cheaper; (b) is
-  always-on.
 - **Migrate pre-CRDT note bodies into the CRDT** — notes created before this
   feature shipped open as empty in the Tiptap editor (the markdown stays in
   `notes_notes.body` for the list preview but isn't replayed into the
