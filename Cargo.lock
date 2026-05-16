@@ -2077,7 +2077,7 @@ dependencies = [
  "dotenvy",
  "hex",
  "libsqlite3-sys",
- "rand 0.9.4",
+ "rand 0.10.1",
  "rand_core 0.6.4",
  "reqwest",
  "serde",
