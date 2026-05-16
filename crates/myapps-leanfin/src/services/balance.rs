@@ -28,7 +28,9 @@ pub fn date_from_timestamp(ts: &str) -> &str {
     if ts.len() >= 10 { &ts[..10] } else { ts }
 }
 
-/// Insert (or replace same-day duplicate) a balance snapshot.
+/// Insert a balance snapshot, or update the existing row for the same
+/// (account, balance_type, date). Keeping the row id stable across same-day
+/// re-syncs preserves the snapshot_id link on previously inserted transactions.
 pub async fn record_balance_snapshot(
     pool: &SqlitePool,
     account_id: i64,
@@ -38,29 +40,22 @@ pub async fn record_balance_snapshot(
 ) -> Result<i64> {
     let date = date_from_timestamp(timestamp);
 
-    // Remove existing snapshot for same account + type + day, then insert.
-    sqlx::query(
-        "DELETE FROM leanfin_balance_snapshots WHERE account_id = ? AND balance_type = ? AND date = ?",
-    )
-    .bind(account_id)
-    .bind(balance_type)
-    .bind(date)
-    .execute(pool)
-    .await?;
-
-    let result = sqlx::query(
+    let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type)
-           VALUES (?, ?, ?, ?, ?)"#,
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(account_id, balance_type, date)
+           DO UPDATE SET timestamp = excluded.timestamp, balance = excluded.balance
+           RETURNING id"#,
     )
     .bind(account_id)
     .bind(timestamp)
     .bind(date)
     .bind(balance)
     .bind(balance_type)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
 
-    Ok(result.last_insert_rowid())
+    Ok(id)
 }
 
 /// Compare previous ITAV balance + new transactions (linked to this snapshot)
