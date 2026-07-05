@@ -54,6 +54,18 @@ pub enum Command {
         #[arg(long, default_value = "7")]
         days: i64,
     },
+    /// One-off backfill: re-sync app data for a user with a wider lookback window
+    Backfill {
+        /// Username to backfill (must already exist)
+        #[arg(long)]
+        user: String,
+        /// App key to backfill (e.g. leanfin). Omit to backfill all apps.
+        #[arg(long)]
+        app: Option<String>,
+        /// Number of days to look back
+        #[arg(long, default_value = "90")]
+        days: i64,
+    },
 }
 
 /// Load `.env` files and initialise the tracing subscriber.
@@ -181,8 +193,60 @@ pub async fn run(
             let count = crate::auth::cleanup_inactive_users(&pool, days).await?;
             tracing::info!("Deleted {count} inactive users (>{days} days)");
         }
+        Command::Backfill { user, app, days } => {
+            let app_pools = create_app_pools(&config.database_url, &deployed).await?;
+            run_backfill(
+                &pool,
+                &app_pools,
+                &config,
+                &deployed,
+                &user,
+                app.as_deref(),
+                days,
+            )
+            .await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn run_backfill(
+    pool: &SqlitePool,
+    app_pools: &HashMap<&'static str, SqlitePool>,
+    config: &Config,
+    apps: &[Box<dyn App>],
+    user: &str,
+    app_key: Option<&str>,
+    days: i64,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(days > 0, "--days must be positive");
+
+    let user_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = ?")
+        .bind(user)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("User '{user}' not found"))?;
+
+    let targets: Vec<&dyn App> = match app_key {
+        Some(key) => match apps.iter().find(|a| a.info().key == key) {
+            Some(a) => vec![a.as_ref()],
+            None => anyhow::bail!("Unknown app '{key}'"),
+        },
+        None => apps.iter().map(|a| a.as_ref()).collect(),
+    };
+
+    for a in &targets {
+        let key = a.info().key;
+        let scoped = app_pools.get(key).unwrap_or(pool);
+        if let Some(fut) = a.backfill(scoped, config, user_id, days) {
+            tracing::info!("Running {days}-day backfill for {key} (user '{user}')");
+            if let Err(e) = fut.await {
+                tracing::error!("Backfill failed for {key}: {e:#}");
+            }
+        }
+    }
+    tracing::info!("Backfill complete for user '{user}'");
     Ok(())
 }
 

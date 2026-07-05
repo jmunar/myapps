@@ -459,3 +459,92 @@ pub async fn get_balances(
         serde_json::from_str(&text).context("failed to parse balances response")?;
     Ok(data.balances)
 }
+
+/// Persist a re-authorized bank session onto existing account rows.
+///
+/// A single bank consent covers ALL of the bank's accounts, and Enable Banking
+/// rotates the per-account `uid` on every new session — so the UIDs returned here
+/// never match what we previously stored and cannot be used as the match key.
+/// We match on the IBAN (stable across sessions) instead, and refresh every account
+/// the session returned, not just the one whose "re-authorize" button was clicked,
+/// so no sibling account of the same bank is left with a stale/expired session.
+///
+/// Returns the number of account rows updated.
+pub async fn apply_reauth_session(
+    pool: &SqlitePool,
+    user_id: i64,
+    reauth_account_id: i64,
+    session_id: &str,
+    expires_at: chrono::NaiveDateTime,
+    accounts: &[SessionAccount],
+) -> u64 {
+    let mut updated = 0u64;
+    let mut unmatched: Vec<&SessionAccount> = Vec::new();
+
+    for account in accounts {
+        let iban = account
+            .account_id
+            .as_ref()
+            .and_then(|id| id.iban.as_deref());
+
+        let matched = match iban {
+            Some(iban) => {
+                let result = sqlx::query(
+                    "UPDATE leanfin_accounts SET session_id = ?, account_uid = ?, session_expires_at = ? WHERE user_id = ? AND account_type = 'bank' AND iban = ?",
+                )
+                .bind(session_id)
+                .bind(&account.uid)
+                .bind(expires_at)
+                .bind(user_id)
+                .bind(iban)
+                .execute(pool)
+                .await;
+
+                match result {
+                    Ok(r) => {
+                        updated += r.rows_affected();
+                        r.rows_affected() > 0
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to update account {}: {e}", account.uid);
+                        false
+                    }
+                }
+            }
+            None => false,
+        };
+
+        if !matched {
+            unmatched.push(account);
+        }
+    }
+
+    // Fallback for a row that has no stored IBAN to match on (e.g. an older link
+    // where the bank didn't return one): update the specific account that was
+    // reauthed, using the first session account we couldn't otherwise place.
+    // COALESCE keeps any existing IBAN rather than overwriting it.
+    if updated == 0
+        && let Some(first) = unmatched.first()
+    {
+        let iban = first.account_id.as_ref().and_then(|id| id.iban.as_deref());
+        match sqlx::query(
+            "UPDATE leanfin_accounts SET session_id = ?, account_uid = ?, iban = COALESCE(iban, ?), session_expires_at = ? WHERE id = ? AND user_id = ?",
+        )
+        .bind(session_id)
+        .bind(&first.uid)
+        .bind(iban)
+        .bind(expires_at)
+        .bind(reauth_account_id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        {
+            Ok(r) => updated += r.rows_affected(),
+            Err(e) => {
+                tracing::error!("Reauth fallback failed for account {reauth_account_id}: {e}")
+            }
+        }
+    }
+
+    updated
+}

@@ -319,6 +319,157 @@ async fn archived_account_not_synced() {
     );
 }
 
+// ── Re-authorization tests ──────────────────────────────────────
+
+/// Regression for BUG-90: re-authorizing a bank with two accounts must keep each
+/// account's own IBAN and refresh *both* siblings' sessions. The old code matched
+/// on the rotating `account_uid` (never matches on re-auth) and then copied
+/// `session.accounts.first()`'s uid+IBAN onto only the single reauthed row — which
+/// collapsed both accounts onto the same IBAN and left the sibling expired.
+#[tokio::test]
+async fn reauth_keeps_ibans_distinct_and_refreshes_both_siblings() {
+    use myapps_leanfin::services::enable_banking::{self, AccountId, SessionAccount};
+
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    const IBAN_A: &str = "ES11 1111 1111 1111 1111 1111";
+    const IBAN_B: &str = "ES22 2222 2222 2222 2222 2222";
+
+    // Two accounts from the SAME bank, both with expired sessions and stale UIDs.
+    for (iban, uid) in [(IBAN_A, "old_uid_a"), (IBAN_B, "old_uid_b")] {
+        sqlx::query(
+            "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type) VALUES (1, 'TwinBank', 'ES', ?, 'old_sess', ?, '2020-01-01T00:00:00Z', 'bank')",
+        )
+        .bind(iban)
+        .bind(uid)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+    }
+
+    let (reauth_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts WHERE iban = ?")
+        .bind(IBAN_A)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    // The bank returns both accounts with FRESH (rotated) UIDs. Order is reversed
+    // vs. the DB to exercise the previous "first account wins" bug.
+    let new_expiry = (chrono::Utc::now() + chrono::Duration::days(90)).naive_utc();
+    let session_accounts = vec![
+        SessionAccount {
+            uid: "new_uid_b".into(),
+            account_id: Some(AccountId {
+                iban: Some(IBAN_B.into()),
+            }),
+        },
+        SessionAccount {
+            uid: "new_uid_a".into(),
+            account_id: Some(AccountId {
+                iban: Some(IBAN_A.into()),
+            }),
+        },
+    ];
+
+    let updated = enable_banking::apply_reauth_session(
+        &app.pool,
+        1,
+        reauth_id,
+        "new_sess",
+        new_expiry,
+        &session_accounts,
+    )
+    .await;
+    assert_eq!(updated, 2, "both sibling accounts should be refreshed");
+
+    // Each account keeps its own IBAN and gets the matching fresh UID + session.
+    let rows: Vec<(String, String, String, chrono::NaiveDateTime)> = sqlx::query_as(
+        "SELECT iban, account_uid, session_id, session_expires_at FROM leanfin_accounts WHERE bank_name = 'TwinBank' ORDER BY iban",
+    )
+    .fetch_all(&app.pool)
+    .await
+    .unwrap();
+
+    let now = chrono::Utc::now().naive_utc();
+    assert_eq!(rows.len(), 2);
+    let (iban_a, uid_a, sess_a, exp_a) = &rows[0];
+    let (iban_b, uid_b, sess_b, exp_b) = &rows[1];
+
+    assert_eq!(iban_a, IBAN_A, "account A must keep its own IBAN");
+    assert_eq!(iban_b, IBAN_B, "account B must keep its own IBAN");
+    assert_ne!(iban_a, iban_b, "the two accounts must not share an IBAN");
+    assert_eq!(
+        uid_a, "new_uid_a",
+        "account A should get its matched fresh UID"
+    );
+    assert_eq!(
+        uid_b, "new_uid_b",
+        "account B should get its matched fresh UID"
+    );
+    assert_eq!(sess_a, "new_sess");
+    assert_eq!(sess_b, "new_sess");
+    assert!(*exp_a > now, "account A should no longer be expired");
+    assert!(
+        *exp_b > now,
+        "account B (sibling) should no longer be expired"
+    );
+}
+
+/// When an existing row has no stored IBAN to match on, the fallback should still
+/// re-authorize the reauthed account (and fill in the IBAN) without erroring.
+#[tokio::test]
+async fn reauth_fallback_updates_account_without_stored_iban() {
+    use myapps_leanfin::services::enable_banking::{self, AccountId, SessionAccount};
+
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    sqlx::query(
+        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, account_type) VALUES (1, 'NoIbanBank', 'ES', NULL, 'old_sess', 'old_uid', '2020-01-01T00:00:00Z', 'bank')",
+    )
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let (reauth_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'NoIbanBank'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let new_expiry = (chrono::Utc::now() + chrono::Duration::days(90)).naive_utc();
+    let session_accounts = vec![SessionAccount {
+        uid: "fresh_uid".into(),
+        account_id: Some(AccountId {
+            iban: Some("ES99 9999 9999 9999 9999 9999".into()),
+        }),
+    }];
+
+    let updated = enable_banking::apply_reauth_session(
+        &app.pool,
+        1,
+        reauth_id,
+        "new_sess",
+        new_expiry,
+        &session_accounts,
+    )
+    .await;
+    assert_eq!(updated, 1);
+
+    let (iban, uid, exp): (Option<String>, String, chrono::NaiveDateTime) = sqlx::query_as(
+        "SELECT iban, account_uid, session_expires_at FROM leanfin_accounts WHERE id = ?",
+    )
+    .bind(reauth_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    assert_eq!(iban.as_deref(), Some("ES99 9999 9999 9999 9999 9999"));
+    assert_eq!(uid, "fresh_uid");
+    assert!(exp > chrono::Utc::now().naive_utc());
+}
+
 // ── Account coloring tests ──────────────────────────────────────
 
 #[tokio::test]
