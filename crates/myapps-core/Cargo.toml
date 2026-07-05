@@ -17,7 +17,7 @@ reqwest.workspace = true
 uuid.workspace = true
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 argon2 = "0.5"
-rand = "0.9"
+rand = "0.10"
 rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
 hex = "0.4"
 dotenvy = "0.15"
