@@ -86,7 +86,7 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
                 .await;
             }
 
-            match sync_account(pool, config, &creds, account).await {
+            match sync_account(pool, config, &creds, account, None).await {
                 Ok((count, _warning)) => {
                     tracing::info!(
                         "Account '{}': {} new transactions",
@@ -118,11 +118,16 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
 }
 
 /// Returns (inserted_count, optional reconciliation warning).
+///
+/// `lookback_override` forces the transaction fetch window (in days) instead of the
+/// default incremental heuristic; used by the one-off backfill to recover history
+/// gaps that the routine 5-day window would miss.
 async fn sync_account(
     pool: &SqlitePool,
     config: &Config,
     creds: &EnableBankingCredentials,
     account: &Account,
+    lookback_override: Option<i64>,
 ) -> Result<(u64, Option<String>)> {
     let account_uid = &account.account_uid;
 
@@ -186,7 +191,7 @@ async fn sync_account(
     .fetch_one(pool)
     .await?;
 
-    let lookback_days = if has_transactions { 5 } else { 90 };
+    let lookback_days = lookback_override.unwrap_or(if has_transactions { 5 } else { 90 });
     let date_from = (Utc::now() - Duration::days(lookback_days))
         .format("%Y-%m-%d")
         .to_string();
@@ -276,6 +281,27 @@ async fn sync_account(
 
 /// Run sync for a single user's accounts, returning a structured result for UI display.
 pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> SyncResult {
+    run_for_user_inner(pool, config, user_id, None).await
+}
+
+/// One-off backfill: re-sync a single user's accounts forcing a wider `days`
+/// lookback window, to recover history the routine incremental sync skips.
+pub async fn backfill_for_user(
+    pool: &SqlitePool,
+    config: &Config,
+    user_id: i64,
+    days: i64,
+) -> SyncResult {
+    tracing::info!("Starting {days}-day backfill for user {user_id}");
+    run_for_user_inner(pool, config, user_id, Some(days)).await
+}
+
+async fn run_for_user_inner(
+    pool: &SqlitePool,
+    config: &Config,
+    user_id: i64,
+    lookback_override: Option<i64>,
+) -> SyncResult {
     tracing::info!("Starting sync for user {user_id}");
 
     let mut result = SyncResult {
@@ -320,7 +346,7 @@ pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> S
             continue;
         }
 
-        match sync_account(pool, config, &creds, account).await {
+        match sync_account(pool, config, &creds, account, lookback_override).await {
             Ok((count, warning)) => {
                 result.total_new += count;
                 result.accounts_synced += 1;

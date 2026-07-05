@@ -1366,47 +1366,19 @@ async fn callback(
             .unwrap_or_else(|_| (chrono::Utc::now() + chrono::Duration::days(90)).naive_utc());
 
     if let Some(reauth_id) = pending.reauth_account_id {
-        // Re-authorization: update existing accounts that share the same bank session
-        let mut updated = 0u64;
-        for account in &session.accounts {
-            let result = sqlx::query(
-                "UPDATE leanfin_accounts SET session_id = ?, session_expires_at = ? WHERE account_uid = ? AND user_id = ?",
-            )
-            .bind(&session.session_id)
-            .bind(expires_at)
-            .bind(&account.uid)
-            .bind(pending.user_id)
-            .execute(&state.pool)
-            .await;
-
-            match result {
-                Ok(r) => updated += r.rows_affected(),
-                Err(e) => tracing::error!("Failed to update account {}: {e}", account.uid),
-            }
-        }
-
-        // If the specific account wasn't matched by UID (bank may assign new UIDs),
-        // fall back to updating by the reauth account ID directly
-        if updated == 0
-            && let Some(first) = session.accounts.first()
-        {
-            let iban = first.account_id.as_ref().and_then(|id| id.iban.as_deref());
-            let _ = sqlx::query(
-                    "UPDATE leanfin_accounts SET session_id = ?, account_uid = ?, iban = COALESCE(?, iban), session_expires_at = ? WHERE id = ? AND user_id = ?",
-                )
-                .bind(&session.session_id)
-                .bind(&first.uid)
-                .bind(iban)
-                .bind(expires_at)
-                .bind(reauth_id)
-                .bind(pending.user_id)
-                .execute(&state.pool)
-                .await;
-        }
+        let updated = enable_banking::apply_reauth_session(
+            &state.pool,
+            pending.user_id,
+            reauth_id,
+            &session.session_id,
+            expires_at,
+            &session.accounts,
+        )
+        .await;
 
         tracing::info!(
             "Re-authorized {} account(s) from {} for user {}",
-            updated.max(1),
+            updated,
             pending.bank_name,
             pending.user_id
         );

@@ -26,6 +26,8 @@ cargo run -- delete-user --username <name>      # Delete a user and all their da
 cargo run -- delete-user-app-data --username <name>          # Delete all app data (keeps user)
 cargo run -- delete-user-app-data --username <name> --app X  # Delete data for one app
 cargo run -- cleanup-users --days 7             # Delete users inactive >7 days
+cargo run -- backfill --user <name> --days 90        # Re-sync app data with a wider lookback
+cargo run -- backfill --user <name> --app leanfin --days 60   # Backfill one app only
 
 # Makefile shortcuts
 make check                          # fmt-check + clippy + test (same as CI)

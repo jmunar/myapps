@@ -99,4 +99,27 @@ impl App for LeanFinApp {
     {
         Some(Box::pin(services::sync::run(pool, config)))
     }
+
+    fn backfill<'a>(
+        &'a self,
+        pool: &'a sqlx::SqlitePool,
+        config: &'a myapps_core::config::Config,
+        user_id: i64,
+        days: i64,
+    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
+    {
+        Some(Box::pin(async move {
+            let result = services::sync::backfill_for_user(pool, config, user_id, days).await;
+            tracing::info!(
+                "LeanFin backfill: {} new transactions across {} accounts ({} skipped)",
+                result.total_new,
+                result.accounts_synced,
+                result.accounts_skipped,
+            );
+            for err in &result.errors {
+                tracing::warn!("LeanFin backfill: {err}");
+            }
+            Ok(())
+        }))
+    }
 }

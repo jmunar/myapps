@@ -74,6 +74,19 @@ pub trait App: Send + Sync {
         None
     }
 
+    /// One-off backfill invoked by `myapps backfill` — re-sync historical data with a
+    /// wider `days` lookback window than the routine incremental sync. Returns `None`
+    /// if the app has no backfill.
+    fn backfill<'a>(
+        &'a self,
+        _pool: &'a SqlitePool,
+        _config: &'a Config,
+        _user_id: i64,
+        _days: i64,
+    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>> {
+        None
+    }
+
     /// App-specific CSS (embedded at compile time via `include_str!`).
     fn css(&self) -> &'static str {
         ""
