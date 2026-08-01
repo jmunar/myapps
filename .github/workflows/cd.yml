@@ -75,7 +75,7 @@ jobs:
 
       - name: Install cross and sccache
         if: steps.tag_check.outputs.exists == 'false'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.85.4
         with:
           tool: cross,sccache
 
