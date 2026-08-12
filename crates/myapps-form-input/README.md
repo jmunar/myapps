@@ -8,6 +8,7 @@ manage row sets, and capture rows of data with a spreadsheet-style grid.
 <p align="center">
   <img src="../../docs/screenshots/form-input-inputs.png" width="270" alt="Inputs" />
   <img src="../../docs/screenshots/form-input-view.png" width="270" alt="Input view" />
+  <img src="../../docs/screenshots/form-input-row-editing.png" width="270" alt="Adding and deleting rows" />
   <img src="../../docs/screenshots/form-input-row-sets.png" width="270" alt="Row sets" />
   <img src="../../docs/screenshots/form-input-form-types.png" width="270" alt="Form types" />
 </p>

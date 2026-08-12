@@ -98,14 +98,26 @@ test.describe("README screenshots", () => {
     await page.goto(`${BASE_URL}/forms`);
     await snap(page, "form-input-inputs");
 
-    // Open the first input so the spreadsheet view (with the global search
-    // box and per-column sort buttons) is captured.
-    const firstInput = page.locator("table tbody tr td a").first();
-    if (await firstInput.isVisible()) {
-      await firstInput.click();
-      await page.waitForTimeout(300);
-      await snap(page, "form-input-view");
-    }
+    // Open a fixed-row input so the spreadsheet view (with the global search
+    // box, per-column sort buttons and the frozen row-identifier column) is
+    // captured. Named explicitly rather than taken as the first row: the
+    // seeded inputs share a created_at second, so list order is arbitrary.
+    const openInput = async (name: string) => {
+      await page.goto(`${BASE_URL}/forms`);
+      await page.locator("table tbody tr td a", { hasText: name }).first().click();
+      await page.waitForSelector(".ci-input-table");
+    };
+
+    await openInput("Week 10 quiz");
+    await snap(page, "form-input-view");
+
+    // A dynamic input, which additionally carries the row controls: a delete
+    // button per row and the "+ Add row" strip under the grid. Both only
+    // render when the input is not bound to a row set. The delete buttons are
+    // hover-revealed on pointer devices but always shown on touch, which this
+    // mobile viewport emulates.
+    await openInput("March expenses");
+    await snap(page, "form-input-row-editing");
 
     await page.goto(`${BASE_URL}/forms/row-sets`);
     await snap(page, "form-input-row-sets");
