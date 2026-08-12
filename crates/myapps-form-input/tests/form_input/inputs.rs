@@ -987,3 +987,355 @@ async fn edit_form_type_page_reflects_multiline_checkbox_state() {
         "edit page should render a multiline checkbox per existing column, got {total_inputs}"
     );
 }
+
+// ── Row add / delete ────────────────────────────────────────
+
+/// Fetch a seeded input's id by name.
+async fn input_id(app: &myapps_test_harness::TestApp, name: &str) -> i64 {
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM form_input_inputs WHERE name = ? LIMIT 1")
+        .bind(name)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    id
+}
+
+async fn csv_of(app: &myapps_test_harness::TestApp, id: i64) -> String {
+    sqlx::query_scalar("SELECT csv_data FROM form_input_inputs WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn view_page_dynamic_input_renders_row_controls() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    // Assert on markup, not bare class names: the app stylesheet is inlined
+    // into every page, so `ci-add-row-btn` alone matches the CSS rule too.
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(
+        body.contains(r#"id="ci-add-row-btn""#),
+        "add-row strip should render"
+    );
+    // One delete button per data row (the seeded log has 4).
+    assert_eq!(body.matches(r#"class="ci-row-del""#).count(), 4);
+}
+
+#[tokio::test]
+async fn view_page_fixed_row_input_hides_row_controls() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "Week 10 quiz").await;
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(
+        !body.contains(r#"id="ci-add-row-btn""#),
+        "rows of a fixed-row input are owned by its row set"
+    );
+    assert_eq!(body.matches(r#"class="ci-row-del""#).count(), 0);
+}
+
+#[tokio::test]
+async fn add_row_appends_empty_row_and_returns_its_markup() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let before = csv_of(&app, id).await;
+    let rows_before = before.lines().count();
+
+    let response = app.server.post(&format!("/forms/inputs/{id}/rows")).await;
+    assert_eq!(response.status_code(), 200);
+    let fragment = response.text();
+
+    // The response is a single row, addressed at the new CSV line index.
+    let new_row = rows_before; // line 0 is the header
+    assert!(
+        fragment.contains(&format!(r#"data-row="{new_row}""#)),
+        "fragment should carry the new row index, got {fragment}"
+    );
+    assert!(fragment.contains("ci-main-row"));
+    assert!(fragment.contains("ci-row-del"));
+
+    let after = csv_of(&app, id).await;
+    assert_eq!(after.lines().count(), rows_before + 1);
+    // Header has 4 columns, so the appended blank row must too.
+    assert_eq!(after.lines().next_back().unwrap(), ",,,");
+}
+
+#[tokio::test]
+async fn added_row_is_editable_and_persists() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    app.server.post(&format!("/forms/inputs/{id}/rows")).await;
+    let new_row = csv_of(&app, id).await.lines().count() - 1;
+
+    let response = app
+        .server
+        .post(&format!("/forms/inputs/{id}/cell"))
+        .form(&serde_json::json!({ "row": new_row, "col": 0, "value": "Taxi" }))
+        .await;
+    assert_eq!(response.status_code(), 204);
+
+    let csv = csv_of(&app, id).await;
+    assert_eq!(csv.lines().next_back().unwrap(), "Taxi,,,");
+}
+
+#[tokio::test]
+async fn delete_row_removes_it_and_closes_the_gap() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let before = csv_of(&app, id).await;
+    let lines_before: Vec<&str> = before.lines().collect();
+    let third = lines_before[3].to_string();
+
+    // Delete row 2 ("Coffee").
+    let response = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows/delete"))
+        .form(&serde_json::json!({ "row": 2 }))
+        .await;
+    assert_eq!(response.status_code(), 204);
+
+    let after = csv_of(&app, id).await;
+    let lines_after: Vec<&str> = after.lines().collect();
+    assert_eq!(lines_after.len(), lines_before.len() - 1);
+    assert!(!after.contains("Coffee"));
+    // Rows below shift up — the client re-indexes to match.
+    assert_eq!(lines_after[2], third);
+    // Untouched rows are unchanged.
+    assert_eq!(lines_after[0], lines_before[0]);
+    assert_eq!(lines_after[1], lines_before[1]);
+}
+
+#[tokio::test]
+async fn delete_row_rejects_header_row() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let response = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows/delete"))
+        .form(&serde_json::json!({ "row": 0 }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 400);
+}
+
+#[tokio::test]
+async fn delete_row_rejects_out_of_range() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let response = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows/delete"))
+        .form(&serde_json::json!({ "row": 9999 }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 400);
+}
+
+#[tokio::test]
+async fn row_endpoints_reject_fixed_row_inputs() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "Week 10 quiz").await;
+    let before = csv_of(&app, id).await;
+
+    let add = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows"))
+        .expect_failure()
+        .await;
+    assert_eq!(add.status_code(), 400);
+
+    let del = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows/delete"))
+        .form(&serde_json::json!({ "row": 1 }))
+        .expect_failure()
+        .await;
+    assert_eq!(del.status_code(), 400);
+
+    assert_eq!(
+        csv_of(&app, id).await,
+        before,
+        "a rejected request must not touch the stored CSV"
+    );
+}
+
+#[tokio::test]
+async fn row_endpoints_reject_other_users_input() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    // Seed as one user, log in as another
+    let owner_uid = myapps_core::auth::create_user(&app.pool, "owner", "owner")
+        .await
+        .unwrap();
+    myapps_form_input::services::seed::run(&app.pool, owner_uid, &myapps_form_input::FormInputApp)
+        .await
+        .unwrap();
+    app.login_as("test", "pass").await;
+
+    let id = input_id(&app, "March expenses").await;
+    let before = csv_of(&app, id).await;
+
+    let add = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows"))
+        .expect_failure()
+        .await;
+    assert_eq!(add.status_code(), 404);
+
+    let del = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows/delete"))
+        .form(&serde_json::json!({ "row": 1 }))
+        .expect_failure()
+        .await;
+    assert_eq!(del.status_code(), 404);
+
+    assert_eq!(csv_of(&app, id).await, before);
+}
+
+#[tokio::test]
+async fn row_endpoints_require_authentication() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+
+    let add = app
+        .server
+        .post("/forms/inputs/1/rows")
+        .expect_failure()
+        .await;
+    assert!(add.status_code().is_redirection() || add.status_code() == 401);
+
+    let del = app
+        .server
+        .post("/forms/inputs/1/rows/delete")
+        .form(&serde_json::json!({ "row": 1 }))
+        .expect_failure()
+        .await;
+    assert!(del.status_code().is_redirection() || del.status_code() == 401);
+}
+
+#[tokio::test]
+async fn add_row_survives_reload_on_single_column_form_type() {
+    // A blank row of a one-column form serializes to an empty CSV line, which
+    // is indistinguishable from the trailing-blank-line artefacts the parser
+    // drops. It is written as `""` so the row survives the round-trip.
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    app.server
+        .post("/forms/form-types/create")
+        .form(&serde_json::json!({
+            "name": "Shopping list",
+            "columns": r#"[{"name":"Item","type":"text"}]"#,
+        }))
+        .expect_failure()
+        .await;
+    let (ft_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_form_types WHERE name = 'Shopping list' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    app.server
+        .post("/forms/inputs/create")
+        .form(&serde_json::json!({
+            "form_type_id": ft_id,
+            "name": "Groceries",
+            "csv_data": "Item\nMilk",
+        }))
+        .expect_failure()
+        .await;
+    let id = input_id(&app, "Groceries").await;
+
+    let response = app.server.post(&format!("/forms/inputs/{id}/rows")).await;
+    assert_eq!(response.status_code(), 200);
+
+    // The new row must still be there when the page is re-rendered.
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert_eq!(
+        body.matches(r#"class="ci-row-del""#).count(),
+        2,
+        "the appended blank row should survive a reload"
+    );
+    assert!(body.contains(r#"data-row="2" data-col="0""#));
+
+    // And it must be writable at that index.
+    let save = app
+        .server
+        .post(&format!("/forms/inputs/{id}/cell"))
+        .form(&serde_json::json!({ "row": 2, "col": 0, "value": "Bread" }))
+        .await;
+    assert_eq!(save.status_code(), 204);
+    assert_eq!(csv_of(&app, id).await, "Item\nMilk\nBread");
+}
+
+#[tokio::test]
+async fn multiline_row_colspan_accounts_for_the_actions_column() {
+    // The main row of a dynamic input gains a trailing delete cell, so the
+    // follow-up row holding multiline values has to span one column more.
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let columns_json =
+        r#"[{"name":"Title","type":"text"},{"name":"Synopsis","type":"text","multiline":true}]"#;
+    let ft_id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0) RETURNING id",
+    )
+    .bind(uid)
+    .bind("Movies")
+    .bind(columns_json)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_inputs (user_id, row_set_id, form_type_id, name, csv_data) VALUES (?, NULL, ?, ?, ?) RETURNING id",
+    )
+    .bind(uid)
+    .bind(ft_id)
+    .bind("My movies")
+    .bind("Title,Synopsis\nInception,A thief enters dreams.")
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    // 1 visible column (Title) + 1 actions column.
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(
+        body.contains(r#"<tr class="ci-multiline-row" data-row="1"><td colspan="2">"#),
+        "multiline row should span the visible column plus the actions column"
+    );
+    assert!(body.contains(r#"<td colspan="2"><button type="button" id="ci-add-row-btn""#));
+
+    // The appended row's fragment must use the same colspan.
+    let fragment = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows"))
+        .await
+        .text();
+    assert!(
+        fragment.contains(r#"<tr class="ci-multiline-row" data-row="2"><td colspan="2">"#),
+        "appended row markup should match the full-page render, got {fragment}"
+    );
+    // ...and carry an empty, editable multiline cell for the new row.
+    assert!(fragment.contains(r#"data-row="2" data-col="1" data-type="text""#));
+}
