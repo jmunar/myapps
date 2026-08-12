@@ -350,6 +350,17 @@ form type's mode), then fills in a spreadsheet-like grid that saves data as CSV.
   Double-click any data cell to edit it; one cell save is persisted via AJAX
   (`POST /forms/inputs/{id}/cell`). The row identifier in fixed-row mode stays
   read-only.
+- **Adding and deleting rows on a saved input** — dynamic inputs get a delete
+  button per row, hidden until the row is hovered (always visible on touch
+  devices), and a "+ Add row" strip in the table footer. Both persist via AJAX
+  (`POST /forms/inputs/{id}/rows` and `/rows/delete`); the add endpoint returns
+  the new row's markup rendered by the same code path as the full page.
+  Deleting only prompts for confirmation when the row holds data. Rows of a
+  fixed-row input are owned by its row set, so the controls are not rendered
+  and both endpoints reject those inputs — rows there are changed by editing
+  the row set. Because cells address rows by CSV line index, a delete
+  renumbers the remaining rows client-side so later cell saves still land on
+  the right record, including while a sort is active.
 - **Sort and global search on the view** — every column header carries
   small sort buttons (A→Z, Z→A); sort is exclusive across columns. Numeric
   columns sort by parsed value with empty cells last. A single search input

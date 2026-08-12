@@ -22,6 +22,8 @@ pub fn routes() -> Router<AppState> {
         .route("/inputs/create-from-csv", post(create_from_csv))
         .route("/inputs/{id}", get(view))
         .route("/inputs/{id}/cell", post(update_cell))
+        .route("/inputs/{id}/rows", post(add_row))
+        .route("/inputs/{id}/rows/delete", post(delete_row))
         .route("/inputs/{id}/delete", post(delete))
 }
 
@@ -873,24 +875,27 @@ async fn view(
     let highlight_first_col = inp.row_set_id.is_some();
     let lines: Vec<Vec<String>> = parse_csv(&inp.csv_data);
 
-    // Map each CSV column index to (col_type, multiline). In fixed-row mode the
-    // leading CSV column is the row identifier (text, never multiline) and the
-    // form-type columns shift by one.
-    let csv_col_meta = |i: usize| -> (&str, bool) {
-        if i == 0 && highlight_first_col {
-            return ("text", false);
-        }
-        let col_idx = if highlight_first_col { i - 1 } else { i };
-        match ft_columns.get(col_idx) {
-            Some(cd) => (cd.col_type.as_str(), cd.multiline),
-            None => ("text", false),
-        }
-    };
-
     // Visible (non-multiline) main-row column count drives the colspan of the
     // follow-up <tr> that holds expanded text cells.
     let total_cols = lines.first().map(|h| h.len()).unwrap_or(0);
-    let visible_col_count = (0..total_cols).filter(|i| !csv_col_meta(*i).1).count();
+    let visible_col_count = (0..total_cols)
+        .filter(|i| !csv_col_meta(&ft_columns, highlight_first_col, *i).1)
+        .count();
+
+    // Rows of a fixed-row input are owned by its row set (the CSV import path
+    // enforces that count and keys match exactly), so structural edits are
+    // offered on dynamic inputs only.
+    let rows_editable = inp.row_set_id.is_none();
+
+    let empty_header: Vec<String> = Vec::new();
+    let ctx = RowRenderCtx {
+        header: lines.first().unwrap_or(&empty_header),
+        ft_columns: &ft_columns,
+        highlight_first_col,
+        visible_col_count,
+        show_actions: rows_editable,
+        t,
+    };
 
     // Build the grid. The first column is the row identifier when fixed-row mode is on,
     // mirroring the new-input page's layout. Editable cells get data-row/data-col/data-type
@@ -898,7 +903,7 @@ async fn view(
     let mut table_html = String::from(r#"<table class="ci-input-table"><thead><tr>"#);
     if let Some(header) = lines.first() {
         for (i, col) in header.iter().enumerate() {
-            let (col_type, multiline) = csv_col_meta(i);
+            let (col_type, multiline) = csv_col_meta(&ft_columns, highlight_first_col, i);
             if multiline {
                 continue;
             }
@@ -923,89 +928,23 @@ async fn view(
             ));
         }
     }
+    // Trailing header cell above the per-row delete buttons.
+    if rows_editable {
+        table_html.push_str(r#"<th class="ci-row-actions-th"></th>"#);
+    }
     table_html.push_str("</tr></thead><tbody>");
     for (r, line) in lines.iter().enumerate().skip(1) {
-        let original_index = r - 1;
-        table_html.push_str(&format!(
-            r#"<tr class="ci-main-row" data-row="{r}" data-original-index="{original_index}">"#
-        ));
-        for (c, field) in line.iter().enumerate() {
-            let (col_type, multiline) = csv_col_meta(c);
-            if multiline {
-                continue;
-            }
-            if c == 0 && highlight_first_col {
-                table_html.push_str(&format!(
-                    r#"<td class="ci-pupil-name" data-col="0">{field}</td>"#,
-                    field = html_escape(field)
-                ));
-            } else {
-                let cell_class = match col_type {
-                    "number" => "ci-cell-editable ci-col-number",
-                    "bool" => "ci-cell-editable ci-col-bool",
-                    "link" => "ci-cell-editable ci-col-link",
-                    _ => "ci-cell-editable",
-                };
-                if col_type == "link" {
-                    let (url, text) = parse_link_value(field);
-                    let display = if url.is_empty() {
-                        String::new()
-                    } else {
-                        let display_text = if text.is_empty() {
-                            t.link_default_text
-                        } else {
-                            text
-                        };
-                        format!(
-                            r#"<a href="{href}" target="_blank" rel="noopener">{txt}</a>"#,
-                            href = html_escape(url),
-                            txt = html_escape(display_text),
-                        )
-                    };
-                    table_html.push_str(&format!(
-                        r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="link" data-value="{value}">{display}</td>"#,
-                        value = html_escape(field),
-                    ));
-                } else {
-                    table_html.push_str(&format!(
-                        r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="{col_type}">{field}</td>"#,
-                        field = html_escape(field),
-                    ));
-                }
-            }
-        }
-        table_html.push_str("</tr>");
-
-        // Follow-up row holding any multiline cells for this row.
-        let multiline_cells: Vec<(usize, &str, &String)> = line
-            .iter()
-            .enumerate()
-            .filter_map(|(c, field)| {
-                if !csv_col_meta(c).1 {
-                    return None;
-                }
-                let header_label = lines
-                    .first()
-                    .and_then(|h| h.get(c).map(String::as_str))
-                    .unwrap_or("");
-                Some((c, header_label, field))
-            })
-            .collect();
-        if !multiline_cells.is_empty() {
-            table_html.push_str(&format!(
-                r#"<tr class="ci-multiline-row" data-row="{r}"><td colspan="{visible_col_count}">"#
-            ));
-            for (c, label, field) in multiline_cells {
-                table_html.push_str(&format!(
-                    r#"<div class="ci-multiline-cell ci-cell-editable" data-row="{r}" data-col="{c}" data-type="text"><label>{label}</label><div class="ci-multiline-value">{value}</div></div>"#,
-                    label = html_escape(label),
-                    value = html_escape(field),
-                ));
-            }
-            table_html.push_str("</td></tr>");
-        }
+        table_html.push_str(&ctx.render_row(r, r - 1, line));
     }
-    table_html.push_str("</tbody></table>");
+    table_html.push_str("</tbody>");
+    if rows_editable {
+        table_html.push_str(&format!(
+            r#"<tfoot><tr class="ci-add-row"><td colspan="{span}"><button type="button" id="ci-add-row-btn" class="ci-add-row-btn">{add}</button></td></tr></tfoot>"#,
+            span = visible_col_count + 1,
+            add = html_escape(t.inp_add_row),
+        ));
+    }
+    table_html.push_str("</table>");
 
     let rs_label: Option<String> = match inp.row_set_id {
         Some(rsid) => sqlx::query_scalar("SELECT label FROM form_input_row_sets WHERE id = ?")
@@ -1059,7 +998,11 @@ async fn view(
         (function() {{
             var lblBool = '{col_bool}';
             var lblLinkDefault = '{link_default_text}';
+            var lblDeleteRow = '{delete_row_confirm}';
+            var lblRowOpFailed = '{row_op_failed}';
             var saveUrl = '{base}/forms/inputs/{id}/cell';
+            var addRowUrl = '{base}/forms/inputs/{id}/rows';
+            var delRowUrl = '{base}/forms/inputs/{id}/rows/delete';
 
             // ── Sort & search ──────────────────────────────────────────
             // Operates purely on the DOM. Cells keep their original
@@ -1242,20 +1185,22 @@ async fn view(
                 return cell.classList.contains('ci-multiline-cell');
             }}
 
-            document.querySelectorAll('.ci-cell-editable').forEach(function(cell) {{
-                cell.addEventListener('dblclick', function() {{
-                    if (cell.classList.contains('ci-cell-editing')) return;
-                    var colType = cell.dataset.type || 'text';
-                    if (colType === 'link') {{
-                        modalActiveCell = cell;
-                        var parsed = parseLinkValue(cell.dataset.value || '');
-                        modalUrl.value = parsed[0];
-                        modalText.value = parsed[1];
-                        if (modal && modal.showModal) modal.showModal();
-                        return;
-                    }}
-                    startEdit(cell);
-                }});
+            // Delegated so rows appended after load are editable too.
+            var tableEl = document.querySelector('.ci-input-table');
+            if (tableEl) tableEl.addEventListener('dblclick', function(e) {{
+                var cell = e.target.closest('.ci-cell-editable');
+                if (!cell || !tableEl.contains(cell)) return;
+                if (cell.classList.contains('ci-cell-editing')) return;
+                var colType = cell.dataset.type || 'text';
+                if (colType === 'link') {{
+                    modalActiveCell = cell;
+                    var parsed = parseLinkValue(cell.dataset.value || '');
+                    modalUrl.value = parsed[0];
+                    modalText.value = parsed[1];
+                    if (modal && modal.showModal) modal.showModal();
+                    return;
+                }}
+                startEdit(cell);
             }});
 
             function startEdit(cell) {{
@@ -1345,12 +1290,106 @@ async fn view(
                     delete cell.dataset.oldValue;
                 }});
             }}
+
+            // ── Add / delete rows (dynamic inputs only) ────────────────
+            // Deleting renumbers the stored CSV, so every data-row in the DOM
+            // is rewritten afterwards from the rows' original order. Cell saves
+            // address rows by that index, so a stale one would write an edit
+            // into the wrong record.
+            function setRowIndex(tr, r) {{
+                tr.dataset.row = r;
+                tr.querySelectorAll('[data-row]').forEach(function(el) {{ el.dataset.row = r; }});
+            }}
+
+            function reindexRows() {{
+                rowGroups.slice().sort(function(a, b) {{
+                    return parseInt(a.main.dataset.originalIndex) - parseInt(b.main.dataset.originalIndex);
+                }}).forEach(function(g, i) {{
+                    setRowIndex(g.main, i + 1);          // CSV line 0 is the header
+                    if (g.follow) setRowIndex(g.follow, i + 1);
+                    g.main.dataset.originalIndex = i;
+                }});
+            }}
+
+            // Only prompt when the row would actually lose data.
+            function rowIsEmpty(g) {{
+                var els = [].slice.call(g.main.querySelectorAll('.ci-cell-editable'));
+                if (g.follow) els = els.concat([].slice.call(g.follow.querySelectorAll('.ci-cell-editable')));
+                return els.every(function(el) {{
+                    if (el.dataset.type === 'link') return !(el.dataset.value || '');
+                    return (el.textContent || '').trim() === '';
+                }});
+            }}
+
+            if (tableEl) tableEl.addEventListener('click', function(e) {{
+                var btn = e.target.closest('.ci-row-del');
+                if (!btn) return;
+                var main = btn.closest('tr.ci-main-row');
+                if (!main) return;
+                var idx = -1;
+                for (var i = 0; i < rowGroups.length; i++) {{
+                    if (rowGroups[i].main === main) {{ idx = i; break; }}
+                }}
+                if (idx < 0) return;
+                var g = rowGroups[idx];
+                if (!rowIsEmpty(g) && !confirm(lblDeleteRow)) return;
+                btn.disabled = true;
+                fetch(delRowUrl, {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
+                    body: 'row=' + encodeURIComponent(main.dataset.row),
+                    credentials: 'same-origin',
+                }}).then(function(res) {{
+                    if (!res.ok) {{
+                        btn.disabled = false;
+                        alert(lblRowOpFailed + ' (' + res.status + ')');
+                        return;
+                    }}
+                    rowGroups.splice(idx, 1);
+                    main.remove();
+                    if (g.follow) g.follow.remove();
+                    reindexRows();
+                }}).catch(function() {{
+                    btn.disabled = false;
+                    alert(lblRowOpFailed);
+                }});
+            }});
+
+            var addRowBtn = document.getElementById('ci-add-row-btn');
+            if (addRowBtn && tbody) addRowBtn.addEventListener('click', function() {{
+                addRowBtn.disabled = true;
+                // The failure alert covers the request only. By the time the
+                // markup comes back the row is already stored, so a later DOM
+                // error must not tell the user the row was not added.
+                fetch(addRowUrl, {{ method: 'POST', credentials: 'same-origin' }})
+                    .then(function(res) {{
+                        if (!res.ok) throw new Error(res.status);
+                        return res.text();
+                    }})
+                    .catch(function() {{
+                        alert(lblRowOpFailed);
+                        return null;
+                    }})
+                    .then(function(html) {{
+                        addRowBtn.disabled = false;
+                        if (html === null) return;
+                        tbody.insertAdjacentHTML('beforeend', html);
+                        var mains = tbody.querySelectorAll('tr.ci-main-row');
+                        var main = mains[mains.length - 1];
+                        var follow = tbody.querySelector('tr.ci-multiline-row[data-row="' + main.dataset.row + '"]');
+                        rowGroups.push({{ main: main, follow: follow }});
+                        // Deliberately not re-sorted or re-filtered: a new blank
+                        // row must stay visible so it can be filled in.
+                    }});
+            }});
         }})();
         </script>"##,
         name = html_escape(&inp.name),
         ft_name = html_escape(ft_name.as_deref().unwrap_or("?")),
         back = t.inp_back,
         id = inp.id,
+        delete_row_confirm = t.inp_delete_row_confirm,
+        row_op_failed = t.inp_row_op_failed,
     );
 
     Html(render_page(
@@ -1375,6 +1414,138 @@ async fn delete(
         .await
         .ok();
     Redirect::to(&format!("{base}/forms"))
+}
+
+/// Map a CSV column index to `(col_type, multiline)`. In fixed-row mode the
+/// leading CSV column is the row identifier (text, never multiline) and the
+/// form-type columns shift by one.
+fn csv_col_meta(ft_columns: &[ColumnDef], highlight_first_col: bool, i: usize) -> (&str, bool) {
+    if i == 0 && highlight_first_col {
+        return ("text", false);
+    }
+    let col_idx = if highlight_first_col { i - 1 } else { i };
+    match ft_columns.get(col_idx) {
+        Some(cd) => (cd.col_type.as_str(), cd.multiline),
+        None => ("text", false),
+    }
+}
+
+/// Everything needed to render one data row of an input grid. Shared by the
+/// full-page render in `view` and the single-row response of `add_row`, so both
+/// paths emit byte-identical markup and the client can append a new row without
+/// duplicating the cell-rendering rules in JS.
+struct RowRenderCtx<'a> {
+    /// Header row of the stored CSV — supplies labels for multiline cells.
+    header: &'a [String],
+    ft_columns: &'a [ColumnDef],
+    /// Fixed-row inputs render column 0 as a read-only row-set key.
+    highlight_first_col: bool,
+    /// Non-multiline column count; drives the colspan of the follow-up `<tr>`.
+    visible_col_count: usize,
+    /// Dynamic inputs get a trailing per-row delete button.
+    show_actions: bool,
+    t: &'a super::i18n::Translations,
+}
+
+impl RowRenderCtx<'_> {
+    fn col_meta(&self, i: usize) -> (&str, bool) {
+        csv_col_meta(self.ft_columns, self.highlight_first_col, i)
+    }
+
+    /// Render the main `<tr>` for CSV line `r`, followed by the `<tr>` holding
+    /// its multiline cells when the form type has any. `data-row` is the CSV
+    /// line index the cell-save endpoint writes to; `data-original-index` is the
+    /// unsorted position the client restores when sorting is toggled off.
+    fn render_row(&self, r: usize, original_index: usize, line: &[String]) -> String {
+        let t = self.t;
+        let mut out = format!(
+            r#"<tr class="ci-main-row" data-row="{r}" data-original-index="{original_index}">"#
+        );
+
+        for (c, field) in line.iter().enumerate() {
+            let (col_type, multiline) = self.col_meta(c);
+            if multiline {
+                continue;
+            }
+            if c == 0 && self.highlight_first_col {
+                out.push_str(&format!(
+                    r#"<td class="ci-pupil-name" data-col="0">{field}</td>"#,
+                    field = html_escape(field)
+                ));
+                continue;
+            }
+            let cell_class = match col_type {
+                "number" => "ci-cell-editable ci-col-number",
+                "bool" => "ci-cell-editable ci-col-bool",
+                "link" => "ci-cell-editable ci-col-link",
+                _ => "ci-cell-editable",
+            };
+            if col_type == "link" {
+                let (url, text) = parse_link_value(field);
+                let display = if url.is_empty() {
+                    String::new()
+                } else {
+                    let display_text = if text.is_empty() {
+                        t.link_default_text
+                    } else {
+                        text
+                    };
+                    format!(
+                        r#"<a href="{href}" target="_blank" rel="noopener">{txt}</a>"#,
+                        href = html_escape(url),
+                        txt = html_escape(display_text),
+                    )
+                };
+                out.push_str(&format!(
+                    r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="link" data-value="{value}">{display}</td>"#,
+                    value = html_escape(field),
+                ));
+            } else {
+                out.push_str(&format!(
+                    r#"<td class="{cell_class}" data-row="{r}" data-col="{c}" data-type="{col_type}">{field}</td>"#,
+                    field = html_escape(field),
+                ));
+            }
+        }
+
+        if self.show_actions {
+            out.push_str(&format!(
+                r#"<td class="ci-row-actions"><button type="button" class="ci-row-del" data-row="{r}" title="{title}" aria-label="{title}">×</button></td>"#,
+                title = html_escape(t.inp_remove_row),
+            ));
+        }
+        out.push_str("</tr>");
+
+        // Follow-up row holding any multiline cells for this row.
+        let multiline_cells: Vec<(usize, &str, &String)> = line
+            .iter()
+            .enumerate()
+            .filter_map(|(c, field)| {
+                if !self.col_meta(c).1 {
+                    return None;
+                }
+                let header_label = self.header.get(c).map(String::as_str).unwrap_or("");
+                Some((c, header_label, field))
+            })
+            .collect();
+        if !multiline_cells.is_empty() {
+            // The main row gains a trailing actions cell, so the expanded row
+            // has to span one more column to stay aligned.
+            let span = self.visible_col_count + usize::from(self.show_actions);
+            out.push_str(&format!(
+                r#"<tr class="ci-multiline-row" data-row="{r}"><td colspan="{span}">"#
+            ));
+            for (c, label, field) in multiline_cells {
+                out.push_str(&format!(
+                    r#"<div class="ci-multiline-cell ci-cell-editable" data-row="{r}" data-col="{c}" data-type="text"><label>{label}</label><div class="ci-multiline-value">{value}</div></div>"#,
+                    label = html_escape(label),
+                    value = html_escape(field),
+                ));
+            }
+            out.push_str("</td></tr>");
+        }
+        out
+    }
 }
 
 /// Shared `<dialog>` markup for editing link cells. Both the new-input page and
@@ -1426,6 +1597,11 @@ fn parse_csv(text: &str) -> Vec<Vec<String>> {
     let mut current_row: Vec<String> = Vec::new();
     let mut current_field = String::new();
     let mut in_quotes = false;
+    // Tracks, per row, whether any field was explicitly quoted. An empty row
+    // written as `""` is a real record; a truly blank line is a separator
+    // artefact. Both parse to `[""]`, so this flag is what tells them apart.
+    let mut quoted: Vec<bool> = Vec::new();
+    let mut row_quoted = false;
     let mut chars = text.chars().peekable();
 
     while let Some(ch) = chars.next() {
@@ -1448,6 +1624,7 @@ fn parse_csv(text: &str) -> Vec<Vec<String>> {
             }
         } else if ch == '"' {
             in_quotes = true;
+            row_quoted = true;
         } else if ch == ',' {
             current_row.push(std::mem::take(&mut current_field));
         } else if ch == '\n' || ch == '\r' {
@@ -1456,19 +1633,25 @@ fn parse_csv(text: &str) -> Vec<Vec<String>> {
             }
             current_row.push(std::mem::take(&mut current_field));
             rows.push(std::mem::take(&mut current_row));
+            quoted.push(std::mem::take(&mut row_quoted));
         } else {
             current_field.push(ch);
         }
     }
     // Flush the final field if the input did not end with a newline.
-    if !current_field.is_empty() || !current_row.is_empty() {
+    if !current_field.is_empty() || !current_row.is_empty() || row_quoted {
         current_row.push(current_field);
         rows.push(current_row);
+        quoted.push(row_quoted);
     }
-    // Drop trailing rows that consist only of a single empty field — those are
-    // artefacts of trailing newlines, not real records.
-    while matches!(rows.last(), Some(r) if r.len() == 1 && r[0].is_empty()) {
+    // Drop trailing rows that consist only of a single empty, unquoted field —
+    // those are artefacts of blank lines, not real records. An explicit `""`
+    // row is kept: that is how a single-column input stores an empty row.
+    while matches!(rows.last(), Some(r) if r.len() == 1 && r[0].is_empty())
+        && !quoted.last().copied().unwrap_or(false)
+    {
         rows.pop();
+        quoted.pop();
     }
     rows
 }
@@ -1486,11 +1669,51 @@ fn csv_escape(val: &str) -> String {
 }
 
 fn serialize_csv_line(fields: &[String]) -> String {
+    // A lone empty field would serialize to an empty line, which `parse_csv`
+    // cannot tell apart from a blank separator line and would drop. Quote it so
+    // an empty row of a single-column form type survives the round-trip.
+    if fields.len() == 1 && fields[0].is_empty() {
+        return "\"\"".to_string();
+    }
     fields
         .iter()
         .map(|f| csv_escape(f))
         .collect::<Vec<_>>()
         .join(",")
+}
+
+fn serialize_csv(lines: &[Vec<String>]) -> String {
+    lines
+        .iter()
+        .map(|l| serialize_csv_line(l))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Append a row of empty fields matching the header's width. Returns the
+/// rewritten CSV and the new row's CSV line index.
+fn append_csv_row(csv_data: &str) -> Result<(String, usize), &'static str> {
+    let mut lines: Vec<Vec<String>> = parse_csv(csv_data);
+    let Some(header) = lines.first() else {
+        return Err("input has no header row");
+    };
+    let width = header.len();
+    lines.push(vec![String::new(); width]);
+    let new_row = lines.len() - 1;
+    Ok((serialize_csv(&lines), new_row))
+}
+
+/// Remove CSV line `row`. `row == 0` is the header and is rejected.
+fn delete_csv_row(csv_data: &str, row: usize) -> Result<String, &'static str> {
+    if row == 0 {
+        return Err("header row is not deletable");
+    }
+    let mut lines: Vec<Vec<String>> = parse_csv(csv_data);
+    if row >= lines.len() {
+        return Err("row out of range");
+    }
+    lines.remove(row);
+    Ok(serialize_csv(&lines))
 }
 
 /// Replace a single cell at (row, col) of `csv_data` with `new_value` and
@@ -1513,11 +1736,7 @@ fn update_csv_cell(
         return Err("col out of range");
     }
     line[col] = new_value.to_string();
-    Ok(lines
-        .into_iter()
-        .map(|l| serialize_csv_line(&l))
-        .collect::<Vec<_>>()
-        .join("\n"))
+    Ok(serialize_csv(&lines))
 }
 
 #[derive(Deserialize)]
@@ -1570,6 +1789,129 @@ async fn update_cell(
             tracing::error!("DB update failed: {e:#}");
             StatusCode::INTERNAL_SERVER_ERROR
         }
+    }
+}
+
+// ── Row add / delete ────────────────────────────────────────
+
+/// Load an input for a structural edit. Rejects inputs bound to a row set:
+/// their rows are owned by that row set (the CSV import path enforces the row
+/// count and keys match it exactly), so add/delete would silently desync them.
+/// Returns the stored CSV and the input's form type id.
+async fn load_editable_input(
+    pool: &sqlx::SqlitePool,
+    id: i64,
+    user_id: i64,
+) -> Result<(String, i64), StatusCode> {
+    let inp: Option<(String, Option<i64>, i64)> = sqlx::query_as(
+        "SELECT csv_data, row_set_id, form_type_id FROM form_input_inputs
+         WHERE id = ? AND user_id = ?",
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    let Some((csv_data, row_set_id, form_type_id)) = inp else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if row_set_id.is_some() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok((csv_data, form_type_id))
+}
+
+async fn save_csv(
+    pool: &sqlx::SqlitePool,
+    id: i64,
+    user_id: i64,
+    csv_data: &str,
+) -> Result<(), StatusCode> {
+    sqlx::query("UPDATE form_input_inputs SET csv_data = ? WHERE id = ? AND user_id = ?")
+        .bind(csv_data)
+        .bind(id)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB update failed: {e:#}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(())
+}
+
+/// Append an empty row and respond with just that row's markup, rendered by the
+/// same code path as the full page so the client can append it verbatim.
+async fn add_row(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let t = super::i18n::t(lang);
+
+    let (csv_data, form_type_id) = match load_editable_input(&state.pool, id, user_id.0).await {
+        Ok(v) => v,
+        Err(code) => return code.into_response(),
+    };
+    let (updated, new_row) = match append_csv_row(&csv_data) {
+        Ok(v) => v,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if let Err(code) = save_csv(&state.pool, id, user_id.0, &updated).await {
+        return code.into_response();
+    }
+
+    let columns_json: Option<String> =
+        sqlx::query_scalar("SELECT columns_json FROM form_input_form_types WHERE id = ?")
+            .bind(form_type_id)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
+    let ft_columns: Vec<ColumnDef> =
+        serde_json::from_str(columns_json.as_deref().unwrap_or("[]")).unwrap_or_default();
+
+    let lines = parse_csv(&updated);
+    let empty_header: Vec<String> = Vec::new();
+    let header = lines.first().unwrap_or(&empty_header);
+    let visible_col_count = (0..header.len())
+        .filter(|i| !csv_col_meta(&ft_columns, false, *i).1)
+        .count();
+    let ctx = RowRenderCtx {
+        header,
+        ft_columns: &ft_columns,
+        highlight_first_col: false,
+        visible_col_count,
+        show_actions: true,
+        t,
+    };
+    let blank = vec![String::new(); header.len()];
+    Html(ctx.render_row(new_row, new_row - 1, &blank)).into_response()
+}
+
+#[derive(Deserialize)]
+struct DeleteRowForm {
+    row: usize,
+}
+
+async fn delete_row(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(id): Path<i64>,
+    Form(form): Form<DeleteRowForm>,
+) -> StatusCode {
+    let (csv_data, _) = match load_editable_input(&state.pool, id, user_id.0).await {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+    let updated = match delete_csv_row(&csv_data, form.row) {
+        Ok(s) => s,
+        Err(_) => return StatusCode::BAD_REQUEST,
+    };
+    match save_csv(&state.pool, id, user_id.0, &updated).await {
+        Ok(()) => StatusCode::NO_CONTENT,
+        Err(code) => code,
     }
 }
 

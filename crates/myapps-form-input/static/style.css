@@ -179,6 +179,90 @@
     background: var(--accent-light);
 }
 
+/* ── Row add / delete (dynamic inputs) ────────────────────────── */
+/* The delete button stays invisible until its row is hovered, so an idle
+   grid looks exactly as it did before the column existed. Devices without
+   hover get it permanently, and keyboard focus reveals it. */
+.ci-row-actions-th,
+.ci-row-actions {
+    width: 1.9rem;
+    padding: 0;
+    text-align: center;
+}
+
+.ci-row-del {
+    opacity: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: opacity 0.12s var(--ease), background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.ci-input-table tbody tr:hover .ci-row-del,
+.ci-row-del:focus-visible {
+    opacity: 1;
+}
+
+.ci-row-del:hover {
+    background: var(--negative-bg);
+    color: var(--negative);
+}
+
+.ci-row-del:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* Keep the actions cell out of the accent focus highlight applied to data cells. */
+.ci-row-actions:focus-within {
+    background: none !important;
+    box-shadow: none;
+}
+
+.ci-add-row td {
+    padding: 0;
+    border: none;
+}
+
+.ci-add-row-btn {
+    display: block;
+    width: 100%;
+    padding: 0.45rem 0.6rem;
+    background: none;
+    border: none;
+    border-top: 1px dashed var(--border);
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+.ci-add-row-btn:hover {
+    background: var(--accent-light);
+    color: var(--accent);
+}
+
+.ci-add-row-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+@media (hover: none) {
+    .ci-row-del { opacity: 1; }
+}
+
 /* ── Header sort & filter controls ────────────────────────────── */
 .ci-th-content {
     display: flex;
