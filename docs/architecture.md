@@ -187,6 +187,12 @@ After login, the top-level router serves:
     edit in place; text columns flagged as multi-line render on their own row
     beneath the main row)
   - `POST /forms/inputs/{id}/cell` — Persist a single-cell edit (row, col, value)
+  - `POST /forms/inputs/{id}/rows` — Append an empty row; responds with that
+    row's markup, rendered by the same code path as the full page so the client
+    can append it verbatim. Dynamic inputs only (400 for fixed-row inputs).
+  - `POST /forms/inputs/{id}/rows/delete` — Delete row `row`; dynamic inputs
+    only. Deleting renumbers the stored CSV, so the client re-indexes the
+    remaining rows to keep later cell saves addressing the right record.
   - `POST /forms/inputs/{id}/delete` — Delete input
   - `/forms/row-sets` — Row set list + create form
   - `POST /forms/row-sets/create` — Create row set

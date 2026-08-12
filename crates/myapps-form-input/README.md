@@ -20,6 +20,9 @@ manage row sets, and capture rows of data with a spreadsheet-style grid.
 - Toggle `fixed_rows` per form type — pin rows to a row set, or add rows freely
 - Manage row sets (named lists of row identifiers)
 - Capture inputs as CSV-backed grids; double-click any cell to edit in place
+- Add and delete rows on a saved input: a delete button appears on row hover
+  and a "+ Add row" strip sits under the grid. Dynamic inputs only — rows of a
+  fixed-row input are owned by its row set and change by editing that row set
 - Bulk-create inputs by uploading a CSV (column count is enforced against the
   form type; for fixed-row form types the first column is the row-set key)
 - Sort by any column (A→Z / Z→A) and filter rows with a single global search
