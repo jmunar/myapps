@@ -68,7 +68,7 @@ jobs:
         with:
           targets: aarch64-unknown-linux-gnu
 
-      - uses: Swatinem/rust-cache@v2.9.1
+      - uses: Swatinem/rust-cache@v2.9.2
         if: steps.tag_check.outputs.exists == 'false'
         with:
           key: aarch64
