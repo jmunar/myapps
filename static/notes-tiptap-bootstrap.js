@@ -162,6 +162,7 @@
 
   wireDenormFlush(editor, ytitle, mount.dataset.denormUrl);
   wireDictate(editor);
+  wireTaskCheckboxCaret(editor, mount);
 
   // ── Title ↔ Y.Text binding ───────────────────────────────
   // Two-way binding between a plain <input> and a Y.Text. Local edits diff
@@ -260,6 +261,32 @@
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') flush();
     });
+  }
+
+  // ── Task checkbox caret ───────────────────────────────────
+  // The task-item checkbox prevents mousedown (so clicking it never moves
+  // the caret) and then refocuses the editor to toggle the node attribute.
+  // Refocusing restores the previous DOM selection, so in a long list the
+  // browser scrolls back to wherever the caret happened to be. Put the
+  // caret in the clicked item first — this runs in the capture phase, i.e.
+  // before the checkbox's own change handler — so the refocus lands on the
+  // line the user just clicked and the view stays put.
+  function wireTaskCheckboxCaret(editor, mount) {
+    mount.addEventListener('change', (event) => {
+      const box = event.target;
+      if (!box || box.type !== 'checkbox') return;
+      const item = box.closest('li');
+      if (!item || !mount.contains(item)) return;
+      const inline = item.querySelector('p') || item;
+      try {
+        const pos = editor.view.posAtDOM(inline, 0);
+        if (typeof pos === 'number' && pos >= 0) {
+          editor.commands.setTextSelection(pos);
+        }
+      } catch (e) {
+        // Best effort: an unmappable position just leaves the caret alone.
+      }
+    }, true);
   }
 
   // ── Dictation ─────────────────────────────────────────────
