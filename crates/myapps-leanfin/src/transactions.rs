@@ -477,15 +477,11 @@ async fn alloc_editor_inner(
     // Build "Add Rule" form with pre-filled values
     let counterparty_val = txn_counterparty.as_deref().unwrap_or("");
     let description_val = &txn_description;
-    let default_field;
-    let default_pattern;
-    if !counterparty_val.is_empty() {
-        default_field = "counterparty";
-        default_pattern = counterparty_val;
+    let (default_field, default_pattern) = if !counterparty_val.is_empty() {
+        ("counterparty", counterparty_val)
     } else {
-        default_field = "description";
-        default_pattern = &txn_description;
-    }
+        ("description", txn_description.as_str())
+    };
 
     let flash_html = if let Some(msg) = flash {
         format!(r#"<div class="alloc-flash">{msg}</div>"#)
