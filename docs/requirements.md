@@ -433,6 +433,9 @@ and voice dictation support.
   accepted on parse for backwards compatibility.
 - **Task checkboxes** — Markdown task items render as real `<input
   type="checkbox">` elements. Checking/unchecking persists immediately.
+  Toggling a box moves the caret into that item first, so the editor
+  refocus that applies the toggle doesn't scroll the view back to the
+  previous caret position further up or down a long list.
 - **Local-first sync (Yjs CRDT)** — body content lives in a Yjs document. Per
   note, a `Y.Doc` is persisted client-side to IndexedDB and shipped between
   peers through a per-note WebSocket relay (`/notes/{uuid}/ws`). Offline
