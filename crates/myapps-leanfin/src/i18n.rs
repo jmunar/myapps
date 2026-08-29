@@ -233,7 +233,7 @@ pub const EN: Translations = Translations {
 
     // ── Accounts ─────────────────────────────────────────────
     acc_title: "Accounts",
-    acc_subtitle: "Manage your linked bank connections and manual accounts",
+    acc_subtitle: "Manage your linked bank connections, investment accounts and manual accounts",
     acc_bank_accounts: "Bank Accounts",
     acc_manual_accounts: "Manual Accounts",
     acc_link: "+ Link account",
@@ -418,7 +418,7 @@ pub const ES: Translations = Translations {
 
     // ── Accounts ─────────────────────────────────────────────
     acc_title: "Cuentas",
-    acc_subtitle: "Gestiona tus conexiones bancarias y cuentas manuales",
+    acc_subtitle: "Gestiona tus conexiones bancarias, cuentas de inversión y cuentas manuales",
     acc_bank_accounts: "Cuentas Bancarias",
     acc_manual_accounts: "Cuentas Manuales",
     acc_link: "+ Vincular cuenta",
