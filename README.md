@@ -14,7 +14,7 @@ login and launcher.
 
 | App | Crate | What it does |
 |-----|-------|-------------|
-| **LeanFin** ($) | [`myapps-leanfin`](crates/myapps-leanfin/) | Personal expense management with bank sync (PSD2 via Enable Banking), manual accounts, labels, auto-labeling rules, balance evolution charts, and expense breakdowns. |
+| **LeanFin** ($) | [`myapps-leanfin`](crates/myapps-leanfin/) | Personal expense management with bank sync (PSD2 via Enable Banking), investment sync (Indexa Capital), manual accounts, labels, auto-labeling rules, balance evolution charts, and expense breakdowns. |
 | **MindFlow** (🧠) | [`myapps-mindflow`](crates/myapps-mindflow/) | Thought capture and mind mapping. Quickly jot down ideas, organise them into categories, visualise connections on a D3-powered map, and turn thoughts into actions. |
 | **VoiceToText** (🎤) | [`myapps-voice-to-text`](crates/myapps-voice-to-text/) | Audio transcription powered by whisper.cpp. Record or upload audio and get text back — all processed locally, no cloud APIs. |
 | **FormInput** (✎) | [`myapps-form-input`](crates/myapps-form-input/) | Custom forms backed by row sets and column-typed inputs. Define form types, manage row sets, and capture spreadsheet-style entries as CSV. |

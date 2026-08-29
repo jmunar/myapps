@@ -126,6 +126,13 @@ assembles all crates.
   `crates/myapps-core/src/i18n/`. App-specific translations live in each app
   crate's `i18n.rs` module. Both use compile-time struct-based translations;
   adding a field forces both EN and ES to be updated.
+- **Escape user-controlled strings before interpolating them into HTML.** Handlers
+  build markup with `format!`, which does no escaping, so any user- or
+  provider-supplied value (account names, label names, transaction descriptions
+  and counterparties) must go through `myapps_core::components::html_escape`
+  first. It escapes both quote characters, so it is safe in element bodies and
+  in quoted attribute values. Note that `<option>` bodies are *not* a safe sink:
+  the browser re-parses entity-decoded text there and will build live elements.
 - All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `form_input_row_sets`, `notes_notes`, `notes_note_updates`).
 - When adding or removing environment variables, update all four places:
   `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`

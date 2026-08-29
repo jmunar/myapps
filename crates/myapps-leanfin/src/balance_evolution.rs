@@ -5,6 +5,7 @@ use serde::Deserialize;
 use super::dashboard::leanfin_nav;
 use super::services::balance::{self, BalancePoint};
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -67,7 +68,7 @@ async fn page(
 
     let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
     for a in &accounts {
-        let display = if a.account_type == "manual" {
+        let display = if a.account_type != "bank" {
             a.account_name
                 .clone()
                 .unwrap_or_else(|| a.bank_name.clone())
@@ -77,7 +78,11 @@ async fn page(
                 None => a.bank_name.clone(),
             }
         };
-        account_options.push_str(&format!(r#"<option value="{}">{}</option>"#, a.id, display,));
+        account_options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            a.id,
+            html_escape(&display),
+        ));
     }
 
     let body = format!(

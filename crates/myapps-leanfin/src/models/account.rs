@@ -22,7 +22,9 @@ pub struct Account {
 
 impl Account {
     pub fn display_name(&self) -> String {
-        if self.is_manual() {
+        // Bank accounts are identified by IBAN; manual and Indexa accounts
+        // carry a user- or provider-supplied name instead.
+        if self.account_type != "bank" {
             self.account_name
                 .clone()
                 .unwrap_or_else(|| self.bank_name.clone())

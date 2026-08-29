@@ -59,6 +59,26 @@ visibility into spending patterns.
 - When a bank consent expires (or is close to expiry), the system notifies the
   user so they can re-authorize.
 
+### Investment account integration (LeanFin)
+
+- Connect **Indexa Capital** accounts using a personal, read-only API token
+  generated in Indexa's private area. The token grants access to every account
+  the user holds or co-holds, and does not expire — unlike a PSD2 consent, an
+  Indexa account never needs re-authorization.
+- Indexa accounts hold their assets at a depositary (Cecabank) as securities
+  accounts, which PSD2 does not cover — Enable Banking cannot see them. Before
+  this, they could only be tracked as manual accounts with hand-entered values.
+- A daily cron job records the portfolio valuation as a balance snapshot; the
+  manual sync button triggers the same update.
+- Linking an account backfills its entire valuation history, which reaches back
+  to the account's opening date, so the balance chart is populated immediately.
+- The accounts page gains an "Indexa Capital" section alongside "Bank Accounts"
+  and "Manual Accounts". Indexa accounts appear in the balance evolution chart
+  and the "All accounts" aggregate like any other account.
+- Indexa's `/users/me` and `/accounts/{n}` responses contain personal data
+  (postal address, email, national ID). LeanFin never logs those payloads and
+  the routine sync never requests them.
+
 ### Transaction management (LeanFin)
 
 - Transactions are stored locally and deduplicated by their external ID
@@ -142,6 +162,14 @@ visibility into spending patterns.
 - Enable Banking API uses self-signed JWTs (RS256) for authentication. Private
   keys are stored per-user in the database, encrypted at rest with AES-256-GCM
   using a server-side encryption key.
+- Indexa Capital API tokens are stored per-user with the same AES-256-GCM
+  encryption. They are never rendered back to the browser, never logged, and
+  never written to the API payload log.
+- **Output escaping** — user-controlled strings (account names, label names) and
+  provider-supplied text (transaction descriptions, counterparty names) are
+  HTML-escaped before interpolation into server-rendered templates, via the
+  shared `myapps_core::components::html_escape`. It escapes both quote
+  characters, so it is safe in element bodies and in quoted attributes.
 - No secrets are committed to the repository.
 
 ### CI/CD
@@ -223,9 +251,10 @@ visibility into spending patterns.
   crypto). Manual accounts support CRUD operations (create, edit metadata, update
   value with date, delete). Values are recorded as daily balance entries with
   carry-forward gap filling for sparse updates. The accounts page is split into
-  "Bank Accounts" and "Manual Accounts" sections. Balance evolution charts and
-  the "All accounts" aggregated view include manual accounts seamlessly. The sync
-  process filters to bank accounts only, skipping manual accounts. Users can
+  "Bank Accounts", "Indexa Capital" and "Manual Accounts" sections. Balance evolution charts and
+  the "All accounts" aggregated view include manual accounts seamlessly. The
+  Enable Banking sync process filters to bank accounts only, skipping manual
+  accounts (Indexa accounts sync through their own provider). Users can
   bulk-import historical balance data from CSV files (two-column format:
   date + value) with all-or-nothing validation and idempotent upserts.
 - **Expense visualization** — a dedicated Expenses page with multi-label

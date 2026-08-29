@@ -102,9 +102,16 @@ fn render_scalar(value: &serde_json::Value, html: &mut String) {
     }
 }
 
-fn html_escape(s: &str) -> String {
+/// HTML-escape a string for safe interpolation into HTML element bodies or
+/// quoted attribute values. Any user- or provider-controlled string MUST go
+/// through this before reaching a `format!` template.
+///
+/// Both quote characters are escaped, so the result is safe inside `"…"` and
+/// `'…'` attributes as well as in element bodies.
+pub fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }

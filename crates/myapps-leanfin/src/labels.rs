@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use super::dashboard::leanfin_nav;
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -71,7 +72,7 @@ async fn list_labels(
     for l in &labels {
         let color = l.color.as_deref().unwrap_or("#6B6B6B");
         let id = l.id;
-        let name = &l.name;
+        let name = html_escape(&l.name);
         let rules_url = format!("{base}/leanfin/labels/{id}/rules");
         let delete_url = format!("{base}/leanfin/labels/{id}/delete");
         let edit_url = format!("{base}/leanfin/labels/{id}/edit");
