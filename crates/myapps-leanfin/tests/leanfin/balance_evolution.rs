@@ -400,3 +400,135 @@ async fn data_endpoint_returns_empty_account_id_for_aggregated() {
     // When aggregated (no account_id), the third param should be empty string
     assert!(body.contains("''"));
 }
+
+/// Insert a manual account with a single balance entry `days_ago` days in the past.
+async fn insert_stale_manual_account(
+    pool: &sqlx::SqlitePool,
+    user_id: i64,
+    name: &str,
+    balance: f64,
+    days_ago: i64,
+    archived: bool,
+) -> i64 {
+    let uid = format!("manual_{name}");
+    let account_id = sqlx::query(
+        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at, account_type, account_name, balance_amount, balance_currency, archived) VALUES (?, ?, '', '', ?, '9999-12-31T00:00:00Z', 'manual', ?, ?, 'EUR', ?)",
+    )
+    .bind(user_id)
+    .bind(name)
+    .bind(&uid)
+    .bind(name)
+    .bind(balance)
+    .bind(archived)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+
+    let date = (chrono::Utc::now() - chrono::Duration::days(days_ago))
+        .format("%Y-%m-%d")
+        .to_string();
+    sqlx::query(
+        "INSERT INTO leanfin_balance_snapshots (account_id, timestamp, date, balance, balance_type) VALUES (?, ?, ?, ?, 'MANUAL')",
+    )
+    .bind(account_id)
+    .bind(format!("{date}T23:59:59Z"))
+    .bind(&date)
+    .bind(balance)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    account_id
+}
+
+#[tokio::test]
+async fn manual_account_without_recent_entries_still_shows_balance() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.login_as("demo", "demo").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'demo'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    // Last updated 200 days ago — well outside the 90-day window
+    let account_id =
+        insert_stale_manual_account(&app.pool, user_id, "Old Portfolio", 5000.0, 200, false).await;
+
+    let response = app
+        .server
+        .get("/leanfin/balance-evolution/data")
+        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("days", "90")
+        .await;
+    let body = response.text();
+
+    assert!(
+        body.contains("updateBalanceChart("),
+        "stale manual account should still render a series, got: {body}"
+    );
+    assert!(
+        body.contains("5000.00"),
+        "series should carry the last known balance forward, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn aggregated_series_includes_manual_account_without_recent_entries() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.login_as("demo", "demo").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'demo'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    // One account updated inside the window, one untouched for 200 days
+    insert_stale_manual_account(&app.pool, user_id, "Current Account", 1000.0, 10, false).await;
+    insert_stale_manual_account(&app.pool, user_id, "Old Portfolio", 5000.0, 200, false).await;
+
+    let response = app
+        .server
+        .get("/leanfin/balance-evolution/data")
+        .add_query_param("account_id", "")
+        .add_query_param("days", "90")
+        .await;
+    let body = response.text();
+
+    assert!(
+        body.contains("6000.00"),
+        "total should include the account with no recent entries, got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn aggregated_series_excludes_archived_accounts() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.login_as("demo", "demo").await;
+
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'demo'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    insert_stale_manual_account(&app.pool, user_id, "Current Account", 1000.0, 10, false).await;
+    insert_stale_manual_account(&app.pool, user_id, "Closed Account", 7000.0, 200, true).await;
+
+    let response = app
+        .server
+        .get("/leanfin/balance-evolution/data")
+        .add_query_param("account_id", "")
+        .add_query_param("days", "90")
+        .await;
+    let body = response.text();
+
+    assert!(
+        body.contains("1000.00"),
+        "total should include the active account, got: {body}"
+    );
+    assert!(
+        !body.contains("8000.00"),
+        "archived account should not contribute to the total, got: {body}"
+    );
+}

@@ -207,7 +207,7 @@ pub async fn get_balance_series(
             .await?;
 
     if account_type == "manual" {
-        let rows: Vec<BalancePoint> = sqlx::query_as(
+        let mut rows: Vec<BalancePoint> = sqlx::query_as(
             r#"SELECT date, balance FROM leanfin_balance_snapshots
                WHERE account_id = ? AND date >= ?
                ORDER BY date ASC"#,
@@ -216,6 +216,25 @@ pub async fn get_balance_series(
         .bind(&cutoff)
         .fetch_all(pool)
         .await?;
+
+        // An account without recent entries still holds its last known balance,
+        // so seed the window with the most recent entry before the cutoff.
+        // Without this, a manual account untouched during the window would
+        // produce an empty series and vanish from the aggregated total.
+        let pre_cutoff: Option<BalancePoint> = sqlx::query_as(
+            r#"SELECT date, balance FROM leanfin_balance_snapshots
+               WHERE account_id = ? AND date < ?
+               ORDER BY date DESC LIMIT 1"#,
+        )
+        .bind(account_id)
+        .bind(&cutoff)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(point) = pre_cutoff {
+            rows.insert(0, point);
+        }
+
         return Ok(fill_balance_gaps(&rows, days));
     }
 
@@ -386,7 +405,7 @@ pub async fn get_aggregated_balance_series(
     days: i64,
 ) -> Result<Vec<BalancePoint>> {
     let account_ids: Vec<(i64,)> =
-        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE user_id = ?")
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE user_id = ? AND archived = 0")
             .bind(user_id)
             .fetch_all(pool)
             .await?;
