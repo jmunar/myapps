@@ -250,7 +250,10 @@ visibility into spending patterns.
   accessible through Open Banking (investments, real estate, vehicles, loans,
   crypto). Manual accounts support CRUD operations (create, edit metadata, update
   value with date, delete). Values are recorded as daily balance entries with
-  carry-forward gap filling for sparse updates. The accounts page is split into
+  carry-forward gap filling for sparse updates. The last entry before the
+  selected period is carried into it, so an account with no recent updates
+  still shows its balance and counts towards the aggregated total. The accounts
+  page is split into
   "Bank Accounts", "Indexa Capital" and "Manual Accounts" sections. Balance evolution charts and
   the "All accounts" aggregated view include manual accounts seamlessly. The
   Enable Banking sync process filters to bank accounts only, skipping manual
@@ -278,8 +281,8 @@ visibility into spending patterns.
   accounts cannot be edited or have their value updated. Archiving is blocked
   when the account has unallocated transactions. Archived accounts are hidden
   from the accounts list by default (a "Show archived" toggle reveals them) and
-  excluded from the balance evolution individual account dropdown, but their
-  balances are still included in the aggregated "All accounts" view. Transactions
+  excluded from the balance evolution page — both from the individual account
+  dropdown and from the aggregated "All accounts" total. Transactions
   from archived accounts remain visible in the transaction list.
 - **Pagination** — the transaction list paginates with 50 transactions per page.
   Prev/Next controls appear below the table with a "from–to of total" counter.
