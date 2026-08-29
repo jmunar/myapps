@@ -98,6 +98,38 @@ pub async fn get_credentials(
     })
 }
 
+/// Decrypt the user's Indexa Capital personal API token.
+///
+/// The token is long-lived and grants read access to every account the user
+/// holds, so it is stored encrypted at rest and must never be logged.
+pub async fn get_indexa_token(pool: &SqlitePool, config: &Config, user_id: i64) -> Result<String> {
+    let encryption_key = config
+        .encryption_key
+        .as_deref()
+        .context("ENCRYPTION_KEY not configured")?;
+
+    let encrypted: Vec<u8> =
+        sqlx::query_scalar("SELECT indexa_token FROM leanfin_user_settings WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten()
+            .context("Indexa token not configured")?;
+
+    let token_bytes = decrypt(&encrypted, encryption_key)?;
+    String::from_utf8(token_bytes).context("invalid UTF-8 in decrypted Indexa token")
+}
+
+pub async fn has_indexa_token(pool: &SqlitePool, user_id: i64) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM leanfin_user_settings WHERE user_id = ? AND indexa_token IS NOT NULL)",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false)
+}
+
 pub async fn has_credentials(pool: &SqlitePool, user_id: i64) -> bool {
     sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM leanfin_user_settings WHERE user_id = ? AND enable_banking_app_id IS NOT NULL AND enable_banking_key IS NOT NULL)",
@@ -132,9 +164,18 @@ async fn settings_form(
     .flatten();
 
     let has_key = has_credentials(&state.pool, user_id.0).await;
+    let has_indexa = has_indexa_token(&state.pool, user_id.0).await;
 
     let app_id_value = html_escape(current_app_id.as_deref().unwrap_or(""));
     let key_status = if has_key {
+        format!(r#"<span class="status-ok">{}</span>"#, t.set_configured)
+    } else {
+        format!(
+            r#"<span class="status-missing">{}</span>"#,
+            t.set_not_configured
+        )
+    };
+    let indexa_status = if has_indexa {
         format!(r#"<span class="status-ok">{}</span>"#, t.set_configured)
     } else {
         format!(
@@ -169,6 +210,11 @@ async fn settings_form(
                     <label>{private_key} — {key_status}</label>
                     <input type="file" id="key_file" name="key_file" accept=".pem,.key">
                     <p class="form-hint">{key_hint}</p>
+                    <hr class="settings-divider">
+                    <label for="indexa_token">{indexa_token_label} — {indexa_status}</label>
+                    <input type="password" id="indexa_token" name="indexa_token"
+                           autocomplete="off" placeholder="{indexa_placeholder}">
+                    <p class="form-hint">{indexa_hint}</p>
                     <div style="display:flex; gap:0.75rem; margin-top:1rem;">
                         <a href="{base}/leanfin" class="btn btn-secondary">{cancel}</a>
                         <button type="submit" style="flex:1"{submit_disabled}>{save}</button>
@@ -181,6 +227,9 @@ async fn settings_form(
         app_id_label = t.set_app_id,
         private_key = t.set_private_key,
         key_hint = t.set_key_hint,
+        indexa_token_label = t.set_indexa_token,
+        indexa_placeholder = t.set_indexa_placeholder,
+        indexa_hint = t.set_indexa_hint,
         cancel = t.set_cancel,
         save = t.set_save,
     );
@@ -213,6 +262,7 @@ async fn settings_submit(
 
     let mut app_id: Option<String> = None;
     let mut key_pem: Option<Vec<u8>> = None;
+    let mut indexa_token: Option<String> = None;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
@@ -226,6 +276,14 @@ async fn settings_submit(
                 {
                     key_pem = Some(bytes.to_vec());
                 }
+            }
+            "indexa_token" => {
+                indexa_token = field
+                    .text()
+                    .await
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
             }
             _ => {}
         }
@@ -301,14 +359,39 @@ async fn settings_submit(
         .await
     };
 
-    match result {
-        Ok(_) => {
-            tracing::info!("Updated Enable Banking settings for user {}", user_id.0);
-            axum::response::Redirect::to(&format!("{base}/leanfin/settings")).into_response()
-        }
-        Err(e) => {
-            tracing::error!("Failed to save settings: {e}");
-            Html("Failed to save settings".to_string()).into_response()
-        }
+    if let Err(e) = result {
+        tracing::error!("Failed to save settings: {e}");
+        return Html("Failed to save settings".to_string()).into_response();
     }
+    tracing::info!("Updated Enable Banking settings for user {}", user_id.0);
+
+    // Indexa token: written separately so that leaving the field blank keeps
+    // the stored token rather than wiping it.
+    if let Some(token) = indexa_token {
+        let encrypted = match encrypt(token.as_bytes(), encryption_key) {
+            Ok(enc) => enc,
+            Err(e) => {
+                tracing::error!("Failed to encrypt Indexa token: {e:#}");
+                return Html("Failed to encrypt Indexa token".to_string()).into_response();
+            }
+        };
+        if let Err(e) = sqlx::query(
+            r#"INSERT INTO leanfin_user_settings (user_id, indexa_token, updated_at)
+               VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+               ON CONFLICT(user_id) DO UPDATE SET
+                   indexa_token = excluded.indexa_token,
+                   updated_at = excluded.updated_at"#,
+        )
+        .bind(user_id.0)
+        .bind(&encrypted)
+        .execute(&state.pool)
+        .await
+        {
+            tracing::error!("Failed to save Indexa token: {e}");
+            return Html("Failed to save settings".to_string()).into_response();
+        }
+        tracing::info!("Updated Indexa token for user {}", user_id.0);
+    }
+
+    axum::response::Redirect::to(&format!("{base}/leanfin/settings")).into_response()
 }

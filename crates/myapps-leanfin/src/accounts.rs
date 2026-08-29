@@ -30,6 +30,10 @@ pub fn routes() -> Router<AppState> {
             "/accounts/manual/new",
             get(manual_new_form).post(manual_new_submit),
         )
+        .route(
+            "/accounts/indexa/link",
+            get(indexa_link_form).post(indexa_link_submit),
+        )
         .route("/accounts/{id}/color", post(update_color))
         .route(
             "/accounts/manual/{id}/edit",
@@ -269,6 +273,84 @@ async fn list_accounts(
         );
     }
 
+    // Indexa accounts: provider-synced like bank accounts, but with no IBAN and
+    // no consent expiry, so they get their own section rather than being
+    // squeezed into the bank list with meaningless columns.
+    let indexa_accounts: Vec<&AccountRow> = accounts
+        .iter()
+        .filter(|a| a.account_type == "indexa" && (show_archived || !a.archived))
+        .collect();
+
+    let mut indexa_items = String::new();
+    for a in &indexa_accounts {
+        let name = html_escape(a.account_name.as_deref().unwrap_or(&a.bank_name));
+        let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
+        let color_val = a.color.as_deref().unwrap_or("#6B6B6B");
+        let archived_badge = if a.archived {
+            format!(r#" <span class="archived-badge">{}</span>"#, t.acc_archived)
+        } else {
+            String::new()
+        };
+        let toggle_btn = if a.archived {
+            format!(
+                r#"<form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
+                    <button type="submit" class="btn-icon">{unarchive}</button>
+                </form>"#,
+                id = a.id,
+                unarchive = t.acc_unarchive,
+            )
+        } else {
+            format!(
+                r#"<form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
+                    <button type="submit" class="btn-icon">{archive}</button>
+                </form>"#,
+                id = a.id,
+                archive = t.acc_archive,
+            )
+        };
+        indexa_items.push_str(&format!(
+            r##"<div class="account-item" style="--account-color:{color_val}">
+                <div class="account-color-stripe"></div>
+                <div style="flex:1">
+                    <div class="account-bank">{name}{archived_badge}</div>
+                    <span class="category-badge">{category}</span>
+                    {balance_html}
+                </div>
+                <div class="account-actions">
+                    {toggle_btn}
+                    <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
+                          onsubmit="return confirm('{delete_confirm}')" style="display:inline">
+                        <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
+                    </form>
+                </div>
+            </div>"##,
+            id = a.id,
+            category = t.acc_cat_investment,
+            delete = t.acc_delete,
+            delete_confirm = t.acc_delete_confirm_manual,
+        ));
+    }
+
+    let has_indexa_token = settings::has_indexa_token(&state.pool, user_id.0).await;
+    let indexa_link_btn = if has_indexa_token {
+        format!(
+            r#"<a href="{base}/leanfin/accounts/indexa/link" class="btn btn-primary">{}</a>"#,
+            t.acc_indexa_link
+        )
+    } else {
+        format!(
+            r#"<a href="{base}/leanfin/settings" class="btn btn-secondary">{}</a>"#,
+            t.acc_indexa_configure
+        )
+    };
+
+    if indexa_items.is_empty() {
+        indexa_items = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.acc_no_indexa
+        );
+    }
+
     let archived_toggle = if has_archived {
         let checked = if show_archived { " checked" } else { "" };
         format!(
@@ -320,6 +402,15 @@ async fn list_accounts(
         </div>
         <div class="card">
             <div class="card-header">
+                <h2>{indexa_accounts_heading}</h2>
+                {indexa_link_btn}
+            </div>
+            <div class="card-body">
+                <div class="account-grid">{indexa_items}</div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">
                 <h2>{manual_accounts_heading}</h2>
                 <a href="{base}/leanfin/accounts/manual/new" class="btn btn-primary">{add_account}</a>
             </div>
@@ -330,6 +421,7 @@ async fn list_accounts(
         title = t.acc_title,
         subtitle = t.acc_subtitle,
         bank_accounts_heading = t.acc_bank_accounts,
+        indexa_accounts_heading = t.acc_indexa_accounts,
         manual_accounts_heading = t.acc_manual_accounts,
         add_account = t.acc_add,
     );
@@ -1424,4 +1516,217 @@ struct PendingLink {
     bank_name: String,
     country: String,
     reauth_account_id: Option<i64>,
+}
+
+// ── Indexa Capital: link accounts ─────────────────────────────────
+
+/// List the Indexa accounts the stored token can read, marking those already
+/// linked. Nothing from `/users/me` beyond account number, type and status is
+/// kept — that response also carries the user's address, email and ID document.
+async fn indexa_link_form(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+    let t = super::i18n::t(lang);
+
+    let token = match settings::get_indexa_token(&state.pool, &state.config, user_id.0).await {
+        Ok(tok) => tok,
+        Err(_) => return Redirect::to(&format!("{base}/leanfin/settings")).into_response(),
+    };
+
+    let remote = match super::services::indexa::list_accounts(&token).await {
+        Ok(accounts) => accounts,
+        Err(e) => {
+            tracing::error!("Indexa: failed to list accounts: {e:#}");
+            let body = format!(
+                r#"<div class="page-header"><h1>{title}</h1></div>
+                <div class="card"><div class="card-body">
+                    <div class="alert alert-error">{error}</div>
+                    <a href="{base}/leanfin/accounts" class="btn btn-secondary">{back}</a>
+                </div></div>"#,
+                title = t.acc_indexa_link_title,
+                error = t.acc_indexa_error,
+                back = t.set_back,
+            );
+            return Html(render_page(
+                &format!("LeanFin — {}", t.accounts),
+                &leanfin_nav(base, "accounts", lang),
+                &body,
+                &state.config,
+                lang,
+            ))
+            .into_response();
+        }
+    };
+
+    let linked: Vec<String> = sqlx::query_scalar(
+        "SELECT account_uid FROM leanfin_accounts WHERE user_id = ? AND account_type = 'indexa'",
+    )
+    .bind(user_id.0)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let mut rows = String::new();
+    for account in &remote {
+        let already = linked.contains(&account.account_number);
+        let disabled = if already { " disabled checked" } else { "" };
+        let suffix = if already {
+            format!(" — {}", t.acc_indexa_already_linked)
+        } else {
+            String::new()
+        };
+        rows.push_str(&format!(
+            r#"<label class="txn-filter-check" style="display:block; margin:0.5rem 0">
+                <input type="checkbox" name="{prefix}{num}" value="1"{disabled}>
+                {num} ({atype}, {status}){suffix}
+            </label>"#,
+            prefix = INDEXA_CHECKBOX_PREFIX,
+            num = html_escape(&account.account_number),
+            atype = html_escape(&account.account_type),
+            status = html_escape(&account.status),
+        ));
+    }
+
+    if rows.is_empty() {
+        rows = format!(
+            r#"<div class="empty-state"><p>{}</p></div>"#,
+            t.acc_no_indexa
+        );
+    }
+
+    let body = format!(
+        r#"<div class="page-header">
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+        </div>
+        <div class="card" style="max-width: 32rem;">
+            <div class="card-body">
+                <form method="POST" action="{base}/leanfin/accounts/indexa/link">
+                    {rows}
+                    <div style="display:flex; gap:0.75rem; margin-top:1rem;">
+                        <a href="{base}/leanfin/accounts" class="btn btn-secondary">{cancel}</a>
+                        <button type="submit" style="flex:1">{link}</button>
+                    </div>
+                </form>
+            </div>
+        </div>"#,
+        title = t.acc_indexa_link_title,
+        subtitle = t.acc_indexa_link_subtitle,
+        cancel = t.set_cancel,
+        link = t.acc_indexa_link_submit,
+    );
+
+    Html(render_page(
+        &format!("LeanFin — {}", t.accounts),
+        &leanfin_nav(base, "accounts", lang),
+        &body,
+        &state.config,
+        lang,
+    ))
+    .into_response()
+}
+
+/// Selected accounts arrive as one checkbox per account, named `acct_{number}`.
+///
+/// A repeated `account_numbers` field would be the obvious encoding, but axum's
+/// `Form` uses `serde_urlencoded`, which cannot deserialize repeated keys into a
+/// `Vec`. A flat map sidesteps that without pulling in another extractor.
+#[derive(Deserialize)]
+struct IndexaLinkForm {
+    #[serde(flatten)]
+    fields: std::collections::HashMap<String, String>,
+}
+
+const INDEXA_CHECKBOX_PREFIX: &str = "acct_";
+
+impl IndexaLinkForm {
+    fn selected(&self) -> Vec<&str> {
+        self.fields
+            .keys()
+            .filter_map(|k| k.strip_prefix(INDEXA_CHECKBOX_PREFIX))
+            .collect()
+    }
+}
+
+async fn indexa_link_submit(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Form(form): Form<IndexaLinkForm>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    let token = match settings::get_indexa_token(&state.pool, &state.config, user_id.0).await {
+        Ok(tok) => tok,
+        Err(_) => return Redirect::to(&format!("{base}/leanfin/settings")).into_response(),
+    };
+
+    // Only accept account numbers the token actually owns — never trust the
+    // form, which could otherwise inject arbitrary values into account_uid.
+    let remote = match super::services::indexa::list_accounts(&token).await {
+        Ok(accounts) => accounts,
+        Err(e) => {
+            tracing::error!("Indexa: failed to list accounts: {e:#}");
+            return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
+        }
+    };
+
+    let selected = form.selected();
+    for account in &remote {
+        if !selected.contains(&account.account_number.as_str()) {
+            continue;
+        }
+
+        let name = format!("Indexa {}", account.account_number);
+        let currency = account.currency.as_deref().unwrap_or("EUR");
+
+        // Personal API tokens do not expire, so session_expires_at gets the same
+        // far-future sentinel manual accounts use and reauth never applies.
+        let result = sqlx::query(
+            r#"INSERT INTO leanfin_accounts
+               (user_id, bank_name, bank_country, session_id, account_uid, session_expires_at,
+                account_type, account_name, asset_category, balance_currency)
+               VALUES (?, 'Indexa Capital', 'ES', '', ?, '9999-12-31T00:00:00Z',
+                       'indexa', ?, 'investment', ?)
+               ON CONFLICT(account_uid) DO NOTHING"#,
+        )
+        .bind(user_id.0)
+        .bind(&account.account_number)
+        .bind(&name)
+        .bind(currency)
+        .execute(&state.pool)
+        .await;
+
+        match result {
+            Ok(r) if r.rows_affected() > 0 => {
+                let account_id = r.last_insert_rowid();
+                tracing::info!("Linked Indexa account for user {}", user_id.0);
+
+                // Pull the full valuation history so the balance-evolution chart
+                // starts at the account's opening date, not at link time.
+                let row: Option<crate::models::Account> = sqlx::query_as(
+                    "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, color, archived, created_at FROM leanfin_accounts WHERE id = ?",
+                )
+                .bind(account_id)
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
+
+                if let Some(row) = row {
+                    match super::services::sync::backfill_indexa_history(&state.pool, &token, &row)
+                        .await
+                    {
+                        Ok(n) => tracing::info!("Indexa: backfilled {n} balance snapshots"),
+                        Err(e) => tracing::warn!("Indexa: history backfill failed: {e:#}"),
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(e) => tracing::error!("Failed to link Indexa account: {e}"),
+        }
+    }
+
+    Redirect::to(&format!("{base}/leanfin/accounts")).into_response()
 }

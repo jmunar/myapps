@@ -102,7 +102,7 @@ async fn index(
 
     let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
     for a in &accounts {
-        let display = if a.account_type == "manual" {
+        let display = if a.account_type != "bank" {
             a.account_name
                 .clone()
                 .unwrap_or_else(|| a.bank_name.clone())

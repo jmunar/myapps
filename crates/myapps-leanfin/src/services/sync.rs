@@ -4,6 +4,7 @@ use sqlx::SqlitePool;
 
 use super::super::settings::{self, EnableBankingCredentials};
 use super::enable_banking;
+use super::indexa;
 use crate::models::Account;
 use myapps_core::config::Config;
 
@@ -26,8 +27,7 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
     .await?;
 
     if accounts.is_empty() {
-        tracing::info!("No linked bank accounts, nothing to sync");
-        return Ok(());
+        tracing::info!("No linked bank accounts");
     }
 
     // Group accounts by user_id to fetch credentials once per user
@@ -109,9 +109,34 @@ pub async fn run(pool: &SqlitePool, config: &Config) -> Result<()> {
         }
     }
 
+    // Indexa Capital accounts: independent of Enable Banking credentials and of
+    // consent expiry, so they sync even when no bank account is linked.
+    let indexa_users: Vec<i64> = sqlx::query_scalar(
+        "SELECT DISTINCT user_id FROM leanfin_accounts WHERE account_type = 'indexa' AND archived = 0",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
+
+    let mut indexa_result = SyncResult {
+        total_new: 0,
+        accounts_synced: 0,
+        accounts_skipped: 0,
+        errors: Vec::new(),
+        reconciliation_warnings: Vec::new(),
+    };
+    for user_id in indexa_users {
+        sync_indexa_for_user(pool, user_id, config, &mut indexa_result, true).await;
+    }
+
     tracing::info!(
-        "Sync complete: {total_new} new transactions across {} accounts",
-        accounts.len()
+        "Sync complete: {total_new} new transactions across {} bank accounts, {} Indexa accounts valued ({} failed)",
+        accounts.len(),
+        indexa_result.accounts_synced,
+        indexa_result.accounts_skipped,
     );
 
     Ok(())
@@ -279,6 +304,126 @@ async fn sync_account(
     Ok((inserted, reconciliation_warning))
 }
 
+// ── Indexa Capital ────────────────────────────────────────────────
+
+/// Sync one Indexa-backed account: fetch the current portfolio valuation,
+/// update the cached balance and record a daily snapshot.
+///
+/// Only `/portfolio` is called. It is the sole Indexa endpoint that carries
+/// both the valuation and no personal data, so the routine sync never touches
+/// the PII-bearing `/users/me` or `/accounts/{n}`.
+async fn sync_indexa_account(pool: &SqlitePool, token: &str, account: &Account) -> Result<()> {
+    let portfolio =
+        indexa::get_portfolio(pool, token, &account.account_uid, Some(account.id)).await?;
+
+    sqlx::query(
+        "UPDATE leanfin_accounts SET balance_amount = ?, balance_currency = 'EUR' WHERE id = ?",
+    )
+    .bind(portfolio.total_amount)
+    .bind(account.id)
+    .execute(pool)
+    .await?;
+
+    let timestamp = super::balance::timestamp_for_balance_type("INDEXA", Some(&portfolio.date));
+    super::balance::record_balance_snapshot(
+        pool,
+        account.id,
+        portfolio.total_amount,
+        "INDEXA",
+        &timestamp,
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Backfill an Indexa account's full valuation history into
+/// `leanfin_balance_snapshots`, so the balance-evolution chart shows the
+/// account from its opening date rather than from the day it was linked.
+///
+/// Unlike PSD2 (90 days at best), Indexa returns the whole series, so this only
+/// needs to run once at link time. Returns the number of snapshots written.
+pub async fn backfill_indexa_history(
+    pool: &SqlitePool,
+    token: &str,
+    account: &Account,
+) -> Result<u64> {
+    let performance =
+        indexa::get_performance(pool, token, &account.account_uid, Some(account.id)).await?;
+
+    let mut written = 0u64;
+    for point in &performance.portfolios {
+        let timestamp = super::balance::timestamp_for_balance_type("INDEXA", Some(&point.date));
+        match super::balance::record_balance_snapshot(
+            pool,
+            account.id,
+            point.total_amount,
+            "INDEXA",
+            &timestamp,
+        )
+        .await
+        {
+            Ok(_) => written += 1,
+            Err(e) => tracing::warn!(
+                "Indexa backfill: failed to record snapshot for {}: {e:#}",
+                point.date
+            ),
+        }
+    }
+
+    Ok(written)
+}
+
+/// Sync every Indexa account belonging to `user_id`, folding outcomes into `result`.
+async fn sync_indexa_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    config: &Config,
+    result: &mut SyncResult,
+    notify: bool,
+) {
+    let token = match settings::get_indexa_token(pool, config, user_id).await {
+        Ok(t) => t,
+        Err(_) => return, // Not configured for this user — nothing to do.
+    };
+
+    let accounts: Vec<Account> = sqlx::query_as(
+        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, color, archived, created_at FROM leanfin_accounts WHERE user_id = ? AND account_type = 'indexa' AND archived = 0",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
+
+    for account in &accounts {
+        match sync_indexa_account(pool, &token, account).await {
+            Ok(()) => {
+                result.accounts_synced += 1;
+                tracing::info!("Indexa account '{}': valuation updated", account.bank_name);
+            }
+            Err(e) => {
+                result.accounts_skipped += 1;
+                result
+                    .errors
+                    .push(format!("'{}': {e:#}", account.bank_name));
+                tracing::error!("Indexa account '{}': sync failed: {e:#}", account.bank_name);
+                if notify {
+                    myapps_core::services::notify::send(
+                        pool,
+                        config,
+                        "LeanFin",
+                        &format!("Indexa sync failed for '{}': {e:#}", account.bank_name),
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+}
+
 /// Run sync for a single user's accounts, returning a structured result for UI display.
 pub async fn run_for_user(pool: &SqlitePool, config: &Config, user_id: i64) -> SyncResult {
     run_for_user_inner(pool, config, user_id, None).await
@@ -312,56 +457,63 @@ async fn run_for_user_inner(
         reconciliation_warnings: Vec::new(),
     };
 
+    // Enable Banking credentials are optional: a user may have only Indexa
+    // accounts linked, which need no Enable Banking setup at all.
     let creds = match settings::get_credentials(pool, config, user_id).await {
-        Ok(c) => c,
+        Ok(c) => Some(c),
         Err(_) => {
             tracing::info!(
-                "User {user_id}: no Enable Banking credentials configured, skipping sync"
+                "User {user_id}: no Enable Banking credentials configured, skipping bank sync"
             );
-            return result;
+            None
         }
     };
 
-    let accounts: Vec<Account> = sqlx::query_as(
-        "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, color, archived, created_at FROM leanfin_accounts WHERE user_id = ? AND account_type = 'bank' AND archived = 0",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!("DB query failed: {e:#}");
-        Default::default()
-    });
+    if let Some(creds) = &creds {
+        let accounts: Vec<Account> = sqlx::query_as(
+            "SELECT id, user_id, bank_name, bank_country, iban, session_id, account_uid, session_expires_at, balance_amount, balance_currency, account_type, account_name, asset_category, color, archived, created_at FROM leanfin_accounts WHERE user_id = ? AND account_type = 'bank' AND archived = 0",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("DB query failed: {e:#}");
+            Default::default()
+        });
 
-    let now = Utc::now().naive_utc();
+        let now = Utc::now().naive_utc();
 
-    for account in &accounts {
-        let days_until_expiry = (account.session_expires_at - now).num_days();
+        for account in &accounts {
+            let days_until_expiry = (account.session_expires_at - now).num_days();
 
-        if days_until_expiry <= 0 {
-            result.accounts_skipped += 1;
-            result
-                .errors
-                .push(format!("'{}': session expired", account.bank_name,));
-            continue;
-        }
-
-        match sync_account(pool, config, &creds, account, lookback_override).await {
-            Ok((count, warning)) => {
-                result.total_new += count;
-                result.accounts_synced += 1;
-                if let Some(w) = warning {
-                    result.reconciliation_warnings.push(w);
-                }
-            }
-            Err(e) => {
+            if days_until_expiry <= 0 {
                 result.accounts_skipped += 1;
                 result
                     .errors
-                    .push(format!("'{}': {e:#}", account.bank_name,));
+                    .push(format!("'{}': session expired", account.bank_name,));
+                continue;
+            }
+
+            match sync_account(pool, config, creds, account, lookback_override).await {
+                Ok((count, warning)) => {
+                    result.total_new += count;
+                    result.accounts_synced += 1;
+                    if let Some(w) = warning {
+                        result.reconciliation_warnings.push(w);
+                    }
+                }
+                Err(e) => {
+                    result.accounts_skipped += 1;
+                    result
+                        .errors
+                        .push(format!("'{}': {e:#}", account.bank_name,));
+                }
             }
         }
     }
+
+    // Indexa accounts sync regardless of Enable Banking configuration.
+    sync_indexa_for_user(pool, user_id, config, &mut result, false).await;
 
     tracing::info!(
         "User {user_id} sync complete: {} new transactions, {} accounts synced, {} errors",

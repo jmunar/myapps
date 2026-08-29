@@ -5,6 +5,7 @@ mod leanfin {
     pub mod csv_import;
     pub mod escaping;
     pub mod expenses;
+    pub mod indexa;
     pub mod labels;
     pub mod manual_accounts;
     pub mod sync;
