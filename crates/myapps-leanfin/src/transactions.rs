@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use super::models::Transaction;
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::routes::AppState;
 
@@ -65,7 +66,7 @@ fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
         };
         html.push_str(&format!(
             r#"<span class="label-badge label-badge-sm" style="--label-color:{color}">{}{display_amount}</span> "#,
-            a.label_name,
+            html_escape(&a.label_name),
         ));
     }
     html.push_str(&format!(
@@ -85,7 +86,7 @@ fn render_row(
     base: &str,
     account_color: Option<&str>,
 ) -> String {
-    let counterparty = t.counterparty.as_deref().unwrap_or("—");
+    let counterparty = html_escape(t.counterparty.as_deref().unwrap_or("—"));
     let sign = if t.amount < 0.0 {
         "negative"
     } else {
@@ -122,7 +123,7 @@ fn render_row(
         </tr>"#,
         id = t.id,
         date = t.date,
-        desc = t.description,
+        desc = html_escape(&t.description),
         amount = t.amount,
         currency = t.currency,
     )
@@ -448,7 +449,7 @@ async fn alloc_editor_inner(
                     <button class="btn-icon btn-icon-danger" type="submit">&times;</button>
                 </form>
             </div>"##,
-            name = a.label_name,
+            name = html_escape(&a.label_name),
             amount = a.amount,
             alloc_id = a.id,
         ));
@@ -465,7 +466,11 @@ async fn alloc_editor_inner(
         if already {
             continue;
         }
-        options.push_str(&format!(r#"<option value="{}">{}</option>"#, l.id, l.name,));
+        options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            l.id,
+            html_escape(&l.name),
+        ));
     }
 
     let remaining_class = if remaining.abs() < 0.01 {
@@ -475,12 +480,12 @@ async fn alloc_editor_inner(
     };
 
     // Build "Add Rule" form with pre-filled values
-    let counterparty_val = txn_counterparty.as_deref().unwrap_or("");
-    let description_val = &txn_description;
+    let counterparty_val = html_escape(txn_counterparty.as_deref().unwrap_or(""));
+    let description_val = html_escape(&txn_description);
     let (default_field, default_pattern) = if !counterparty_val.is_empty() {
-        ("counterparty", counterparty_val)
+        ("counterparty", counterparty_val.as_str())
     } else {
-        ("description", txn_description.as_str())
+        ("description", description_val.as_str())
     };
 
     let flash_html = if let Some(msg) = flash {

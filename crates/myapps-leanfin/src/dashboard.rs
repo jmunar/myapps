@@ -2,6 +2,7 @@ use axum::{Extension, Router, response::Html, routing::get};
 
 use super::sync_handler::sync_button;
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::{NavItem, render_page};
 use myapps_core::routes::AppState;
@@ -101,7 +102,7 @@ async fn index(
 
     let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
     for a in &accounts {
-        let display = if a.account_type == "manual" {
+        let display = if a.account_type != "bank" {
             a.account_name
                 .clone()
                 .unwrap_or_else(|| a.bank_name.clone())
@@ -111,7 +112,11 @@ async fn index(
                 None => a.bank_name.clone(),
             }
         };
-        account_options.push_str(&format!(r#"<option value="{}">{}</option>"#, a.id, display,));
+        account_options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            a.id,
+            html_escape(&display),
+        ));
     }
 
     let labels: Vec<LabelOption> =
@@ -126,7 +131,11 @@ async fn index(
 
     let mut label_options = format!(r#"<option value="">{}</option>"#, t.txn_all_labels);
     for l in &labels {
-        label_options.push_str(&format!(r#"<option value="{}">{}</option>"#, l.id, l.name,));
+        label_options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            l.id,
+            html_escape(&l.name),
+        ));
     }
 
     let sync_btn = sync_button(base, lang);

@@ -8,10 +8,13 @@ use myapps_core::config::Config;
 
 /// Determine the timestamp to store for a given balance type.
 /// - ITAV, XPCD, ITBD → now (intraday snapshots)
-/// - CLAV, CLBD → close of business ({reference_date}T23:59:59Z or today)
+/// - CLAV, CLBD, INDEXA → close of business ({reference_date}T23:59:59Z or today)
+///
+/// INDEXA valuations are struck once per day by the fund depositary, so they
+/// behave like a closing balance rather than an intraday one.
 pub fn timestamp_for_balance_type(balance_type: &str, reference_date: Option<&str>) -> String {
     match balance_type {
-        "CLAV" | "CLBD" => {
+        "CLAV" | "CLBD" | "INDEXA" => {
             let date = reference_date.unwrap_or_else(|| {
                 // Leak is fine for a short-lived string; avoids lifetime issues.
                 // In practice reference_date is almost always Some.
@@ -188,8 +191,9 @@ pub fn fill_balance_gaps(series: &[BalancePoint], days: i64) -> Vec<BalancePoint
 
 /// Query daily balance series for a single account.
 /// For bank accounts, computes balances on the fly from the most recent reported
-/// balance and transaction sums. For manual accounts, uses stored reported rows
-/// with gap-filling.
+/// balance and transaction sums. For every other account type (manual, indexa),
+/// uses stored reported rows with gap-filling — they have snapshots but no
+/// transactions to walk, so the backward-walk path would yield nothing.
 pub async fn get_balance_series(
     pool: &SqlitePool,
     account_id: i64,
@@ -206,7 +210,7 @@ pub async fn get_balance_series(
             .fetch_one(pool)
             .await?;
 
-    if account_type == "manual" {
+    if account_type != "bank" {
         let mut rows: Vec<BalancePoint> = sqlx::query_as(
             r#"SELECT date, balance FROM leanfin_balance_snapshots
                WHERE account_id = ? AND date >= ?
@@ -219,7 +223,7 @@ pub async fn get_balance_series(
 
         // An account without recent entries still holds its last known balance,
         // so seed the window with the most recent entry before the cutoff.
-        // Without this, a manual account untouched during the window would
+        // Without this, an account with no entries during the window would
         // produce an empty series and vanish from the aggregated total.
         let pre_cutoff: Option<BalancePoint> = sqlx::query_as(
             r#"SELECT date, balance FROM leanfin_balance_snapshots
