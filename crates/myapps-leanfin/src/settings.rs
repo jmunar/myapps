@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 
 use super::dashboard::leanfin_nav;
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::config::Config;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
@@ -132,7 +133,7 @@ async fn settings_form(
 
     let has_key = has_credentials(&state.pool, user_id.0).await;
 
-    let app_id_value = current_app_id.as_deref().unwrap_or("");
+    let app_id_value = html_escape(current_app_id.as_deref().unwrap_or(""));
     let key_status = if has_key {
         format!(r#"<span class="status-ok">{}</span>"#, t.set_configured)
     } else {

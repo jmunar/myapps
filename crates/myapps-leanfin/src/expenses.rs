@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use super::dashboard::leanfin_nav;
 use super::services::expenses::{self, ExpensePoint};
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -71,7 +72,7 @@ async fn page(
             r##"<button type="button" class="label-badge label-pill" style="--label-color:{color}"
                     data-label-id="{id}" onclick="toggleLabel(this)">{name}</button> "##,
             id = l.id,
-            name = l.name,
+            name = html_escape(&l.name),
         ));
     }
 

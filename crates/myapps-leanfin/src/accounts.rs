@@ -12,6 +12,7 @@ use super::services::enable_banking;
 use super::settings;
 use super::sync_handler::sync_button;
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -100,7 +101,7 @@ async fn list_accounts(
     for a in &bank_accounts {
         let session_expires_at = a.session_expires_at;
         let expires = session_expires_at.format("%Y-%m-%d").to_string();
-        let iban = a.iban.as_deref().unwrap_or("\u{2014}");
+        let iban = html_escape(a.iban.as_deref().unwrap_or("\u{2014}"));
         let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
 
         if a.archived {
@@ -121,7 +122,7 @@ async fn list_accounts(
                         </form>
                     </div>
                 </div>"#,
-                bank = a.bank_name,
+                bank = html_escape(&a.bank_name),
                 id = a.id,
                 archived = t.acc_archived,
                 unarchive = t.acc_unarchive,
@@ -178,7 +179,7 @@ async fn list_accounts(
                         </form>
                     </div>
                 </div>"##,
-                bank = a.bank_name,
+                bank = html_escape(&a.bank_name),
                 id = a.id,
                 archive = t.acc_archive,
                 delete = t.acc_delete,
@@ -194,7 +195,7 @@ async fn list_accounts(
     // Manual accounts section
     let mut manual_items = String::new();
     for a in &manual_accounts {
-        let name = a.account_name.as_deref().unwrap_or(&a.bank_name);
+        let name = html_escape(a.account_name.as_deref().unwrap_or(&a.bank_name));
         let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
         let category_badge = match a.asset_category.as_deref() {
             Some(cat) => format!(r#"<span class="category-badge">{cat}</span>"#),
@@ -543,7 +544,7 @@ async fn manual_edit_form(
         return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
     };
 
-    let name = account.account_name.as_deref().unwrap_or("");
+    let name = html_escape(account.account_name.as_deref().unwrap_or(""));
     let category = account.asset_category.as_deref().unwrap_or("other");
 
     let cat_labels = [
@@ -662,7 +663,7 @@ async fn manual_value_form(
         return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
     };
 
-    let name = account.account_name.as_deref().unwrap_or("Account");
+    let name = html_escape(account.account_name.as_deref().unwrap_or("Account"));
     let current = account
         .balance_amount
         .map(|v| format!("{v:.2}"))
@@ -801,7 +802,7 @@ async fn import_csv_form(
         return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
     };
 
-    let name = account.account_name.as_deref().unwrap_or("Account");
+    let name = html_escape(account.account_name.as_deref().unwrap_or("Account"));
 
     let body = format!(
         r#"<div class="page-header">
@@ -869,7 +870,7 @@ async fn import_csv_submit(
         return Redirect::to(&format!("{base}/leanfin/accounts")).into_response();
     };
 
-    let name = account.account_name.as_deref().unwrap_or("Account");
+    let name = html_escape(account.account_name.as_deref().unwrap_or("Account"));
 
     // Extract file from multipart
     let mut csv_bytes: Option<Vec<u8>> = None;
@@ -880,7 +881,7 @@ async fn import_csv_submit(
                 Err(e) => {
                     return render_import_error(
                         &state.config,
-                        name,
+                        &name,
                         account_id,
                         &format!("Failed to read file: {e}"),
                         lang,
@@ -892,7 +893,7 @@ async fn import_csv_submit(
     }
 
     let Some(csv_bytes) = csv_bytes else {
-        return render_import_error(&state.config, name, account_id, "No file uploaded", lang)
+        return render_import_error(&state.config, &name, account_id, "No file uploaded", lang)
             .into_response();
     };
 
@@ -984,7 +985,7 @@ async fn import_csv_submit(
             ))
             .into_response()
         }
-        Err(e) => render_import_error(&state.config, name, account_id, &e.to_string(), lang)
+        Err(e) => render_import_error(&state.config, &name, account_id, &e.to_string(), lang)
             .into_response(),
     }
 }
@@ -1025,13 +1026,6 @@ fn render_import_error(
         config,
         lang,
     ))
-}
-
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 // ── Link: choose bank ─────────────────────────────────────────────

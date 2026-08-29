@@ -5,6 +5,7 @@ use serde::Deserialize;
 use super::dashboard::leanfin_nav;
 use super::services::balance::{self, BalancePoint};
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -77,7 +78,11 @@ async fn page(
                 None => a.bank_name.clone(),
             }
         };
-        account_options.push_str(&format!(r#"<option value="{}">{}</option>"#, a.id, display,));
+        account_options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            a.id,
+            html_escape(&display),
+        ));
     }
 
     let body = format!(
