@@ -595,4 +595,9 @@ uploading user and deleted automatically after a configurable period.
   (client-side slicing with server-side append) would fix it.
 - **Deduplication** — identical files uploaded twice are stored twice.
 - **Previews** — no thumbnails or in-browser preview for images and PDFs.
-- **Command bar actions** — the app exposes no natural-language actions yet.
+- **Command bar actions** — the app exposes no natural-language actions yet;
+  `ops::commands()` is an empty list and `dispatch()` always errors.
+- **Quota under concurrent uploads** — the remaining quota is read once when a
+  request starts, so two uploads racing from the same user can each pass the
+  check and jointly exceed it. Bounded by the per-file limit and harmless on a
+  single-user instance; a transactional reservation would close it.

@@ -209,3 +209,99 @@ async fn sweep_is_safe_to_run_on_an_empty_deployment() {
     let dir = app.file_clipboard_dir.to_string_lossy().into_owned();
     services::retention::sweep(&app.pool, &dir).await.unwrap();
 }
+
+#[tokio::test]
+async fn the_saved_period_comes_back_on_the_dashboard() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    let saved = app
+        .server
+        .post("/file_clipboard/settings")
+        .form(&serde_json::json!({ "retention_days": 30 }))
+        .await
+        .text();
+    assert!(saved.contains("Saved."), "expected a confirmation: {saved}");
+
+    let body = app.server.get("/file_clipboard").await.text();
+    assert!(
+        body.contains(r#"value="30""#),
+        "the form should show the stored period, not the default"
+    );
+}
+
+#[tokio::test]
+async fn the_bounds_themselves_are_accepted() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    for days in [1, 365] {
+        let response = app
+            .server
+            .post("/file_clipboard/settings")
+            .form(&serde_json::json!({ "retention_days": days }))
+            .await;
+        assert_eq!(response.status_code(), 200, "{days} days should be allowed");
+
+        let stored: i64 = sqlx::query_scalar("SELECT retention_days FROM file_clipboard_settings")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+        assert_eq!(stored, days);
+    }
+}
+
+#[tokio::test]
+async fn sweep_collects_an_abandoned_partial_upload() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+    let uid = user_id(&app, "test").await;
+    let dir = app.file_clipboard_dir.to_string_lossy().into_owned();
+
+    let user_dir = storage::user_dir(&dir, uid);
+    tokio::fs::create_dir_all(&user_dir).await.unwrap();
+    let part = user_dir.join("99999999-8888-7777-6666-555555555555.part");
+    tokio::fs::write(&part, b"never finished").await.unwrap();
+
+    // Older than the grace period: the upload that wrote it is long gone.
+    let stale = std::time::SystemTime::now() - std::time::Duration::from_secs(48 * 60 * 60);
+    let handle = std::fs::File::options().write(true).open(&part).unwrap();
+    handle
+        .set_times(std::fs::FileTimes::new().set_modified(stale))
+        .unwrap();
+    drop(handle);
+
+    services::retention::sweep(&app.pool, &dir).await.unwrap();
+
+    assert!(!part.exists(), "an abandoned .part should be reclaimed");
+}
+
+#[tokio::test]
+async fn sweep_removes_an_emptied_user_directory() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+    upload(&app, "only.txt").await;
+
+    let uid = user_id(&app, "test").await;
+    let dir = app.file_clipboard_dir.to_string_lossy().into_owned();
+    let user_dir = storage::user_dir(&dir, uid);
+    assert!(
+        user_dir.exists(),
+        "precondition: the upload made a directory"
+    );
+
+    let id: i64 = sqlx::query_scalar("SELECT id FROM file_clipboard_files")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    app.server
+        .post(&format!("/file_clipboard/files/{id}/delete"))
+        .await;
+
+    services::retention::sweep(&app.pool, &dir).await.unwrap();
+
+    assert!(
+        !user_dir.exists(),
+        "an empty per-user directory should not be left behind"
+    );
+}

@@ -359,3 +359,149 @@ async fn delete_cannot_touch_another_users_file() {
         .unwrap();
     assert_eq!(count, 1, "another user's file must survive");
 }
+
+#[tokio::test]
+async fn upload_accepts_several_files_in_one_request() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    // Dropping a selection of files sends them as repeated `file` fields.
+    let body = app
+        .server
+        .post("/file_clipboard/upload")
+        .multipart(
+            MultipartForm::new()
+                .add_part("file", part(b"one".to_vec(), "one.txt"))
+                .add_part("file", part(b"two".to_vec(), "two.txt")),
+        )
+        .await
+        .text();
+
+    assert!(body.contains("one.txt"));
+    assert!(body.contains("two.txt"));
+
+    let names: Vec<String> =
+        sqlx::query_scalar("SELECT original_name FROM file_clipboard_files ORDER BY id")
+            .fetch_all(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(names, vec!["one.txt".to_string(), "two.txt".to_string()]);
+
+    let uid = user_id(&app, "test").await;
+    let dir = storage::user_dir(&app.file_clipboard_dir.to_string_lossy(), uid);
+    let mut entries = tokio::fs::read_dir(&dir).await.unwrap();
+    let mut on_disk = 0;
+    while let Some(_e) = entries.next_entry().await.unwrap() {
+        on_disk += 1;
+    }
+    assert_eq!(on_disk, 2, "both files should have their own bytes");
+}
+
+#[tokio::test]
+async fn download_of_an_unknown_file_is_not_found() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    let response = app
+        .server
+        .get("/file_clipboard/files/999/download")
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 404);
+}
+
+#[tokio::test]
+async fn download_of_an_expired_file_is_not_found() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+    upload(&app, b"stale".to_vec(), "stale.txt").await;
+
+    let id: i64 = sqlx::query_scalar("SELECT id FROM file_clipboard_files")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE file_clipboard_files SET expires_at = datetime('now', '-1 day')")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    // The bytes are still on disk until the sweep runs; the link must not work.
+    let response = app
+        .server
+        .get(&format!("/file_clipboard/files/{id}/download"))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 404);
+}
+
+#[tokio::test]
+async fn download_of_a_row_whose_bytes_are_gone_is_not_found() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+    upload(&app, b"vanishing".to_vec(), "gone.txt").await;
+
+    let uid = user_id(&app, "test").await;
+    let (id, stored): (i64, String) =
+        sqlx::query_as("SELECT id, stored_name FROM file_clipboard_files")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    // What a half-finished delete or a wiped storage mount leaves behind.
+    let dir = app.file_clipboard_dir.to_string_lossy().into_owned();
+    tokio::fs::remove_file(storage::file_path(&dir, uid, &stored))
+        .await
+        .unwrap();
+
+    let response = app
+        .server
+        .get(&format!("/file_clipboard/files/{id}/download"))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 404, "must not be a 500");
+}
+
+#[tokio::test]
+async fn download_keeps_a_non_ascii_name_in_a_valid_header() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+    upload(&app, b"hola".to_vec(), "año nuevo.txt").await;
+
+    let id: i64 = sqlx::query_scalar("SELECT id FROM file_clipboard_files")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let response = app
+        .server
+        .get(&format!("/file_clipboard/files/{id}/download"))
+        .await;
+    let disposition = response
+        .headers()
+        .get("content-disposition")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    assert!(disposition.starts_with("attachment;"));
+    assert!(
+        disposition.contains("filename*=UTF-8''a%C3%B1o%20nuevo.txt"),
+        "the UTF-8 form should survive: {disposition}"
+    );
+    assert!(
+        disposition.is_ascii(),
+        "a header must stay ASCII or it is dropped: {disposition}"
+    );
+}
+
+#[tokio::test]
+async fn delete_of_an_unknown_file_still_redraws_the_list() {
+    let app = app().await;
+    app.login_as("test", "pass").await;
+
+    // A stale tab clicking delete twice must not produce an error page.
+    let response = app.server.post("/file_clipboard/files/999/delete").await;
+    assert_eq!(response.status_code(), 200);
+    assert!(response.text().contains("No files yet"));
+}
