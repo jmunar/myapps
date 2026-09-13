@@ -13,6 +13,9 @@ cd "$ROOT"
 DEMO_USER="${SCREENSHOT_USER:-demo}"
 DEMO_PASS="${SCREENSHOT_PASS:-demo}"
 DB_FILE="data/screenshots.db"
+# FileClipboard writes real files; keep them out of the working tree and clean
+# them up with the database.
+FC_DIR="data/screenshots-files"
 BIND_ADDR="127.0.0.1:3199"
 BASE_URL="http://${BIND_ADDR}"
 OUT_DIR="docs/screenshots"
@@ -24,6 +27,7 @@ cleanup() {
     wait "$SERVER_PID" 2>/dev/null || true
   fi
   rm -f "$DB_FILE" "${DB_FILE}-wal" "${DB_FILE}-shm"
+  rm -rf "$FC_DIR"
 }
 trap cleanup EXIT
 
@@ -34,11 +38,13 @@ cargo build --release 2>&1
 # ── 2. Prepare database & seed ──
 echo ":: Creating demo user and seeding data..."
 rm -f "$DB_FILE" "${DB_FILE}-wal" "${DB_FILE}-shm"
+rm -rf "$FC_DIR"
 
 export DATABASE_URL="sqlite://${DB_FILE}"
 export BIND_ADDR
 export BASE_URL
 export ENCRYPTION_KEY="0000000000000000000000000000000000000000000000000000000000000000"
+export FILE_CLIPBOARD_DIR="$FC_DIR"
 
 ./target/release/myapps create-user --username "$DEMO_USER" --password "$DEMO_PASS"
 ./target/release/myapps seed --user "$DEMO_USER"

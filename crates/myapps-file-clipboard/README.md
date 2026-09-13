@@ -2,6 +2,10 @@
 
 Drop files here, pick them up on any device.
 
+<p align="center">
+  <img src="../../docs/screenshots/file-clipboard.png" width="270" alt="FileClipboard – Files" />
+</p>
+
 ## Features
 
 - Drag-and-drop upload with per-file progress (large files stream to disk)

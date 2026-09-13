@@ -133,6 +133,26 @@ test.describe("README screenshots", () => {
     await page.locator("#csv_input_name").fill("Week 12 quiz");
     await snap(page, "form-input-csv-upload");
 
+    // ── FileClipboard ──
+    // Seeding deliberately inserts no files (a demo row would have to point at
+    // real bytes on disk), so upload a few through the UI to fill the list.
+    await page.goto(`${BASE_URL}/file_clipboard`);
+    const demoFiles: [string, string, number][] = [
+      ["boarding-pass.pdf", "application/pdf", 240 * 1024],
+      ["holiday-photos.zip", "application/zip", 4_200 * 1024],
+      ["meeting-notes.md", "text/markdown", 2 * 1024],
+    ];
+    for (const [name, mimeType, size] of demoFiles) {
+      await page.setInputFiles("#fc-file-input", {
+        name,
+        mimeType,
+        buffer: Buffer.alloc(size, "x"),
+      });
+      // Uploads run one at a time; wait for the row to land in the list.
+      await page.waitForSelector(`text=${name}`, { timeout: 15000 });
+    }
+    await snap(page, "file-clipboard");
+
     // ── Notes ──
     await page.goto(`${BASE_URL}/notes`);
     await snap(page, "notes-list");

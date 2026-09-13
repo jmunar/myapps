@@ -70,6 +70,12 @@ hide per-user.
   <img src="docs/screenshots/form-input-form-types.png" width="270" alt="FormInput – Form types" />
 </p>
 
+### FileClipboard
+
+<p align="center">
+  <img src="docs/screenshots/file-clipboard.png" width="270" alt="FileClipboard – Files" />
+</p>
+
 ### Notes
 
 <p align="center">
