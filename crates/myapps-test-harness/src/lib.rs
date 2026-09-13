@@ -11,6 +11,15 @@ static DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct TestApp {
     pub server: TestServer,
     pub pool: SqlitePool,
+    /// Isolated on-disk scratch directory for apps that store file contents
+    /// outside SQLite (FileClipboard). Removed when the `TestApp` is dropped.
+    pub file_clipboard_dir: std::path::PathBuf,
+}
+
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.file_clipboard_dir);
+    }
 }
 
 /// Spin up a fresh app instance with the given apps and an in-memory SQLite database.
@@ -49,6 +58,8 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         app_pools.insert(key, scoped);
     }
 
+    let file_clipboard_dir = std::env::temp_dir().join(format!("myapps-test-fc-{db_id}"));
+
     let config = myapps_core::config::Config {
         database_url: db_url,
         base_url: None,
@@ -60,6 +71,11 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         base_path: String::new(),
         whisper_cli_path: "whisper-cli".into(),
         whisper_models_dir: "models".into(),
+        file_clipboard_dir: file_clipboard_dir.to_string_lossy().into_owned(),
+        file_clipboard_retention_days: 7,
+        file_clipboard_max_file_bytes: 5 * 1024 * 1024,
+        file_clipboard_user_quota_bytes: 20 * 1024 * 1024,
+        file_clipboard_min_free_bytes: 0,
         deploy_apps: None,
         llama_server_url: String::new(),
         seed: false,
@@ -82,7 +98,11 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         .expect_success_by_default()
         .build(app);
 
-    TestApp { server, pool }
+    TestApp {
+        server,
+        pool,
+        file_clipboard_dir,
+    }
 }
 
 impl TestApp {

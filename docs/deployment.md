@@ -259,7 +259,8 @@ Run once on a fresh server. It:
 3. Creates a `myapps` system user (no login shell)
 4. Creates `$DEPLOY_REMOTE_DIR/{data,logs,static}` with proper ownership
 5. Creates `$DEPLOY_REMOTE_DIR/.env` template (chmod 600)
-6. Installs the systemd unit for the environment
+6. Installs the systemd unit for the environment (also refreshed on every
+   deploy — see below)
 7. Installs a cron job for daily scheduled tasks at 06:00 (if `DEPLOY_CRON_ENABLED=true`)
 8. Installs an nginx site config for the configured domain
 
@@ -301,6 +302,11 @@ VAPID_SUBJECT=mailto:you@example.com                      # VAPID subject claim
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli   # whisper.cpp binary
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models                # GGML model directory
 LLAMA_SERVER_URL=                                         # llama.cpp server URL (optional)
+FILE_CLIPBOARD_DIR=/opt/myapps/data/file_clipboard        # FileClipboard upload directory
+FILE_CLIPBOARD_RETENTION_DAYS=7                           # Default deletion period for new uploads
+FILE_CLIPBOARD_MAX_FILE_BYTES=5368709120                  # Largest single upload (default 5 GiB)
+FILE_CLIPBOARD_USER_QUOTA_BYTES=21474836480               # Per-user total (default 20 GiB)
+FILE_CLIPBOARD_MIN_FREE_BYTES=2147483648                  # Reject uploads below this free space (default 2 GiB)
 BIND_ADDR=127.0.0.1:3000
 DEPLOY_APPS=                                              # Comma-separated app keys (blank = all)
 AUTH_SSO_HEADER=                                          # Trusted SSO header (e.g. Remote-User for Authelia)
@@ -315,8 +321,8 @@ When set, myapps sends requests to a running llama.cpp server
 
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
 `DEPLOY_APPS` limits which apps are mounted and shown in the launcher. Valid
-keys: `leanfin`, `mindflow`, `voice_to_text`, `form_input`, `notes`. When
-empty or unset, all apps are available.
+keys: `leanfin`, `mindflow`, `voice_to_text`, `form_input`, `notes`,
+`file_clipboard`. When empty or unset, all apps are available.
 `AUTH_SSO_HEADER` enables reverse-proxy SSO authentication (e.g. Authelia). When
 set to the header name that carries the authenticated username (typically
 `Remote-User`), myapps trusts that header and auto-creates users on first visit.
@@ -329,9 +335,71 @@ Example: `vault|Vaultwarden|Password manager|🔐|https://vault.example.com`.
 `BASE_URL` is the public URL of the application. `ENCRYPTION_KEY` is needed for
 storing Enable Banking credentials (per-user encrypted settings).
 
+### FileClipboard storage
+
+FileClipboard stores file *contents* on disk, not in SQLite, so its directory
+shares a filesystem with `myapps.db` unless you move it. A full disk does not
+just fail uploads — it fails SQLite writes for every other app — so:
+
+- Point `FILE_CLIPBOARD_DIR` at a separate mount (e.g. an external SSD) on any
+  deployment where people will store more than a few gigabytes. The deploy
+  config knob is `DEPLOY_FILE_CLIPBOARD_DIR` in `deploy/{stage,prod}.env`.
+- Keep `FILE_CLIPBOARD_MIN_FREE_BYTES` well above zero. Uploads abort mid-stream
+  once free space would drop below it, leaving headroom for the database.
+- `FILE_CLIPBOARD_MAX_FILE_BYTES` must not exceed nginx's `client_max_body_size`
+  (see below) — nginx rejects an oversized body before the app ever sees it.
+
+**A storage directory outside the deploy directory needs a systemd exception.**
+The service runs with `ProtectSystem=strict`, which mounts the whole filesystem
+read-only in its private mount namespace and punches back through only the paths
+listed in `ReadWritePaths`. A directory that is not listed fails with
+`Read-only file system (os error 30)` however it is owned — `chown` and `chmod`
+have no effect, and the same path stays writable from a shell, which makes this
+look like an application bug rather than a sandbox.
+
+`write_unit()` in `deploy.sh` handles this, and it runs on **every deploy**
+(`deploy`, `install`, `release-deploy`) as well as on `setup`. It reads
+`FILE_CLIPBOARD_DIR` from the server's own `.env` — the value the app actually
+uses — and when that path is outside the deploy directory it adds it to
+`ReadWritePaths` and emits `RequiresMountsFor`, so the service waits for an
+external disk instead of racing it at boot. It prints the storage directory and
+the resulting `ReadWritePaths` as it goes.
+
+So after changing `FILE_CLIPBOARD_DIR` in the server's `.env`, a normal deploy
+is enough:
+
+```bash
+make deploy-stage        # or ./deploy.sh stage deploy
+```
+
+To patch a running server without deploying (note the **service name** differs
+per environment — `myapps` vs `myapps-stage`):
+
+```bash
+sudo systemctl edit myapps-stage   # [Service] / ReadWritePaths=/mnt/hdd/myapps
+sudo systemctl restart myapps-stage
+```
+
+Drop-ins created with `systemctl edit` live in `<service>.service.d/` and
+survive the unit being rewritten. Direct edits to the unit file itself do not.
+
+The server logs which case it is at startup — either `storage directory <dir> is
+writable` or an error naming the fix — visible with
+`journalctl -u myapps-stage -n 50`.
+
+Expired files and orphaned bytes are removed by a sweep that runs on the daily
+cron job *and* every six hours inside the server process, so retention still
+works on deployments where `DEPLOY_CRON_ENABLED=false`.
+
 ## systemd Service
 
-Installed at `/etc/systemd/system/myapps.service` by `setup`.
+Installed at `/etc/systemd/system/myapps.service` by `write_unit()` in
+`deploy.sh`, which runs on **every** deploy (`deploy`, `install`,
+`release-deploy`) as well as on `setup`. The unit is therefore declarative: edit
+`deploy.sh` and the next deploy applies it. The corollary is that hand-edits to
+the unit file on the server are overwritten — use `systemctl edit <service>` for
+local overrides, which live in a separate `<service>.service.d/` directory and
+survive.
 
 ```bash
 sudo systemctl enable myapps    # auto-start on boot
@@ -627,7 +695,7 @@ The CD workflow requires two GitHub **Environments** (`staging` and
 | `DEPLOY_SSH_PORT`         | `22`                        | `22`                       |
 | `DEPLOY_DOMAIN`           | `stage.yourdomain.com`      | `yourdomain.com`           |
 | `DEPLOY_REMOTE_DIR`       | `/opt/myapps-stage`         | `/opt/myapps`              |
-| `DEPLOY_REMOTE_BUILD_DIR` | `~/myapps-stage-build`      | `~/myapps-stage-build`     |
+| `DEPLOY_REMOTE_BUILD_DIR` | `~/myapps-stage-build`      | `~/myapps-build`           |
 | `DEPLOY_SERVICE_NAME`     | `myapps-stage`              | `myapps`                   |
 | `DEPLOY_NGINX_SITE`       | `myapps-stage`              | `myapps`                   |
 | `DEPLOY_PORT`             | `3001`                      | `3000`                     |
@@ -651,6 +719,12 @@ deploy to staging by default; tick the **Also deploy to production** input
 to continue on to prod after staging.
 
 ## nginx + HTTPS
+
+The generated config sets `client_max_body_size 5g` and
+`proxy_request_buffering off` for FileClipboard uploads. **`setup` only writes
+the site config when one does not already exist**, so add both lines by hand to
+any nginx config installed before FileClipboard existed — without them, nginx
+rejects uploads over its 1 MB default.
 
 The `setup` command installs an HTTP-only nginx config at
 `/etc/nginx/sites-available/myapps` with `server_name` set to your domain.

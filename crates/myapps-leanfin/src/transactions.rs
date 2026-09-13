@@ -342,7 +342,7 @@ async fn list(
     pagination.push_str("</div></div>");
 
     Html(format!(
-        r#"<table>
+        r#"<table class="txn-table table-cards">
             <thead><tr>
                 <th>{col_date}</th>
                 <th>{col_counterparty}</th>

@@ -37,6 +37,17 @@ fn parse_external_apps(raw: &str) -> Vec<ExternalApp> {
         .collect()
 }
 
+const GIB: u64 = 1024 * 1024 * 1024;
+
+/// Parse a numeric environment variable, falling back to `default` when unset
+/// or unparseable.
+fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
+    env::var(key)
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(default)
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub database_url: String,
@@ -53,6 +64,17 @@ pub struct Config {
     pub whisper_cli_path: String,
     /// Directory containing whisper GGML model files.
     pub whisper_models_dir: String,
+    /// Directory holding FileClipboard uploads. Ideally a separate mount from
+    /// the SQLite database, so a full clipboard cannot stall every other app.
+    pub file_clipboard_dir: String,
+    /// Default retention period (days) for newly uploaded clipboard files.
+    pub file_clipboard_retention_days: i64,
+    /// Maximum size of a single clipboard upload, in bytes.
+    pub file_clipboard_max_file_bytes: u64,
+    /// Maximum total bytes one user may hold in the clipboard.
+    pub file_clipboard_user_quota_bytes: u64,
+    /// Uploads abort when free disk space would drop below this many bytes.
+    pub file_clipboard_min_free_bytes: u64,
     /// Optional subset of apps to deploy (app keys). `None` means all apps.
     pub deploy_apps: Option<Vec<String>>,
     /// Base URL of the llama.cpp server (e.g. `http://127.0.0.1:8081`).
@@ -98,6 +120,14 @@ impl Config {
                 .unwrap_or_else(|_| "whisper-cli".to_string()),
             whisper_models_dir: env::var("WHISPER_MODELS_DIR")
                 .unwrap_or_else(|_| "models".to_string()),
+            file_clipboard_dir: env::var("FILE_CLIPBOARD_DIR")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "data/file_clipboard".to_string()),
+            file_clipboard_retention_days: env_parse("FILE_CLIPBOARD_RETENTION_DAYS", 7),
+            file_clipboard_max_file_bytes: env_parse("FILE_CLIPBOARD_MAX_FILE_BYTES", 5 * GIB),
+            file_clipboard_user_quota_bytes: env_parse("FILE_CLIPBOARD_USER_QUOTA_BYTES", 20 * GIB),
+            file_clipboard_min_free_bytes: env_parse("FILE_CLIPBOARD_MIN_FREE_BYTES", 2 * GIB),
             deploy_apps: env::var("DEPLOY_APPS")
                 .ok()
                 .filter(|s| !s.is_empty())
@@ -227,6 +257,11 @@ mod tests {
             base_path: String::new(),
             whisper_cli_path: String::new(),
             whisper_models_dir: String::new(),
+            file_clipboard_dir: String::new(),
+            file_clipboard_retention_days: 7,
+            file_clipboard_max_file_bytes: 0,
+            file_clipboard_user_quota_bytes: 0,
+            file_clipboard_min_free_bytes: 0,
             deploy_apps,
             llama_server_url: String::new(),
             seed: false,

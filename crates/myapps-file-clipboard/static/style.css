@@ -1,0 +1,221 @@
+/* ═══════════════════════════════════════════════════════════════
+   FileClipboard
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Drop zone ────────────────────────────────────────────────── */
+.fc-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-input);
+    padding: 2.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.fc-dropzone:hover,
+.fc-dropzone.fc-dragover {
+    border-color: var(--accent);
+    background: var(--accent-light);
+}
+
+.fc-dropzone-title {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: var(--text);
+}
+
+.fc-dropzone-hint {
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.fc-browse {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* ── Upload progress ──────────────────────────────────────────── */
+.fc-progress:not(:empty) {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.fc-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.85rem;
+}
+
+.fc-progress-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+}
+
+.fc-progress-row progress {
+    width: 10rem;
+    height: 0.5rem;
+}
+
+.fc-upload-status:not(:empty) {
+    margin-top: 0.6rem;
+    font-size: 0.85rem;
+}
+
+/* ── Retention setting ────────────────────────────────────────── */
+.fc-settings-form {
+    display: flex;
+    /* core.css makes every form a column flex container; this row is opt-in,
+       otherwise `align-items: center` below centres the whole form. */
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.fc-settings-form label {
+    margin: 0;
+}
+
+.fc-settings-form input[type="number"] {
+    width: 4.5rem;
+    padding: 0.35rem 0.5rem;
+}
+
+.fc-settings-hint,
+.fc-settings-status {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.fc-settings-status .success {
+    color: var(--positive);
+}
+
+/* ── File list ────────────────────────────────────────────────── */
+.fc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.fc-table th {
+    text-align: left;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 0.4rem 0.5rem;
+}
+
+.fc-table td {
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--border-light);
+    white-space: nowrap;
+}
+
+.fc-name {
+    max-width: 22rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fc-actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.fc-actions form {
+    display: inline;
+}
+
+.fc-usage {
+    margin: 0.75rem 0 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-align: right;
+}
+
+.fc-empty {
+    margin: 0;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 1.5rem 0;
+}
+
+/* ── Mobile: file table → card list ───────────────────────────
+   The table opts into core's `.table-cards` transform; these rules only place
+   this app's cells inside the card. */
+@media (max-width: 640px) {
+    .fc-table tbody tr {
+        align-items: center;
+    }
+
+    .fc-table td {
+        padding: 0;
+        border-bottom: none;
+        white-space: normal;
+    }
+
+    /* Long names must wrap rather than push the card off-screen. */
+    .fc-name {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        max-width: none;
+        overflow-wrap: anywhere;
+    }
+
+    .fc-size {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    .fc-expires {
+        grid-column: 1;
+        grid-row: 3;
+    }
+    .fc-added {
+        grid-column: 1;
+        grid-row: 4;
+    }
+
+    /* Without the header row, bare values are ambiguous. */
+    .fc-size::before,
+    .fc-added::before,
+    .fc-expires::before {
+        content: attr(data-label) ": ";
+        color: var(--text-secondary);
+    }
+
+    .fc-added,
+    .fc-expires {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+    }
+
+    .fc-actions {
+        grid-column: 2;
+        grid-row: 2 / span 3;
+        align-self: center;
+    }
+
+    /* The settings row is too wide for a phone: let it stack. */
+    .fc-settings-form {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

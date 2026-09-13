@@ -92,6 +92,11 @@ myapps/
 │   │   ├── static/style.css
 │   │   ├── tests/
 │   │   └── src/
+│   ├── myapps-file-clipboard/ # FileClipboard cross-device file sharing
+│   │   ├── migrations/
+│   │   ├── static/            # style.css + upload.js (drag-and-drop uploader)
+│   │   ├── tests/
+│   │   └── src/
 │   └── myapps-test-harness/ # Shared test utilities (spawn_app, TestApp)
 ├── tests/                   # Root integration tests
 │   ├── harness/mod.rs       # Root test harness (uses all apps)
@@ -224,6 +229,18 @@ After login, the top-level router serves:
     same note. A background task evicts idle rooms (no subscribers for
     ≥60s), snapshotting their update log into a single row.
 
+- `/file_clipboard/` — FileClipboard sub-app (nested router). File contents
+  live on disk, not in SQLite; see "FileClipboard storage" below.
+  - `/file_clipboard/` — Drop zone, retention setting, and file list
+  - `GET /file_clipboard/files/list` — File list partial (HTMX)
+  - `POST /file_clipboard/upload` — Streaming multipart upload. The route
+    disables axum's 2 MB default body limit; size, quota and free-space limits
+    are enforced while the bytes stream past
+  - `GET /file_clipboard/files/{id}/download` — Download (range-capable,
+    always `Content-Disposition: attachment` + `nosniff`)
+  - `POST /file_clipboard/files/{id}/delete` — Delete file and its bytes
+  - `POST /file_clipboard/settings` — Set the deletion period (1–365 days)
+
 ## Database Schema
 
 ### users
@@ -334,6 +351,39 @@ User uploads audio (or records via browser mic)
       ├─ UPDATE voice_to_text_jobs with transcription text (or error)
       └─ Send Web Push notification (success or failure)
 ```
+
+## FileClipboard Storage
+
+FileClipboard is the only app that stores data outside SQLite.
+
+```
+User drops a file (browser XHR, multipart)
+  │
+  ├─ nginx streams the body through (client_max_body_size 5g,
+  │    proxy_request_buffering off)
+  │
+  ├─ Handler streams chunks to <dir>/<user_id>/<uuid>.part
+  │    ├─ per-file size limit, per-user quota, and free-space floor
+  │    │    are checked as bytes arrive — Content-Length is not trusted
+  │    └─ on any breach: abort, delete the .part, return a 4xx fragment
+  │
+  ├─ fsync → atomic rename to <dir>/<user_id>/<uuid>
+  │
+  └─ INSERT INTO file_clipboard_files (… expires_at = now + retention)
+```
+
+Why not blobs: a 5 GB file exceeds SQLite's `SQLITE_MAX_LENGTH` (~1 GB by
+default, 2 GB absolute), the per-app authorizer denies `ATTACH` so a side
+database is not an option either, and blobs that size would bloat every copy of
+the shared `myapps.db`.
+
+Because rows and bytes are separate, deletions can leave one without the other:
+`registry::delete_user_app_data` is pure SQL, `delete-user` relies on
+`ON DELETE CASCADE`, and a crashed upload leaves a `.part` file. Rather than
+hooking every deletion path, `services::retention::sweep` reconciles the two —
+it deletes expired files and removes any file on disk with no matching row
+(`.part` files only after a 24-hour grace period, so uploads in flight are
+safe). It runs from the daily cron job and every six hours in-process.
 
 ## Authentication Flow
 

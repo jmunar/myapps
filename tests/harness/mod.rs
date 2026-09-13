@@ -90,6 +90,14 @@ async fn spawn_app_custom(
         base_path: String::new(),
         whisper_cli_path: "whisper-cli".into(),
         whisper_models_dir: "models".into(),
+        file_clipboard_dir: std::env::temp_dir()
+            .join(format!("myapps-root-test-fc-{db_id}"))
+            .to_string_lossy()
+            .into_owned(),
+        file_clipboard_retention_days: 7,
+        file_clipboard_max_file_bytes: 5 * 1024 * 1024,
+        file_clipboard_user_quota_bytes: 20 * 1024 * 1024,
+        file_clipboard_min_free_bytes: 0,
         deploy_apps,
         llama_server_url: String::new(),
         seed: false,

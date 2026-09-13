@@ -137,7 +137,7 @@ async fn index(
                  hx-trigger="every 5s [document.querySelector('.status-pending,.status-processing')]"
                  hx-target="#voice-jobs-body">
             </div>
-            <table class="txn-table">
+            <table class="table-cards">
                 <thead>
                     <tr>
                         <th>{col_file}</th>

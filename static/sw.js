@@ -47,6 +47,11 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
 
+  // FileClipboard downloads stream straight from the network. Proxying a
+  // multi-gigabyte body through the service worker buys nothing (it is never
+  // cached) and interferes with range requests.
+  if (url.pathname.includes("/file_clipboard/files/")) return;
+
   // Cache-first + write-through for static assets so anything fetched
   // online is available offline next time.
   if (url.pathname.startsWith(BASE_PATH + "/static/")) {

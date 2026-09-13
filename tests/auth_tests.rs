@@ -155,16 +155,12 @@ async fn hiding_all_apps_shows_empty_state() {
     app.login_as("test", "pass").await;
 
     // Hide all apps
-    for key in &[
-        "leanfin",
-        "mindflow",
-        "voice_to_text",
-        "form_input",
-        "notes",
-    ] {
+    // Derived from the registry rather than hardcoded, so registering a new
+    // app cannot silently break the assertions below.
+    for app_instance in myapps::all_app_instances() {
         app.server
             .post("/launcher/visibility")
-            .form(&serde_json::json!({"app_key": key, "visible": "0"}))
+            .form(&serde_json::json!({"app_key": app_instance.info().key, "visible": "0"}))
             .await;
     }
 
@@ -683,16 +679,12 @@ async fn hiding_all_internal_and_external_apps_shows_empty_state() {
     app.login_as("test", "pass").await;
 
     // Hide all internal apps
-    for key in &[
-        "leanfin",
-        "mindflow",
-        "voice_to_text",
-        "form_input",
-        "notes",
-    ] {
+    // Derived from the registry rather than hardcoded, so registering a new
+    // app cannot silently break the assertions below.
+    for app_instance in myapps::all_app_instances() {
         app.server
             .post("/launcher/visibility")
-            .form(&serde_json::json!({"app_key": key, "visible": "0"}))
+            .form(&serde_json::json!({"app_key": app_instance.info().key, "visible": "0"}))
             .await;
     }
     // Hide all external apps
@@ -713,16 +705,12 @@ async fn hiding_all_internal_but_not_external_does_not_show_empty_state() {
     app.login_as("test", "pass").await;
 
     // Hide all internal apps only
-    for key in &[
-        "leanfin",
-        "mindflow",
-        "voice_to_text",
-        "form_input",
-        "notes",
-    ] {
+    // Derived from the registry rather than hardcoded, so registering a new
+    // app cannot silently break the assertions below.
+    for app_instance in myapps::all_app_instances() {
         app.server
             .post("/launcher/visibility")
-            .form(&serde_json::json!({"app_key": key, "visible": "0"}))
+            .form(&serde_json::json!({"app_key": app_instance.info().key, "visible": "0"}))
             .await;
     }
 

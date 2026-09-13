@@ -19,6 +19,7 @@ login and launcher.
 | **VoiceToText** (🎤) | [`myapps-voice-to-text`](crates/myapps-voice-to-text/) | Audio transcription powered by whisper.cpp. Record or upload audio and get text back — all processed locally, no cloud APIs. |
 | **FormInput** (✎) | [`myapps-form-input`](crates/myapps-form-input/) | Custom forms backed by row sets and column-typed inputs. Define form types, manage row sets, and capture spreadsheet-style entries as CSV. |
 | **Notes** (✏️) | [`myapps-notes`](crates/myapps-notes/) | Markdown-based note-taking with live WYSIWYG editing and voice dictation. |
+| **FileClipboard** (📥) | [`myapps-file-clipboard`](crates/myapps-file-clipboard/) | Drop files here, pick them up on any device. Drag-and-drop upload with progress, a list of what is stored, and a configurable deletion period (7 days by default). |
 
 All apps share authentication, database, layout/styling, i18n (EN/ES), and
 push notifications.
@@ -67,6 +68,12 @@ hide per-user.
   <img src="docs/screenshots/form-input-row-editing.png" width="270" alt="FormInput – Adding and deleting rows" />
   <img src="docs/screenshots/form-input-row-sets.png" width="270" alt="FormInput – Row sets" />
   <img src="docs/screenshots/form-input-form-types.png" width="270" alt="FormInput – Form types" />
+</p>
+
+### FileClipboard
+
+<p align="center">
+  <img src="docs/screenshots/file-clipboard.png" width="270" alt="FileClipboard – Files" />
 </p>
 
 ### Notes
