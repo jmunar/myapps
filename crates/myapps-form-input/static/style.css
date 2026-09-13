@@ -432,13 +432,12 @@ dialog.ci-link-modal .form-group {
 
 /* ── Mobile overrides ─────────────────────────────────────────── */
 @media (max-width: 640px) {
-    /* Override the global mobile table→card transform for the input grid */
-    .ci-input-table { display: table; font-size: 0.8rem; }
-    .ci-input-table thead { display: table-header-group; }
-    .ci-input-table tbody { display: table-row-group; }
-    .ci-input-table tr { display: table-row; background: none; border: none; padding: 0; box-shadow: none; }
+    /* The input grid stays a real table on mobile (it scrolls horizontally
+       inside .ci-grid-container) — it simply does not opt into the
+       `.table-cards` transform. */
+    .ci-input-table { font-size: 0.8rem; }
     .ci-input-table td,
-    .ci-input-table th { display: table-cell; padding: 0; border-bottom: 1px solid var(--border-light); }
+    .ci-input-table th { padding: 0; border-bottom: 1px solid var(--border-light); }
 
     .ci-input-table th { font-size: 0.6rem; padding: 0.3rem 0.3rem; }
     .ci-input-table td { height: 1.8rem; }

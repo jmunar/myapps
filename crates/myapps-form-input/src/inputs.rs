@@ -144,7 +144,7 @@ async fn list(
         format!(r#"<div class="empty-state"><p>{}</p></div>"#, t.inp_empty)
     } else {
         format!(
-            r#"<table>
+            r#"<table class="table-cards">
                 <thead><tr>
                     <th>{col_name}</th><th>{col_row_set}</th><th>{col_form_type}</th><th>{col_rows}</th><th>{col_date}</th><th></th>
                 </tr></thead>

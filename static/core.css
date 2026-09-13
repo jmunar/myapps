@@ -462,6 +462,60 @@ button:active, .btn:active {
     h1 { font-size: 1.35rem; }
 }
 
+/* ── Responsive tables ──────────────────────────────────────
+   Opt in with `<table class="table-cards">`: below 640px the table collapses
+   into a card list, since a multi-column table cannot fit a phone screen.
+   Apps position their own cells inside the card with `grid-column` /
+   `grid-row` — see `.txn-*` (LeanFin) or `.fc-*` (FileClipboard).
+
+   This belongs here, and stays opt-in, for a reason: it used to live in one
+   app's stylesheet written as bare `table` / `thead` / `tbody` selectors. Every
+   app's CSS is concatenated into /static/apps.css and served to every page, so
+   those rules silently restyled every table in the platform — and other apps
+   had to write rules undoing them. Never reintroduce bare element selectors
+   in an app stylesheet. */
+@media (max-width: 640px) {
+    .table-cards {
+        display: block;
+        font-size: 0.8rem;
+    }
+
+    .table-cards thead {
+        display: none;
+    }
+
+    .table-cards tbody {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .table-cards tbody tr {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.15rem 0.5rem;
+        background: var(--bg-card);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius);
+        padding: 0.6rem 0.75rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .table-cards tbody tr:hover {
+        background: var(--bg-card);
+    }
+
+    /* `:where()` keeps this reset at zero specificity, so it still beats the
+       element-level `tbody td` defaults above while losing to any app's own
+       cell class (e.g. `.txn-labels { padding-top: 0.3rem }`). Written as
+       `.table-cards tbody tr td` it would silently strip padding that app
+       stylesheets set on their cells. */
+    .table-cards :where(tbody tr td) {
+        padding: 0;
+        border-bottom: none;
+    }
+}
+
 /* ── Utilities ──────────────────────────────────────────────── */
 .mt-1 { margin-top: 0.5rem; }
 .mt-2 { margin-top: 1rem; }

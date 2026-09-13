@@ -222,42 +222,9 @@
 
 /* ── Responsive: Transaction table → card list on mobile ───── */
 @media (max-width: 640px) {
-    /* ── Transaction table → card list on mobile ────────────── */
-    table {
-        display: block;
-        font-size: 0.8rem;
-    }
-
-    thead {
-        display: none;
-    }
-
-    tbody {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    tbody tr {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        grid-template-rows: auto auto auto;
-        gap: 0.15rem 0.5rem;
-        background: var(--bg-card);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius);
-        padding: 0.6rem 0.75rem;
-        box-shadow: var(--shadow-sm);
-    }
-
-    tbody tr:hover {
-        background: var(--bg-card);
-    }
-
-    tbody tr td {
-        padding: 0;
-        border-bottom: none;
-    }
+    /* The generic table → card transform lives in core.css as the opt-in
+       `.table-cards` utility; this table opts in. Only the placement of
+       transaction cells within the card is LeanFin's business. */
 
     /* Row 1: date left, amount right */
     .txn-date {
@@ -304,22 +271,25 @@
         margin-bottom: 0.2rem;
     }
 
-    /* Account color on card edges */
-    tbody tr {
+    /* Transaction cards lay out over four fixed rows (date/amount,
+       counterparty, description, labels), with the account colour on the
+       card edge. */
+    .txn-table tbody tr {
+        grid-template-rows: auto auto auto;
         border-left: 3px solid var(--account-color, var(--border-light));
     }
 
-    tbody tr .txn-date {
+    .txn-table tbody tr .txn-date {
         border-left: none;
         padding-left: 0;
     }
 
     /* Allocation status — background only */
-    tbody tr.txn-unallocated {
+    .txn-table tbody tr.txn-unallocated {
         background: color-mix(in srgb, var(--warning) 5%, transparent);
     }
 
-    tbody tr.txn-misallocated {
+    .txn-table tbody tr.txn-misallocated {
         background: color-mix(in srgb, var(--negative) 5%, transparent);
     }
 
@@ -669,7 +639,7 @@
 }
 
 /* ── Transaction account color ─────────────────────────────── */
-tbody tr .txn-date {
+.txn-table tbody tr .txn-date {
     border-left: 3px solid var(--account-color, transparent);
     padding-left: calc(1rem - 3px);
 }

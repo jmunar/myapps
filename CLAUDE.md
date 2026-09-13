@@ -126,6 +126,12 @@ assembles all crates.
   `crates/myapps-core/src/i18n/`. App-specific translations live in each app
   crate's `i18n.rs` module. Both use compile-time struct-based translations;
   adding a field forces both EN and ES to be updated.
+- **App stylesheets must not use bare element selectors.** Every app's CSS is
+  concatenated into a single `/static/apps.css` served on every page, so a rule
+  like `table { ... }` in one app restyles every other app's tables. Scope rules
+  to an app-specific class. For tables that should collapse into a card list on
+  phones, opt in with `<table class="table-cards">` (the shared utility in
+  `static/core.css`) and add only cell placement in the app's own stylesheet.
 - **Escape user-controlled strings before interpolating them into HTML.** Handlers
   build markup with `format!`, which does no escaping, so any user- or
   provider-supplied value (account names, label names, transaction descriptions
