@@ -2,8 +2,9 @@
 
 Multi-app personal platform. LeanFin (personal expense management), MindFlow
 (thought capture & mind map), VoiceToText (audio transcription),
-FormInput (custom forms with row sets and column-typed inputs), and Notes
-(markdown-based note-taking) are the current sub-applications. After login, users
+FormInput (custom forms with row sets and column-typed inputs), Notes
+(markdown-based note-taking), and FileClipboard (file sharing between a user's
+devices) are the current sub-applications. After login, users
 see an app launcher and can navigate into individual apps. All apps share auth,
 DB, layout/styling, and config.
 
@@ -85,6 +86,7 @@ crates/
   myapps-voice-to-text/  # VoiceToText app
   myapps-form-input/      # FormInput app
   myapps-notes/           # Notes app
+  myapps-file-clipboard/  # FileClipboard app
 src/
   main.rs                # Thin binary: CLI + app registration
   lib.rs                 # Re-export facade for tests
@@ -109,6 +111,14 @@ assembles all crates.
 - VoiceToText-specific routes, handlers, and services live in `crates/myapps-voice-to-text/`.
 - FormInput-specific routes and handlers live in `crates/myapps-form-input/`.
 - Notes-specific routes and handlers live in `crates/myapps-notes/`.
+- FileClipboard-specific routes and handlers live in `crates/myapps-file-clipboard/`.
+  It is the only app that stores data outside SQLite: file *contents* live under
+  `FILE_CLIPBOARD_DIR/<user_id>/<uuid>` (uploads exceed SQLite's ~1 GB blob
+  ceiling), with metadata in `file_clipboard_files`. Uploads stream to disk in
+  chunks — never buffer a whole upload in memory — and downloads are always
+  served as `attachment` with `nosniff`, since user-supplied bytes on the
+  session origin would otherwise be stored XSS. Deleting rows does not delete
+  files; `services::retention` reconciles disk against the table.
 - Shared infrastructure (auth, config, db, models, layout, i18n, command,
   components, services) lives in `crates/myapps-core/`. Shared services (whisper
   transcription, push notifications) live in `crates/myapps-core/src/services/`.
@@ -139,7 +149,8 @@ assembles all crates.
   first. It escapes both quote characters, so it is safe in element bodies and
   in quoted attribute values. Note that `<option>` bodies are *not* a safe sink:
   the browser re-parses entity-decoded text there and will build live elements.
-- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `form_input_row_sets`, `notes_notes`, `notes_note_updates`).
+- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `form_input_row_sets`, `notes_notes`, `notes_note_updates`,
+  `file_clipboard_files`, `file_clipboard_settings`).
 - When adding or removing environment variables, update all four places:
   `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`
   (`setup()`), and the Environment Variables section in `docs/deployment.md`.

@@ -13,6 +13,7 @@ pub use myapps_core::services;
 
 // Re-export app crates under an `apps` module for test harness compatibility
 pub mod apps {
+    pub use myapps_file_clipboard as file_clipboard;
     pub use myapps_form_input as form_input;
     pub use myapps_leanfin as leanfin;
     pub use myapps_mindflow as mindflow;
@@ -30,6 +31,7 @@ pub fn all_app_instances() -> Vec<Box<dyn App>> {
         Box::new(myapps_voice_to_text::VoiceToTextApp),
         Box::new(myapps_form_input::FormInputApp),
         Box::new(myapps_notes::NotesApp::new()),
+        Box::new(myapps_file_clipboard::FileClipboardApp),
     ]
 }
 

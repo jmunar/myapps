@@ -136,6 +136,82 @@ restart() {
     ssh_server "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME"
 }
 
+# Write the systemd unit and reload systemd.
+#
+# Runs on every deploy, not just setup: the unit is part of the deployment, and
+# when it only shipped during setup a change here would sit in the repo while
+# the server kept running the old sandbox — which is exactly how an upload
+# directory ends up outside ReadWritePaths and fails with EROFS.
+#
+# Operator drop-ins (systemctl edit -> <service>.service.d/*.conf) are separate
+# files and survive this.
+write_unit() {
+    echo "▸ Writing systemd unit for $DEPLOY_SERVICE_NAME..."
+    ssh_server \
+        DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" \
+        DEPLOY_SERVICE_NAME="$DEPLOY_SERVICE_NAME" \
+        DEPLOY_FILE_CLIPBOARD_DIR="${DEPLOY_FILE_CLIPBOARD_DIR:-}" \
+        bash <<'UNIT'
+set -euo pipefail
+
+# The app reads FILE_CLIPBOARD_DIR from .env, so the sandbox has to follow that
+# same value — not a copy of it in the deploy config, which drifts. Fall back to
+# the deploy variable, then to the default location.
+# \042 and \047 are " and ' — stripping any quotes around the value without
+# dragging shell quoting through two levels of heredoc.
+FC_DIR="$(sudo sed -n 's/^FILE_CLIPBOARD_DIR=//p' "$DEPLOY_REMOTE_DIR/.env" 2>/dev/null | tail -1 | tr -d '\042\047')"
+FC_DIR="${FC_DIR:-${DEPLOY_FILE_CLIPBOARD_DIR:-$DEPLOY_REMOTE_DIR/data/file_clipboard}}"
+
+sudo mkdir -p "$FC_DIR"
+sudo chown -R myapps:myapps "$FC_DIR"
+
+# `ProtectSystem=strict` mounts the whole filesystem read-only for this service,
+# so every directory it writes to must appear in ReadWritePaths — ownership is
+# not enough, and a missing entry surfaces as EROFS ("Read-only file system"),
+# never as a permission error. `RequiresMountsFor` stops the service starting
+# before an external disk is mounted; without it a boot-time race puts uploads
+# in the directory *underneath* the mountpoint, where they disappear from view
+# the moment the disk mounts over them.
+if [[ "$FC_DIR" == "$DEPLOY_REMOTE_DIR"/* ]]; then
+    UNIT_RW_PATHS="$DEPLOY_REMOTE_DIR"
+    UNIT_REQUIRES_MOUNTS=""
+else
+    UNIT_RW_PATHS="$DEPLOY_REMOTE_DIR $FC_DIR"
+    UNIT_REQUIRES_MOUNTS="RequiresMountsFor=$FC_DIR"
+fi
+echo "  Storage directory: $FC_DIR"
+echo "  ReadWritePaths:    $UNIT_RW_PATHS"
+
+sudo tee /etc/systemd/system/$DEPLOY_SERVICE_NAME.service > /dev/null <<SERVICE
+[Unit]
+Description=MyApps platform ($DEPLOY_SERVICE_NAME)
+After=network.target
+$UNIT_REQUIRES_MOUNTS
+
+[Service]
+Type=simple
+User=myapps
+Group=myapps
+WorkingDirectory=$DEPLOY_REMOTE_DIR
+ExecStart=$DEPLOY_REMOTE_DIR/myapps serve
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$UNIT_RW_PATHS
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+sudo systemctl daemon-reload
+echo "  Installed $DEPLOY_SERVICE_NAME.service"
+UNIT
+}
+
 setup() {
     echo "▸ Running first-time server setup on $SERVER ($ENV_NAME)..."
     echo "  (you may be prompted for your sudo password)"
@@ -146,6 +222,7 @@ setup() {
         DEPLOY_NGINX_SITE="$DEPLOY_NGINX_SITE" \
         DEPLOY_PORT="$DEPLOY_PORT" \
         DEPLOY_CRON_ENABLED="$DEPLOY_CRON_ENABLED" \
+        DEPLOY_FILE_CLIPBOARD_DIR="${DEPLOY_FILE_CLIPBOARD_DIR:-}" \
         ENV_NAME="$ENV_NAME" \
         bash <<'SETUP'
 set -euo pipefail
@@ -177,6 +254,13 @@ fi
 
 # Create directory structure
 sudo mkdir -p $DEPLOY_REMOTE_DIR/{data,static}
+
+# FileClipboard storage. When it sits outside the deploy directory (an external
+# disk, typically) the systemd sandbox and the mount ordering below both have to
+# account for it.
+FC_DIR="${DEPLOY_FILE_CLIPBOARD_DIR:-$DEPLOY_REMOTE_DIR/data/file_clipboard}"
+sudo mkdir -p "$FC_DIR"
+sudo chown -R myapps:myapps "$FC_DIR"
 sudo chown -R myapps:myapps $DEPLOY_REMOTE_DIR
 sudo chmod 750 $DEPLOY_REMOTE_DIR
 
@@ -192,6 +276,11 @@ VAPID_SUBJECT=mailto:you@example.com
 WHISPER_CLI_PATH=/opt/whisper.cpp/build/bin/whisper-cli
 WHISPER_MODELS_DIR=/opt/whisper.cpp/models
 LLAMA_SERVER_URL=
+FILE_CLIPBOARD_DIR=${DEPLOY_FILE_CLIPBOARD_DIR:-$DEPLOY_REMOTE_DIR/data/file_clipboard}
+FILE_CLIPBOARD_RETENTION_DAYS=7
+FILE_CLIPBOARD_MAX_FILE_BYTES=5368709120
+FILE_CLIPBOARD_USER_QUOTA_BYTES=21474836480
+FILE_CLIPBOARD_MIN_FREE_BYTES=2147483648
 BIND_ADDR=127.0.0.1:$DEPLOY_PORT
 DEPLOY_APPS=${DEPLOY_APPS:-}
 AUTH_SSO_HEADER=${DEPLOY_AUTH_SSO_HEADER:-}
@@ -204,33 +293,8 @@ ENV
     echo "  Created $DEPLOY_REMOTE_DIR/.env — edit it with your values"
 fi
 
-# Install systemd service
-sudo tee /etc/systemd/system/$DEPLOY_SERVICE_NAME.service > /dev/null <<SERVICE
-[Unit]
-Description=MyApps platform ($DEPLOY_SERVICE_NAME)
-After=network.target
-
-[Service]
-Type=simple
-User=myapps
-Group=myapps
-WorkingDirectory=$DEPLOY_REMOTE_DIR
-ExecStart=$DEPLOY_REMOTE_DIR/myapps serve
-Restart=on-failure
-RestartSec=5
-
-# Hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=$DEPLOY_REMOTE_DIR
-
-[Install]
-WantedBy=multi-user.target
-SERVICE
-
-sudo systemctl daemon-reload
-echo "  Installed $DEPLOY_SERVICE_NAME.service"
+# The systemd unit is written by write_unit() from the deploy script, which runs
+# on every deploy as well as on setup.
 
 # Install cron job only if enabled
 if [[ "$DEPLOY_CRON_ENABLED" == "true" ]]; then
@@ -250,6 +314,14 @@ if [[ ! -f /etc/nginx/sites-available/$DEPLOY_NGINX_SITE ]]; then
 server {
     listen 80;
     server_name $DEPLOY_DOMAIN;
+
+    # FileClipboard uploads. Must be at least FILE_CLIPBOARD_MAX_FILE_BYTES;
+    # nginx's 1m default rejects anything larger before the app sees it.
+    client_max_body_size 5g;
+    # Stream request bodies straight through. Buffering would spool a whole
+    # 5 GB upload to nginx's temp directory first — twice the disk writes, and
+    # no progress reaches the app until the transfer is already finished.
+    proxy_request_buffering off;
 
     location / {
         proxy_pass http://127.0.0.1:$DEPLOY_PORT/;
@@ -280,14 +352,16 @@ echo "  2. From your dev machine, run: ./deploy.sh $ENV_NAME deploy"
 echo "  3. Create a user: sudo -u myapps $DEPLOY_REMOTE_DIR/myapps create-user --username <name> --password <pass>"
 echo "  4. Set up HTTPS: sudo apt install python3-certbot-nginx && sudo certbot --nginx -d $DEPLOY_DOMAIN"
 SETUP
+
+    write_unit
 }
 
 # ── Command dispatch ───────────────────────────────────────────────
 case "${COMMAND}" in
-    release-deploy) release_install "$EXTRA_ARG" && restart ;;
+    release-deploy) release_install "$EXTRA_ARG" && write_unit && restart ;;
     build)   build ;;
-    deploy)  build && install && restart ;;
-    install) sync_source && install && restart ;;
+    deploy)  build && install && write_unit && restart ;;
+    install) sync_source && install && write_unit && restart ;;
     setup)   setup ;;
     restart) restart ;;
     logs)    ssh_server "sudo journalctl -u $DEPLOY_SERVICE_NAME -f --no-pager" ;;

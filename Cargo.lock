@@ -2067,6 +2067,7 @@ dependencies = [
  "chrono",
  "clap",
  "myapps-core",
+ "myapps-file-clipboard",
  "myapps-form-input",
  "myapps-leanfin",
  "myapps-mindflow",
@@ -2108,6 +2109,25 @@ dependencies = [
  "url",
  "uuid",
  "web-push",
+]
+
+[[package]]
+name = "myapps-file-clipboard"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-test",
+ "libc",
+ "myapps-core",
+ "myapps-test-harness",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
