@@ -259,7 +259,8 @@ Run once on a fresh server. It:
 3. Creates a `myapps` system user (no login shell)
 4. Creates `$DEPLOY_REMOTE_DIR/{data,logs,static}` with proper ownership
 5. Creates `$DEPLOY_REMOTE_DIR/.env` template (chmod 600)
-6. Installs the systemd unit for the environment
+6. Installs the systemd unit for the environment (also refreshed on every
+   deploy — see below)
 7. Installs a cron job for daily scheduled tasks at 06:00 (if `DEPLOY_CRON_ENABLED=true`)
 8. Installs an nginx site config for the configured domain
 
@@ -392,7 +393,13 @@ works on deployments where `DEPLOY_CRON_ENABLED=false`.
 
 ## systemd Service
 
-Installed at `/etc/systemd/system/myapps.service` by `setup`.
+Installed at `/etc/systemd/system/myapps.service` by `write_unit()` in
+`deploy.sh`, which runs on **every** deploy (`deploy`, `install`,
+`release-deploy`) as well as on `setup`. The unit is therefore declarative: edit
+`deploy.sh` and the next deploy applies it. The corollary is that hand-edits to
+the unit file on the server are overwritten — use `systemctl edit <service>` for
+local overrides, which live in a separate `<service>.service.d/` directory and
+survive.
 
 ```bash
 sudo systemctl enable myapps    # auto-start on boot

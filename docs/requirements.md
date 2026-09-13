@@ -134,6 +134,11 @@ visibility into spending patterns.
 - The server is a Raspberry Pi (or equivalent) with very limited RAM and CPU.
 - The backend must idle at under 10 MB RSS.
 - SQLite is used as the database to avoid a separate DB process.
+- **Large files stream, never buffer** — FileClipboard writes uploads to disk
+  and reads downloads back in fixed-size chunks, so memory use is independent
+  of file size: a multi-gigabyte transfer moves RSS by a couple of MB. File
+  contents are held on the filesystem rather than in SQLite, which also keeps
+  the shared database small enough to copy.
 
 ### Security
 
@@ -170,6 +175,17 @@ visibility into spending patterns.
   HTML-escaped before interpolation into server-rendered templates, via the
   shared `myapps_core::components::html_escape`. It escapes both quote
   characters, so it is safe in element bodies and in quoted attributes.
+- **User-uploaded file downloads are inert** — FileClipboard serves stored
+  files with `Content-Disposition: attachment`, `X-Content-Type-Options:
+  nosniff`, and a neutral `application/octet-stream` type, never the
+  client-supplied one. The bytes are arbitrary and served from the same origin
+  as the session cookie, so an HTML or SVG file rendered inline would be stored
+  XSS against the whole platform. Files are stored under generated UUID names;
+  the uploader's filename is display-only and never used as a path.
+- **App stylesheets carry no bare element selectors** — every app's CSS is
+  concatenated into a single `/static/apps.css` served on every page, so an
+  unscoped rule in one app restyles the others. Shared patterns live in
+  `core.css` as opt-in utilities (e.g. `.table-cards`).
 - No secrets are committed to the repository.
 
 ### CI/CD
@@ -516,3 +532,67 @@ and voice dictation support.
   demo bodies as CRDT update blobs (vs. plain `notes_notes.body` columns
   that the Tiptap editor would render as empty). Same blocker would
   unlock migrating any future pre-CRDT note bodies into the CRDT.
+
+### FileClipboard (sixth sub-application)
+
+FileClipboard is a cross-device file drop: leave a file on one device, pick it
+up on another signed in to the same MyApps instance. Files are scoped to the
+uploading user and deleted automatically after a configurable period.
+
+#### Implemented
+
+- **Drag-and-drop upload** — drop files onto the page or pick them with a file
+  input. Uploads run one at a time through `XMLHttpRequest` with a per-file
+  progress bar; htmx and `fetch()` both lack upload progress, and a
+  multi-gigabyte upload with no feedback is indistinguishable from a hang.
+- **Streaming storage** — bytes go straight from the multipart field to
+  `<FILE_CLIPBOARD_DIR>/<user_id>/<uuid>.part` in fixed-size chunks, are
+  fsynced, then atomically renamed, so a metadata row never points at an
+  incomplete file. Contents are never stored in SQLite: the sizes involved
+  exceed SQLite's ~1 GB blob ceiling, and the per-app authorizer denies
+  `ATTACH`, so a side database is not an option either.
+- **Limits enforced mid-stream** — per-file size, per-user quota and a
+  free-space floor are checked as the bytes arrive rather than up front, since
+  `Content-Length` is client-supplied. A breach aborts the upload, deletes the
+  partial file and returns a 4xx fragment. axum's 2 MB default body limit is
+  disabled on the upload route only.
+- **File list** — name, size, upload date and expiry, with per-user storage
+  usage against the quota. Expired rows are filtered out of the listing so it
+  stays truthful even if the sweep has not run yet.
+- **Resumable downloads** — served via `ServeFile`, so byte-range requests
+  work and a dropped multi-gigabyte download resumes instead of restarting.
+- **Configurable deletion period** — default 7 days
+  (`FILE_CLIPBOARD_RETENTION_DAYS`), settable per user between 1 and 365 days.
+  Changing it re-stamps existing files, so the expiry column always reflects
+  the period in force. Expiry is stored per file rather than derived, leaving
+  room for per-file overrides later.
+- **Self-healing cleanup** — `services::retention` reconciles disk against the
+  table: it deletes expired files and reclaims bytes with no metadata row.
+  Rows disappear without files being touched in several places
+  (`delete_user_app_data` is pure SQL, `delete-user` relies on
+  `ON DELETE CASCADE`, a crashed upload leaves a `.part`), and scanning
+  catches all of them without a hook in every deletion path. `.part` files are
+  left alone for 24h so uploads in flight are safe. The sweep runs from the
+  daily cron job and every six hours in-process, because the cron job is
+  optional per environment and a full disk stalls every other app's database.
+- **Deployment plumbing** — nginx needs `client_max_body_size` and
+  `proxy_request_buffering off`; the systemd unit needs the storage directory
+  in `ReadWritePaths`, since `ProtectSystem=strict` otherwise fails writes with
+  EROFS whatever the ownership. `deploy.sh` writes the unit on every deploy
+  (not only on `setup`), reading the path from the server's own `.env`. The
+  server probes the directory at startup and logs the fix if it cannot write.
+- **Integration tests** — 26 tests covering auth, upload and on-disk storage,
+  size/quota rejection with partial-file cleanup, filename escaping and path
+  traversal, download headers and range requests, cross-user access, deletion
+  of both row and bytes, retention stamping and bounds, and the sweep's
+  expiry/orphan/in-flight behaviour.
+
+#### Not yet implemented
+
+- **Sharing with other users** — files are private to the uploader; there is no
+  share link or instance-wide drop.
+- **Resumable uploads** — a dropped upload restarts from zero. Chunked upload
+  (client-side slicing with server-side append) would fix it.
+- **Deduplication** — identical files uploaded twice are stored twice.
+- **Previews** — no thumbnails or in-browser preview for images and PDFs.
+- **Command bar actions** — the app exposes no natural-language actions yet.
