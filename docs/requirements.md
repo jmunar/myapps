@@ -222,6 +222,10 @@ visibility into spending patterns.
 - If the sync job fails (network error, token expired), it logs the error and
   continues with the next account.
 - SQLite WAL mode is enabled for safe concurrent reads during sync.
+- Database backups and rollback are manual. Migrations apply automatically on
+  every service start, with no backup step, and `release-deploy` keeps no copy
+  of the previous binary. See
+  [deployment.md](deployment.md#backups-and-rollback) for the procedures.
 
 ## Roadmap
 
