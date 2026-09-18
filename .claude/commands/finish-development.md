@@ -1,98 +1,86 @@
 Finish development on the current feature branch and open a PR.
 
-Follow these steps in order. Stop and report if any step fails.
+Work through these in order. Stop and report if a step fails in a way you
+can't resolve.
 
-## 1. Verify branch state
+## 1. Check the branch
 
-- Run `git status` and `git log --oneline main..HEAD` to understand the current branch and what commits will be in the PR.
-- If on `main`, stop and tell the user to switch to a feature branch first.
+`git status` and `git log --oneline main..HEAD`. If you're on `main`, stop and
+say so.
 
-## 2. Commit pending work
+## 2. Commit what's outstanding
 
-If there are uncommitted changes (staged, unstaged, or untracked files relevant to the feature), commit them with an appropriate message describing the changes. Include the co-author trailer. If there are no uncommitted changes, skip this step.
+Commit any uncommitted work belonging to the feature, with the co-author
+trailer.
 
-## 3. Update documentation
+## 3. Update the docs
 
-Read all docs under `docs/` and the top-level `CLAUDE.md`. Based on the commits on this branch (compared to `main`), update any docs that are now outdated or incomplete. Common things to check:
+Read `docs/` and `CLAUDE.md` against what the branch actually changed, and
+update only what is now wrong or missing. Do not invent features.
 
-- `docs/architecture.md` — project layout, routing structure, database schema, flow diagrams.
-- `docs/requirements.md` — functional requirements, roadmap (move items from "Not yet implemented" to "Implemented" if applicable).
-- `CLAUDE.md` — build commands, project conventions, documentation list.
+- `docs/architecture.md` — layout, routing, schema, diagrams.
+- `docs/requirements.md` — move roadmap items to "Implemented" when they are.
+- `docs/deployment.md` — any new env var, deploy step or server-side
+  requirement. A new env var means five files; CLAUDE.md lists them.
+- `CLAUDE.md` — only when the branch adds or invalidates a *gotcha*. It is a
+  list of traps, not an inventory: a new route, app or command does not belong
+  there on its own.
 
-Only make changes that are warranted by what was actually built. Do not invent features. If no docs need updating, skip this step.
+Commit as "Update docs for [feature]" if anything changed.
 
-## 4. Commit doc changes
-
-If any docs were changed, create a commit with message "Update docs for [feature]" where [feature] is a short description derived from the branch name or recent commits. Include the co-author trailer.
-
-## 5. Merge origin/main
-
-Run:
-```
-git fetch origin
-git merge origin/main
-```
-
-If there are merge conflicts, resolve them, then commit the merge. If the merge is clean, proceed.
-
-## 6. Bump version
-
-Determine the appropriate version bump by looking at the branch name prefix and commit messages on this branch (compared to `main`):
-
-- If the branch name starts with `feat-` or any commit contains `[FEAT`: **minor** bump
-- If any commit contains `[BREAKING`: **major** bump
-- Otherwise (bug fixes, chores, refactors): **patch** bump
-
-Run the corresponding Makefile target (`make bump-patch`, `make bump-minor`, or `make bump-major`). The Makefile only updates `Cargo.toml`; regenerate the lockfile with `cargo generate-lockfile`, then commit both:
+## 4. Merge main
 
 ```
-cargo generate-lockfile
-git add Cargo.toml Cargo.lock
-git commit -m "Bump version to <new-version>"
+git fetch origin && git merge origin/main
 ```
 
-Include the co-author trailer.
+Resolve any conflicts and commit the merge.
 
-## 7. Frontend tests & screenshots
+## 5. Bump the version
 
-If any commits on this branch (compared to `main`) touch frontend code (routes, handlers, HTML templates, or CSS classes used in assertions):
+CD fails the release if the version isn't higher than the latest tag. Pick the
+bump from the branch name and commit messages: `[BREAKING` → major, `feat-` or
+`[FEAT` → minor, otherwise patch. Then:
 
-1. **Integration tests**: Run the **frontend-tester agent** (`.claude/agents/frontend-tester.md`) to generate or update integration tests for the changed routes.
-
-2. **Screenshots**: Review `scripts/screenshots.ts` and check whether the Playwright script needs updating for the changed app(s):
-   - If a **new app** was added: add a new section to the Playwright script that navigates to the app's main pages and captures screenshots, following the existing pattern. Then add the corresponding `<img>` tags to the main `README.md` (under a new `### AppName` heading before the `---` separator) and to the app's own `crates/myapps-<app>/README.md`.
-   - If **existing pages changed significantly** (new pages, layout overhauls, removed pages): update the Playwright script accordingly (add/remove/rename `snap()` calls) and update any affected `<img>` tags in `README.md` and the app README.
-   - If the changes are minor (bug fixes, copy changes, small styling tweaks), the existing screenshots will be refreshed automatically when the script runs — no script changes needed.
-
-   After any script changes, run `make screenshots` to regenerate the screenshot PNGs. Verify the new/updated images look correct.
-
-3. **Commit**: Commit any new or updated tests, script changes, README updates, and regenerated screenshots with message "Add/update frontend tests and screenshots for [feature]". Include the co-author trailer.
-
-If no frontend code was changed, skip this step.
-
-## 8. Run checks
-
-Run `make check` (format, lint, and tests). If any check fails, fix the issue, commit the fix, and re-run until all checks pass. Stop and report to the user if a failure cannot be resolved automatically.
-
-## 9. Push
-
-Push the current branch to origin:
 ```
-git push -u origin HEAD
+make bump-<type>
+cargo update --workspace
+git add Cargo.toml Cargo.lock && git commit -m "Bump version to <new-version>"
 ```
 
-## 10. Create PR
+`cargo update --workspace` touches only the workspace member's own entry. Don't
+use `cargo generate-lockfile` here — it re-resolves the whole graph and drags
+unrelated dependency bumps into the PR, which is Dependabot's job.
 
-Create a pull request targeting `main` using `gh pr create`. The PR title **must** start with the ticket name derived from the branch name in square brackets. Extract the ticket prefix (everything up to and including the first number) from the branch name, uppercase it, and prepend it. For example, branch `feat-12-feature-xyz` → title starts with `[FEAT-12]`. Write a clear title after the prefix summarizing all changes on the branch. Use this format for the body:
+## 6. Frontend work
+
+If the branch touched routes, handlers, templates or CSS:
+
+- Run the **frontend-tester agent** (`.claude/agents/frontend-tester.md`) for
+  the changed routes.
+- Screenshots: a new app needs a section in `scripts/screenshots.ts` and
+  `<img>` tags in the root and app `README.md`; significant page changes need
+  `snap()` calls added, removed or renamed; minor changes need neither, since
+  the existing shots are regenerated anyway. Run `make screenshots` after any
+  script change and look at the results.
+- Commit tests, script and screenshots together.
+
+## 7. Check, push, PR
+
+`make check` until it passes, then `git push -u origin HEAD`.
+
+Open the PR against `main` with `gh pr create`. The title must start with the
+ticket from the branch name in brackets — `feat-12-feature-xyz` → `[FEAT-12]` —
+followed by a summary of the whole branch. Body:
 
 ```
 ## Summary
-<bullet points summarizing what changed>
+<what changed, in bullets>
 
 ## Test plan
-<how to verify the changes>
+<how to verify it>
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
-Report the PR URL when done.
+Report the PR URL.
