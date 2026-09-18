@@ -21,6 +21,30 @@ The same pipeline runs locally from any x86_64 dev machine with Docker:
 and ships it to the Odroid via `deploy.sh release-deploy`. As a fallback,
 `deploy.sh deploy` can still rsync source and build natively on the Odroid.
 
+### Which tool does what
+
+Three things can deploy, and they overlap deliberately rather than by accident:
+
+| | Builds | Ships | Use when |
+|---|---|---|---|
+| **CD** (`.github/workflows/cd.yml`) | cross-compiles on a runner | `deploy.sh <env> release-deploy` | Always, for anything merged to `main` |
+| **`make deploy-stage` / `deploy-prod`** | cross-compiles locally (Docker + `cross`) | the same `release-deploy` path | Trying a branch on staging, or a prod hotfix that cannot wait for CI |
+| **`./deploy.sh <env> deploy`** | natively **on the Odroid** (slow, ~20 min) | `install` | Docker is unavailable, or the cross toolchain is broken |
+
+The Makefile owns *building and packaging*; `deploy.sh` owns *everything that
+touches the server*. The Makefile never talks to the server itself — every path
+funnels into `deploy.sh`, so the install, systemd-unit and restart logic exists
+in exactly one place. Server-side operations that have no build step (`setup`,
+`restart`, `logs`, `status`) have no Makefile target on purpose; run
+`./deploy.sh <env> <command>` for those.
+
+`make deploy-prod` asks for confirmation: it bypasses the staging soak and the
+smoke test that CD runs, and it installs a binary that no version tag points at,
+so the next CD run will overwrite it with whatever is on `main`.
+
+Neither Makefile target runs `make check` first. Run it yourself before shipping
+a local build.
+
 ## Prerequisites
 
 ### Development machine (Linux or macOS)
@@ -61,18 +85,30 @@ sudo -u deploy bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.r
 sudo -u deploy bash -c 'source ~/.cargo/env && cargo install sccache --locked'
 ```
 
-Grant only the sudo commands that `deploy.sh` needs:
+Grant the sudo commands that `deploy.sh` needs. **Every entry must be
+`NOPASSWD`.** `deploy.sh` pipes its remote scripts to `bash` over stdin, so the
+remote `sudo` has no terminal to prompt on: a password-requiring rule does not
+prompt, it fails the deploy. This is true of interactive runs as well as CI —
+the `-t` flag `deploy.sh` passes outside CI cannot allocate a PTY when stdin is
+a heredoc.
 
 ```bash
 sudo visudo -f /etc/sudoers.d/deploy
 ```
 
 ```
+# systemd unit is rewritten on every deploy (write_unit), not just at setup
 deploy ALL=(ALL) NOPASSWD: \
     /usr/bin/systemctl restart myapps, \
     /usr/bin/systemctl restart myapps-stage, \
     /usr/bin/systemctl --no-pager status myapps, \
     /usr/bin/systemctl --no-pager status myapps-stage, \
+    /usr/bin/systemctl daemon-reload, \
+    /usr/bin/tee /etc/systemd/system/myapps.service, \
+    /usr/bin/tee /etc/systemd/system/myapps-stage.service, \
+    /usr/bin/journalctl *, \
+    /usr/bin/mkdir *, \
+    /usr/bin/sed *, \
     /usr/bin/cp *, \
     /usr/bin/mv *, \
     /usr/bin/chown *, \
@@ -80,6 +116,24 @@ deploy ALL=(ALL) NOPASSWD: \
     /usr/bin/rsync *, \
     /usr/bin/sudo -u myapps *
 ```
+
+Note what each group is for, so the list can be trimmed knowingly:
+
+| Rule | Used by |
+|------|---------|
+| `systemctl restart` / `status` | `restart`, `status`, and the tail of every deploy |
+| `systemctl daemon-reload`, `tee /etc/systemd/system/…` | `write_unit`, which runs on **every** deploy |
+| `journalctl` | `logs` |
+| `mkdir`, `sed`, `chown` | `write_unit` reading `.env` and preparing the FileClipboard directory |
+| `cp`, `mv`, `chmod`, `rsync` | installing the binary and `static/` |
+| `sudo -u myapps` | running CLI subcommands (`invite`, `create-user`, `cron`) as the service user |
+
+`setup` needs considerably more than this — `useradd`, `apt-get`,
+`tee` into `/etc/nginx/…` and `/etc/cron.d/…`, `nginx -t`, `systemctl reload
+nginx`. Rather than widening the deploy user's rules permanently, run `setup`
+once from an admin account with full sudo (`DEPLOY_SERVER=you@host ./deploy.sh
+prod setup`, or the equivalent commands by hand), then hand routine deploys to
+the restricted `deploy` user.
 
 Generate a key pair and authorize it:
 
@@ -96,13 +150,19 @@ cat ~/.ssh/myapps_deploy_key.pub | ssh youruser@odroid.local \
 Configure your local SSH to use this key (add to `~/.ssh/config`):
 
 ```
-Host odroid-deploy
-    HostName odroid.local
+Host odroid.local
     User deploy
     IdentityFile ~/.ssh/myapps_deploy_key
 ```
 
-Set `DEPLOY_SERVER=odroid-deploy` in your `deploy/*.env` files.
+Set `DEPLOY_SERVER=deploy@odroid.local` in your `deploy/*.env` files.
+
+**Use `user@host`, not a bare `~/.ssh/config` alias.** The same value is
+uploaded to GitHub by `make gh-env`, and the CD workflow splits it on `@` to
+build its own SSH config on the runner, where your local aliases do not exist.
+An alias yields `User=myalias HostName=myalias` and every CD deploy fails to
+connect. `make gh-env` refuses to run if any `deploy/*.env` has a
+`DEPLOY_SERVER` without an `@`.
 
 #### GitHub CD secrets
 
@@ -128,25 +188,29 @@ production).
 ```bash
 # 1. Set up the deploy user on the server (see "Deploy user setup" above)
 
-# 2. Set DEPLOY_SERVER in your deploy/*.env files (e.g. odroid-deploy)
+# 2. Set DEPLOY_SERVER in your deploy/*.env files (user@host, e.g. deploy@odroid.local)
 
-# 3. First-time server setup (creates myapps user, dirs, systemd, cron, nginx)
+# 3. First-time server setup (creates myapps user, dirs, systemd, cron, nginx).
+#    Needs full sudo, so run it as an admin account:
+#    DEPLOY_SERVER=you@odroid.local ./deploy.sh prod setup
 ./deploy.sh prod setup
 
 # 4. SSH into the server and edit /opt/myapps/.env with your values
 
-# 5. Set up HTTPS on the server
-ssh odroid-deploy 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d yourdomain.com'
+# 5. Set up HTTPS on the server (as an admin account — the deploy user's sudo
+#    rules do not cover apt or certbot)
+ssh you@odroid.local 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d yourdomain.com'
 
-# 6. Sync source, build on server, install, and start the service
-./deploy.sh prod deploy
+# 6. Build locally and ship it (falls back to ./deploy.sh prod deploy, which
+#    rsyncs source and compiles on the Odroid, if you have no Docker)
+make deploy-prod
 
 # 7. Create your first user (option A: invite link — user picks their own password)
-ssh odroid-deploy 'sudo -u myapps /opt/myapps/myapps invite'
+ssh deploy@odroid.local 'sudo -u myapps /opt/myapps/myapps invite'
 # Share the printed URL with the user
 
-# 7. Create your first user (option B: direct — you choose the password)
-ssh odroid-deploy 'sudo -u myapps /opt/myapps/myapps create-user --username yourname --password yourpass'
+# 8. Create your first user (option B: direct — you choose the password)
+ssh deploy@odroid.local 'sudo -u myapps /opt/myapps/myapps create-user --username yourname --password yourpass'
 ```
 
 ## deploy.sh Commands
@@ -182,8 +246,9 @@ Available environments are defined by config files in `deploy/`:
 | `prod`      | `deploy/prod.env` | `https://yourdomain.com`          | 3000 |
 | `stage`     | `deploy/stage.env` | `https://stage.yourdomain.com`    | 3001 |
 
-The SSH target is set via `DEPLOY_SERVER` in each `deploy/*.env` file
-(e.g. `odroid-deploy` matching your SSH config alias).
+The SSH target is set via `DEPLOY_SERVER` in each `deploy/*.env` file, as
+`user@host` (e.g. `deploy@odroid.local`) — see the note under
+[Deploy user setup](#deploy-user-setup) for why an alias will not do.
 
 ## Deploy Flow
 
@@ -255,16 +320,30 @@ Dev machine                         Odroid N2
 Run once on a fresh server. It:
 
 1. Installs the Rust toolchain (if not already present)
-2. Installs build dependencies (`pkg-config`, `libssl-dev`) and `sccache`
+2. Runs `apt-get update`, installs build dependencies (`pkg-config`,
+   `libssl-dev`, `sqlite3`) and `sccache`
 3. Creates a `myapps` system user (no login shell)
-4. Creates `$DEPLOY_REMOTE_DIR/{data,logs,static}` with proper ownership
+4. Creates `$DEPLOY_REMOTE_DIR/{data,static}` and the FileClipboard storage
+   directory, with proper ownership
 5. Creates `$DEPLOY_REMOTE_DIR/.env` template (chmod 600)
 6. Installs the systemd unit for the environment (also refreshed on every
    deploy — see below)
 7. Installs a cron job for daily scheduled tasks at 06:00 (if `DEPLOY_CRON_ENABLED=true`)
-8. Installs an nginx site config for the configured domain
+8. Installs an nginx site config for the configured domain — **only if one does
+   not already exist.** When it does, `setup` leaves it alone and warns if
+   `client_max_body_size` or `proxy_request_buffering` is missing from it (the
+   two directives FileClipboard uploads need).
 
-After setup, enable HTTPS with certbot (see Quick Start step 4).
+The `.env` it writes seeds `DEPLOY_APPS`, `SEED`, `AUTH_SSO_HEADER` and
+`EXTERNAL_APPS` from the matching `DEPLOY_*` values in `deploy/<env>.env`.
+Everything else — `ENCRYPTION_KEY`, the VAPID keys, `LLAMA_SERVER_URL` — is left
+blank for you to fill in.
+
+`setup` is idempotent in the parts that matter (user, directories, cron, systemd
+unit) but never overwrites an existing `.env` or nginx site. Re-running it on a
+live server is safe.
+
+After setup, enable HTTPS with certbot (see Quick Start step 5).
 
 ## Directory Structure on Server
 
@@ -275,7 +354,7 @@ After setup, enable HTTPS with certbot (see Quick Start step 4).
 ├── private.pem            # Enable Banking RSA private key (chmod 600)
 ├── data/
 │   └── myapps.db          # SQLite database (created on first run)
-└── static/                # (reserved for future use)
+└── static/                # Static assets (CSS, icons), synced on every deploy
 
 ~/myapps-build/            # Build directory (owned by deploy user)
 ├── src/
@@ -291,6 +370,12 @@ builds are incremental and fast.
 ## Environment Variables
 
 File: `/opt/myapps/.env`
+
+Adding or removing a variable means touching five files: `.env.example`,
+`deploy/*.env.example`, the `.env` template in `deploy.sh` (`setup()`), the
+"Generate deploy config" heredoc in `.github/workflows/cd.yml` (for `DEPLOY_*`
+variables), and the table below. A variable missing from one of them fails at
+runtime, not at build time.
 
 ```bash
 DATABASE_URL=sqlite:///opt/myapps/data/myapps.db
@@ -415,6 +500,47 @@ Installed at `/etc/cron.d/myapps` by `setup`. Runs daily at 06:00:
 ```
 0 6 * * * myapps /opt/myapps/myapps cron
 ```
+
+## Backups and Rollback
+
+Nothing in the deploy path backs anything up, and there is no automatic
+rollback. Both are manual, and worth knowing before you need them.
+
+**Migrations run on startup, on every deploy.** `db::migrator()` merges core and
+per-app migrations by timestamp and applies whatever is pending the moment the
+service comes up. There is no confirmation step and no backup step. Take one
+first whenever a release contains a migration:
+
+```bash
+# Consistent copy even while the service is running (WAL mode)
+ssh deploy@odroid.local \
+    'sudo -u myapps sqlite3 /opt/myapps/data/myapps.db ".backup /tmp/myapps-$(date +%F).db"'
+scp deploy@odroid.local:/tmp/myapps-*.db ./backups/
+```
+
+Copying `myapps.db` with `cp`/`rsync` while the service runs is not safe — the
+`-wal` and `-shm` files hold committed data that the main file does not.
+
+**Rolling back the binary** means redeploying an earlier release tarball:
+
+```bash
+gh release download v0.4.1 --pattern 'myapps-*.tar.gz' --dir /tmp/rollback
+mkdir -p /tmp/rollback/pkg && tar -xzf /tmp/rollback/myapps-*.tar.gz -C /tmp/rollback/pkg
+./deploy.sh prod release-deploy /tmp/rollback/pkg
+```
+
+`release-deploy` overwrites the installed binary in place and keeps no copy of
+the previous one, so the release tarball is the only artifact to roll back to.
+
+**A binary rollback does not roll back the schema.** Migrations are
+forward-only; an older binary runs against the newer schema. Restore the
+database backup alongside the binary if the release migrated anything
+destructive.
+
+**FileClipboard contents are not in the database.** A database backup restores
+file *metadata* only; the bytes live under `FILE_CLIPBOARD_DIR`. Restoring one
+without the other leaves `services::retention` to reconcile the difference — it
+deletes disk files with no matching row.
 
 ## Web Push Notifications
 
@@ -702,8 +828,13 @@ The CD workflow requires two GitHub **Environments** (`staging` and
 | `DEPLOY_CRON_ENABLED`     | `false`                     | `true`                     |
 | `DEPLOY_ICON`             | `icon-stage.svg`            | `icon.svg`                 |
 | `DEPLOY_SEED`             | `true`                      | `false`                    |
+| `DEPLOY_FILE_CLIPBOARD_DIR` | *(blank, or e.g. `/mnt/data/file_clipboard`)* | *(same)* |
 
-These match the values in `deploy/*.env.example`.
+These match the values in `deploy/*.env.example`, and `make gh-env` uploads them
+from your local `deploy/*.env`. Adding a new `DEPLOY_*` variable means adding it
+to the "Generate deploy config" heredoc in `cd.yml` as well — `make gh-env` will
+happily upload a variable the workflow never writes into the env file, and
+`deploy.sh` then falls back to its default without complaining.
 
 ### Server prerequisites for CI/CD
 
@@ -722,9 +853,19 @@ to continue on to prod after staging.
 
 The generated config sets `client_max_body_size 5g` and
 `proxy_request_buffering off` for FileClipboard uploads. **`setup` only writes
-the site config when one does not already exist**, so add both lines by hand to
-any nginx config installed before FileClipboard existed — without them, nginx
-rejects uploads over its 1 MB default.
+the site config when one does not already exist** — unlike the systemd unit, an
+nginx config is never rewritten, so changes here do not reach servers that were
+already set up. `setup` warns when an existing config is missing either
+directive; add them by hand and reload:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Without them nginx rejects uploads over its 1 MB default, before the app sees
+the request. `client_max_body_size` must also stay at or above
+`FILE_CLIPBOARD_MAX_FILE_BYTES` — the two are set independently and nothing
+checks that they agree.
 
 The `setup` command installs an HTTP-only nginx config at
 `/etc/nginx/sites-available/myapps` with `server_name` set to your domain.
@@ -767,14 +908,14 @@ appropriate values.
 # 3. DNS: add stage.yourdomain.com to your DNS provider
 
 # 4. HTTPS
-ssh odroid-deploy 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d stage.yourdomain.com'
+ssh you@odroid.local 'sudo apt install python3-certbot-nginx && sudo certbot --nginx -d stage.yourdomain.com'
 
 # 5. Deploy
 ./deploy.sh stage deploy
 
 # 6. Create a user (invite link or direct)
-ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps invite'
-# Or: ssh odroid-deploy 'sudo -u myapps /opt/myapps-stage/myapps create-user --username yourname --password yourpass'
+ssh deploy@odroid.local 'sudo -u myapps /opt/myapps-stage/myapps invite'
+# Or: ssh deploy@odroid.local 'sudo -u myapps /opt/myapps-stage/myapps create-user --username yourname --password yourpass'
 ```
 
 ### Auto-seeding and user cleanup
@@ -798,7 +939,6 @@ cargo run -- cleanup-users --days 7
 ├── .env                   # Environment variables (chmod 600)
 ├── data/
 │   └── myapps.db          # SQLite database (separate from prod)
-├── logs/
 └── static/
 
 ~/myapps-stage-build/      # Build directory (owned by deploy user)

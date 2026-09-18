@@ -1,179 +1,100 @@
 # MyApps
 
-Multi-app personal platform. LeanFin (personal expense management), MindFlow
-(thought capture & mind map), VoiceToText (audio transcription),
-FormInput (custom forms with row sets and column-typed inputs), Notes
-(markdown-based note-taking), and FileClipboard (file sharing between a user's
-devices) are the current sub-applications. After login, users
-see an app launcher and can navigate into individual apps. All apps share auth,
-DB, layout/styling, and config.
+A single Rust binary serving several small personal web apps behind one login:
+LeanFin (expenses), MindFlow (thoughts/mind map), VoiceToText (transcription),
+FormInput (custom forms), Notes (markdown), FileClipboard (file transfer between
+a user's devices). Axum + HTMX + server-rendered HTML + SQLite via sqlx with
+runtime-checked queries (no compile-time macros). Deployed to an Odroid N2
+(aarch64, 4 GB RAM) behind nginx.
 
-## Stack
+Each app is a crate under `crates/` implementing the `App` trait from
+`myapps_core::registry`; `crates/myapps-core/` holds everything shared (auth,
+config, db, layout, i18n, components, command bar, services). Apps never depend
+on each other. `src/main.rs` just registers them and delegates to
+`myapps_core::cli`.
 
-- **Backend**: Rust, Axum, SQLite (sqlx)
-- **Frontend**: HTMX + server-rendered HTML
-- **Deploy target**: Odroid N2 (aarch64, Ubuntu Server 24.04), behind nginx
+`cargo run -- --help` lists the CLI subcommands; the `Makefile` lists the build,
+deploy and version targets. `make check` is exactly what CI runs.
 
-## Build & Run
+## Gotchas
 
-```bash
-# Development (local)
-cargo run -- serve                  # Start HTTP server on 127.0.0.1:3000
-cargo run -- cron                   # Run scheduled app tasks (e.g. bank sync)
-cargo run -- create-user            # Create a user (admin, direct password)
-cargo run -- invite                 # Generate a single-use invite link (48h)
-cargo run -- seed --user <name>              # Seed all apps for a user
-cargo run -- delete-user --username <name>      # Delete a user and all their data
-cargo run -- delete-user-app-data --username <name>          # Delete all app data (keeps user)
-cargo run -- delete-user-app-data --username <name> --app X  # Delete data for one app
-cargo run -- cleanup-users --days 7             # Delete users inactive >7 days
-cargo run -- backfill --user <name> --days 90        # Re-sync app data with a wider lookback
-cargo run -- backfill --user <name> --app leanfin --days 60   # Backfill one app only
+These are the things that have actually broken, and that reading the code
+nearby will not warn you about.
 
-# Makefile shortcuts
-make check                          # fmt-check + clippy + test (same as CI)
-make fmt                            # Auto-format code
-make lint                           # Run clippy with -D warnings
-make test                           # Run all tests
-make audit                          # Security audit (cargo audit)
-make build                          # Release build (native, x86_64)
-make build-arm64                    # Cross-compile aarch64 binary (Docker + cross + sccache)
-make package-arm64                  # Cross-build + assemble release bundle
-make deploy-stage                   # Cross-build + package + push to staging
-make deploy-prod                    # Same for production (CI is the usual path)
-make run                            # Start dev server
-make screenshots                    # Regenerate README screenshots (needs Node.js)
+**Table prefixes are enforced, not stylistic.** Every app gets its own SQLite
+pool with an authorizer that denies reads *and* writes to any table not
+prefixed with its own app key (`db::init_scoped`). A table named without the
+`<app_key>_` prefix is invisible to the app that owns it, and the failure
+surfaces as an authorization error from SQLite, not as a missing table.
 
-# Deploy to server (rsyncs source via deploy user, builds on Odroid, installs + restarts)
-./deploy.sh prod setup                    # First time only
-./deploy.sh prod deploy                   # Build + install + restart
-./deploy.sh stage setup                   # First time only (staging)
-./deploy.sh stage deploy                  # Build + install + restart (staging)
-./deploy.sh stage deploy                  # Deploy (auto-seeds on invite registration)
-```
+**CSS has no scoping.** Every app's stylesheet is concatenated into one
+`/static/apps.css` served on every page, so a bare `table { … }` in one app
+restyles every other app. Scope every rule to an app-specific class. For tables
+that collapse into cards on phones, opt into the shared `table-cards` utility
+in `static/core.css` and add only cell placement locally.
 
-## CI/CD
+**Handlers build HTML with `format!`, which escapes nothing.** Any user- or
+provider-supplied string (account names, labels, transaction descriptions,
+counterparties, filenames) must pass through
+`myapps_core::components::html_escape` first. It escapes both quote characters,
+so it is safe in element bodies and quoted attribute values. `<option>` bodies
+are *not* a safe sink — the browser re-parses entity-decoded text there and
+builds live elements.
 
-- **GitHub Actions CI** (`.github/workflows/ci.yml`) runs on every push to
-  `main` and on PRs: format check, clippy (warnings-as-errors), and tests.
-- **GitHub Actions CD** (`.github/workflows/cd.yml`) runs on every push to
-  `main`: reads the version from `Cargo.toml`, creates a git tag and GitHub
-  Release with a cross-compiled aarch64 tarball containing the binary and
-  static assets (using `cross`), then deploys
-  to staging and production (with smoke tests). Version is bumped during
-  development via `make bump-{patch,minor,major}` (automated in
-  `/finish-development`). Uses `DEPLOY_CI=true` for non-interactive SSH.
-  Requires GitHub Environments (`staging`, `production`) with deploy config
-  variables and SSH secrets. See `docs/deployment.md` for setup details.
-- **Security audit** (`.github/workflows/audit.yml`) runs on Cargo.toml/lock
-  changes and weekly via `cargo audit`.
-- All three workflows support `workflow_dispatch` for manual triggering from
-  the GitHub Actions UI. Manual CD runs deploy to staging only by default;
-  tick the `deploy_prod` input to also deploy to production.
-- **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for Cargo
-  dependency updates and GitHub Actions version bumps.
-- `make check` runs the same checks locally before pushing.
+**FileClipboard is the only app with state outside SQLite.** Contents live at
+`FILE_CLIPBOARD_DIR/<user_id>/<uuid>`, metadata in `file_clipboard_files`.
+Uploads stream to disk in chunks (never buffer a whole one in memory); downloads
+are always `attachment` + `nosniff`, because user bytes served inline on the
+session origin are stored XSS. Deleting a row does not delete the file —
+`services::retention` reconciles disk against the table. Its directory also
+needs a systemd `ReadWritePaths` entry when it sits outside the deploy dir; see
+[deployment docs](docs/deployment.md#fileclipboard-storage).
 
-## Workspace Structure
+**Translations are compile-time structs.** Adding a field to a translation
+struct forces both EN and ES to be filled in — that is the point, don't work
+around it. Shared strings live in `crates/myapps-core/src/i18n/`, app strings in
+each crate's `i18n.rs`.
 
-The project is a Cargo workspace with separate crates:
+**Actions belong in the app's `ops.rs`.** Both HTTP handlers and the command bar
+dispatcher call into it. An action implemented only in a handler is invisible to
+the command bar.
 
-```
-crates/
-  myapps-core/           # Shared infra: auth, config, db, i18n, layout, routes, services, command, registry
-  myapps-leanfin/        # LeanFin app
-  myapps-mindflow/       # MindFlow app
-  myapps-voice-to-text/  # VoiceToText app
-  myapps-form-input/      # FormInput app
-  myapps-notes/           # Notes app
-  myapps-file-clipboard/  # FileClipboard app
-src/
-  main.rs                # Thin binary: CLI + app registration
-  lib.rs                 # Re-export facade for tests
-```
+**Migrations from all crates are merged by timestamp** (`db::migrator()`) and
+run on startup, including in production, with no backup step. Core migrations
+live in `crates/myapps-core/migrations/`, app ones in each crate's
+`migrations/`. Timestamps are the primary key, so they must not collide across
+crates. The migrator runs with `ignore_missing: true` — a migration deleted or
+retimestamped after it shipped will not fail a deployed database, and will also
+not be re-applied to it.
 
-Apps depend on `myapps-core`. No app depends on another app. The root binary
-assembles all crates.
+**Memory is the binding constraint** — 4 GB shared with whisper.cpp and
+llama.cpp. Prefer borrowing over cloning, and weigh any new dependency.
 
-## Project Conventions
+**Adding or removing an environment variable means five files**, and missing one
+fails silently at runtime rather than at build time:
+`.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`
+(`setup()`), the generated deploy config in `.github/workflows/cd.yml`
+(for `DEPLOY_*` variables), and the Environment Variables table in
+`docs/deployment.md`.
 
-- SQL queries use runtime-checked sqlx (no compile-time macros).
-- Core migrations live in `crates/myapps-core/migrations/`.
-  App-specific migrations live in each app crate's `migrations/` directory
-  (e.g. `crates/myapps-leanfin/migrations/`). All are merged by timestamp
-  and run automatically on startup via `db::migrator()`.
-- Environment variables are loaded from `.env` in development (via dotenvy).
-- No secrets in the repo. See `.env.example` for required variables.
-- Keep memory footprint minimal — avoid unnecessary allocations and large
-  dependencies.
-- LeanFin-specific routes, handlers, and services live in `crates/myapps-leanfin/`.
-- MindFlow-specific routes, handlers, and services live in `crates/myapps-mindflow/`.
-- VoiceToText-specific routes, handlers, and services live in `crates/myapps-voice-to-text/`.
-- FormInput-specific routes and handlers live in `crates/myapps-form-input/`.
-- Notes-specific routes and handlers live in `crates/myapps-notes/`.
-- FileClipboard-specific routes and handlers live in `crates/myapps-file-clipboard/`.
-  It is the only app that stores data outside SQLite: file *contents* live under
-  `FILE_CLIPBOARD_DIR/<user_id>/<uuid>` (uploads exceed SQLite's ~1 GB blob
-  ceiling), with metadata in `file_clipboard_files`. Uploads stream to disk in
-  chunks — never buffer a whole upload in memory — and downloads are always
-  served as `attachment` with `nosniff`, since user-supplied bytes on the
-  session origin would otherwise be stored XSS. Deleting rows does not delete
-  files; `services::retention` reconciles disk against the table.
-- Shared infrastructure (auth, config, db, models, layout, i18n, command,
-  components, services) lives in `crates/myapps-core/`. Shared services (whisper
-  transcription, push notifications) live in `crates/myapps-core/src/services/`.
-- Each app implements the `App` trait from `myapps_core::registry`. The trait
-  provides hooks for migrations, routing, CSS, commands, seeding, scheduled
-  tasks (`cron`), and background workers (`on_serve`). To add a new app, run
-  `/add-app <AppName>` which scaffolds the crate and wires it into the
-  workspace. External app shortcuts (services outside MyApps) are configured
-  via the `EXTERNAL_APPS` env var, not the `App` trait.
-- The command bar module (`crates/myapps-core/src/command/`) handles LLM-powered
-  natural-language command interpretation and execution via a llama.cpp server.
-- Each app exposes an `ops.rs` module with shared action functions callable from
-  both HTTP handlers and the command bar dispatcher. New actions go in `ops.rs`.
-- Shared translations (auth, launcher, command bar) live in
-  `crates/myapps-core/src/i18n/`. App-specific translations live in each app
-  crate's `i18n.rs` module. Both use compile-time struct-based translations;
-  adding a field forces both EN and ES to be updated.
-- **App stylesheets must not use bare element selectors.** Every app's CSS is
-  concatenated into a single `/static/apps.css` served on every page, so a rule
-  like `table { ... }` in one app restyles every other app's tables. Scope rules
-  to an app-specific class. For tables that should collapse into a card list on
-  phones, opt in with `<table class="table-cards">` (the shared utility in
-  `static/core.css`) and add only cell placement in the app's own stylesheet.
-- **Escape user-controlled strings before interpolating them into HTML.** Handlers
-  build markup with `format!`, which does no escaping, so any user- or
-  provider-supplied value (account names, label names, transaction descriptions
-  and counterparties) must go through `myapps_core::components::html_escape`
-  first. It escapes both quote characters, so it is safe in element bodies and
-  in quoted attribute values. Note that `<option>` bodies are *not* a safe sink:
-  the browser re-parses entity-decoded text there and will build live elements.
-- All app-specific database tables use the app name as prefix (e.g. `leanfin_accounts`, `mindflow_thoughts`, `voice_to_text_jobs`, `form_input_row_sets`, `notes_notes`, `notes_note_updates`,
-  `file_clipboard_files`, `file_clipboard_settings`).
-- When adding or removing environment variables, update all four places:
-  `.env.example`, `deploy/*.env.example`, the `.env` template in `deploy.sh`
-  (`setup()`), and the Environment Variables section in `docs/deployment.md`.
+**Bump the version in `Cargo.toml` before merging to `main`** — CD fails the
+release job if the version is not higher than the latest tag.
+`make bump-{patch,minor,major}`; `/finish-development` does it for you.
 
-## Testing
+## Workflows
 
-- After any frontend change (routes, handlers, HTML templates, CSS classes used
-  in assertions), run the **frontend-tester agent**
-  (`.claude/agents/frontend-tester.md`) to generate or update integration tests.
-- For browser-level verification (XSS, broken HTMX swaps, console errors,
-  4xx/5xx, layout regressions) use the **`/frontend-walkthrough`** command.
-  No-arg form walks every route touched on the current branch vs `main`;
-  pass an app key, route, or description to walk a specific area on demand.
-  See `.claude/commands/frontend-walkthrough.md`.
-- App-specific tests live in each app crate's `tests/` directory
-  (e.g. `crates/myapps-leanfin/tests/`). Platform-level auth and launcher
-  tests live at the root `tests/`. The shared `myapps-test-harness` crate
-  (`crates/myapps-test-harness/`) provides `spawn_app()` and `TestApp`
-  helpers. Tests use `axum-test`; see the agent file for patterns.
+- `/add-app <AppName>` — scaffold a new app crate and wire it into the workspace.
+- `/finish-development` — version bump, docs, PR.
+- **frontend-tester** agent (`.claude/agents/frontend-tester.md`) — write or
+  update `axum-test` integration tests after a frontend change. App tests live
+  in each crate's `tests/`; platform auth/launcher tests in the root `tests/`;
+  helpers in `crates/myapps-test-harness/`.
+- `/frontend-walkthrough` — drive a real browser over the routes the branch
+  touched, for what tests can't see (XSS, broken swaps, console errors, layout).
 
-## Documentation
+## Docs
 
-- [Requirements](docs/requirements.md)
-- [Architecture](docs/architecture.md)
-- [Deployment](docs/deployment.md)
-- [Worktree Workflow](docs/worktree-workflow.md)
+[Requirements](docs/requirements.md) ·
+[Architecture](docs/architecture.md) ·
+[Deployment](docs/deployment.md) ·
+[Worktrees](docs/worktree-workflow.md)
