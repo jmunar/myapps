@@ -47,7 +47,9 @@ Uploads stream to disk in chunks (never buffer a whole one in memory); downloads
 are always `attachment` + `nosniff`, because user bytes served inline on the
 session origin are stored XSS. Deleting a row does not delete the file —
 `services::retention` reconciles disk against the table. Its directory also
-needs a systemd `ReadWritePaths` entry when it sits outside the deploy dir; see
+needs a systemd `ReadWritePaths` entry when it sits outside the deploy dir —
+and a deploy will not add it, because the unit is owned by the `myapps` Ansible
+role in the sibling `infra` repo, not by `deploy.sh`; see
 [deployment docs](docs/deployment.md#fileclipboard-storage).
 
 **Translations are compile-time structs.** Adding a field to a translation
