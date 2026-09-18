@@ -20,6 +20,10 @@ Commands:
   restart                  Restart the service on the server
   logs                     Tail the server logs
   status                   Show service status
+
+Set DEPLOY_SERVER in the environment to override the config file's value —
+needed for 'setup', which requires more sudo than the deploy user is granted:
+  DEPLOY_SERVER=you@host $0 <env> setup
 EOF
     exit 1
 }
@@ -38,10 +42,16 @@ if [[ ! -f "$ENV_FILE" ]]; then
     exit 1
 fi
 
+# An explicit DEPLOY_SERVER in the caller's environment wins over the config
+# file, which would otherwise clobber it when sourced. `setup` needs full sudo,
+# so it is normally run against an admin account rather than the restricted
+# deploy user: DEPLOY_SERVER=you@host ./deploy.sh prod setup
+SERVER_OVERRIDE="${DEPLOY_SERVER:-}"
+
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
-SERVER="$DEPLOY_SERVER"
+SERVER="${SERVER_OVERRIDE:-$DEPLOY_SERVER}"
 SSH_PORT="${DEPLOY_SSH_PORT:-22}"
 EXTRA_ARG="${3:-}"
 
@@ -94,7 +104,7 @@ sudo chmod +x $DEPLOY_REMOTE_DIR/myapps
 INSTALL
     echo "▸ Syncing static files..."
     rsync -az --delete -e "ssh $SSH_MUX_OPTS -p $SSH_PORT" "$release_dir/static/" "$SERVER:/tmp/myapps-static/"
-    ssh_server DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'STATIC'
+    ssh_server DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="${DEPLOY_ICON:-icon.svg}" bash <<'STATIC'
 set -euo pipefail
 sudo rsync -a --delete /tmp/myapps-static/ $DEPLOY_REMOTE_DIR/static/
 if [[ -n "$DEPLOY_ICON" && "$DEPLOY_ICON" != "icon.svg" ]]; then
@@ -114,7 +124,7 @@ build() {
 install() {
     local binary_dir="${DEPLOY_BINARY_DIR:-$DEPLOY_REMOTE_BUILD_DIR}"
     echo "▸ Installing binary and static files..."
-    ssh_server DEPLOY_BINARY_DIR="$binary_dir" DEPLOY_REMOTE_BUILD_DIR="$DEPLOY_REMOTE_BUILD_DIR" DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="$DEPLOY_ICON" bash <<'INSTALL'
+    ssh_server DEPLOY_BINARY_DIR="$binary_dir" DEPLOY_REMOTE_BUILD_DIR="$DEPLOY_REMOTE_BUILD_DIR" DEPLOY_REMOTE_DIR="$DEPLOY_REMOTE_DIR" DEPLOY_ICON="${DEPLOY_ICON:-icon.svg}" bash <<'INSTALL'
 set -euo pipefail
 sudo cp $DEPLOY_BINARY_DIR/target/release/myapps $DEPLOY_REMOTE_DIR/myapps.new
 sudo mv $DEPLOY_REMOTE_DIR/myapps.new $DEPLOY_REMOTE_DIR/myapps
@@ -223,6 +233,10 @@ setup() {
         DEPLOY_PORT="$DEPLOY_PORT" \
         DEPLOY_CRON_ENABLED="$DEPLOY_CRON_ENABLED" \
         DEPLOY_FILE_CLIPBOARD_DIR="${DEPLOY_FILE_CLIPBOARD_DIR:-}" \
+        DEPLOY_APPS="${DEPLOY_APPS:-}" \
+        DEPLOY_SEED="${DEPLOY_SEED:-false}" \
+        DEPLOY_AUTH_SSO_HEADER="${DEPLOY_AUTH_SSO_HEADER:-}" \
+        DEPLOY_EXTERNAL_APPS="${DEPLOY_EXTERNAL_APPS:-}" \
         ENV_NAME="$ENV_NAME" \
         bash <<'SETUP'
 set -euo pipefail
@@ -237,6 +251,7 @@ fi
 
 # Install build dependencies
 echo "  Installing build dependencies..."
+sudo apt-get update -qq
 sudo apt-get install -y pkg-config libssl-dev sqlite3
 
 # Install sccache if not present
@@ -342,7 +357,19 @@ NGINX
     echo "  Installed nginx config for $DEPLOY_DOMAIN (HTTP only)"
     echo "  To enable HTTPS, run: sudo apt install python3-certbot-nginx && sudo certbot --nginx -d $DEPLOY_DOMAIN"
 else
-    echo "  nginx config already exists, skipping"
+    # The site config is written once and never rewritten, so a server set up
+    # before FileClipboard existed keeps nginx's 1 MB default and rejects every
+    # upload before the app sees it. Say so instead of silently skipping.
+    echo "  nginx config already exists, not overwriting"
+    MISSING=""
+    grep -q 'client_max_body_size' /etc/nginx/sites-available/$DEPLOY_NGINX_SITE || MISSING="$MISSING client_max_body_size"
+    grep -q 'proxy_request_buffering' /etc/nginx/sites-available/$DEPLOY_NGINX_SITE || MISSING="$MISSING proxy_request_buffering"
+    if [[ -n "$MISSING" ]]; then
+        echo "  WARNING: missing directive(s) in /etc/nginx/sites-available/$DEPLOY_NGINX_SITE:$MISSING"
+        echo "           FileClipboard uploads will fail until you add:"
+        echo "             client_max_body_size 5g;"
+        echo "             proxy_request_buffering off;"
+    fi
 fi
 
 echo ""

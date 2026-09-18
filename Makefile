@@ -101,8 +101,12 @@ package-arm64: build-arm64
 deploy-stage: package-arm64
 	./deploy.sh stage release-deploy $(RELEASE_PKG_DIR)
 
-# Same for production. Normally prod ships via CI; use this only for hotfixes.
+# Same for production. Normally prod ships via CI; use this only for hotfixes —
+# it skips the staging soak and the smoke test the CD pipeline runs, and ships a
+# binary that no version tag points at, so confirm before it goes out.
 deploy-prod: package-arm64
+	@read -r -p "Deploy this local build straight to PRODUCTION? [y/N] " ans; \
+	[[ "$$ans" == [yY] ]] || { echo "Aborted."; exit 1; }
 	./deploy.sh prod release-deploy $(RELEASE_PKG_DIR)
 
 run:
@@ -125,6 +129,16 @@ gh-env:
 				exit 1; \
 			fi; \
 		fi; \
+	done
+	@for f in deploy/*.env; do \
+		srv=$$(grep '^DEPLOY_SERVER=' "$$f" | head -1 | cut -d= -f2- | sed 's/^"//;s/"$$//'); \
+		case "$$srv" in \
+			*@*) ;; \
+			*) echo "ERROR: DEPLOY_SERVER in $$f is '$$srv'."; \
+			   echo "       CD splits this on '@' to build its SSH config, so it must be"; \
+			   echo "       user@host (e.g. deploy@odroid.local), not a local ~/.ssh/config alias."; \
+			   exit 1 ;; \
+		esac; \
 	done
 	@for f in deploy/*.env; do \
 		GH_ENV=$$(grep '^DEPLOY_GH_ENVIRONMENT=' "$$f" | head -1 | cut -d= -f2-); \
