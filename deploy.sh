@@ -146,12 +146,15 @@ restart() {
     ssh_server "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME"
 }
 
-# Write the systemd unit and reload systemd.
+# Write the systemd unit and reload systemd. Setup only.
 #
-# Runs on every deploy, not just setup: the unit is part of the deployment, and
-# when it only shipped during setup a change here would sit in the repo while
-# the server kept running the old sandbox — which is exactly how an upload
-# directory ends up outside ReadWritePaths and fails with EROFS.
+# Deploys deliberately do NOT call this. On the Ansible-managed server the unit
+# is owned by the infra repo's `myapps` role, which also decides the sandbox
+# (ReadWritePaths, RequiresMountsFor) around the FileClipboard directory — a
+# change there reaches the box with `--tags myapps`, not with a deploy. The
+# deploy user's sudoers grants no write to /etc/systemd/system to match, so
+# calling this from a deploy path fails the deploy. This copy stays for
+# bootstrapping a server that Ansible does not manage.
 #
 # Operator drop-ins (systemctl edit -> <service>.service.d/*.conf) are separate
 # files and survive this.
@@ -169,7 +172,10 @@ set -euo pipefail
 # the deploy variable, then to the default location.
 # \042 and \047 are " and ' — stripping any quotes around the value without
 # dragging shell quoting through two levels of heredoc.
-FC_DIR="$(sudo sed -n 's/^FILE_CLIPBOARD_DIR=//p' "$DEPLOY_REMOTE_DIR/.env" 2>/dev/null | tail -1 | tr -d '\042\047')"
+# `|| true`: under `set -e` with `pipefail` an unreadable .env would abort the
+# whole script here, and with stderr already discarded it would abort it
+# silently — no message, just a failed deploy.
+FC_DIR="$(sudo sed -n 's/^FILE_CLIPBOARD_DIR=//p' "$DEPLOY_REMOTE_DIR/.env" 2>/dev/null | tail -1 | tr -d '\042\047' || true)"
 FC_DIR="${FC_DIR:-${DEPLOY_FILE_CLIPBOARD_DIR:-$DEPLOY_REMOTE_DIR/data/file_clipboard}}"
 
 sudo mkdir -p "$FC_DIR"
@@ -308,8 +314,8 @@ ENV
     echo "  Created $DEPLOY_REMOTE_DIR/.env — edit it with your values"
 fi
 
-# The systemd unit is written by write_unit() from the deploy script, which runs
-# on every deploy as well as on setup.
+# The systemd unit is written by write_unit() at the end of setup. On the
+# Ansible-managed server it is owned by the infra repo instead; see write_unit.
 
 # Install cron job only if enabled
 if [[ "$DEPLOY_CRON_ENABLED" == "true" ]]; then
@@ -385,10 +391,10 @@ SETUP
 
 # ── Command dispatch ───────────────────────────────────────────────
 case "${COMMAND}" in
-    release-deploy) release_install "$EXTRA_ARG" && write_unit && restart ;;
+    release-deploy) release_install "$EXTRA_ARG" && restart ;;
     build)   build ;;
-    deploy)  build && install && write_unit && restart ;;
-    install) sync_source && install && write_unit && restart ;;
+    deploy)  build && install && restart ;;
+    install) sync_source && install && restart ;;
     setup)   setup ;;
     restart) restart ;;
     logs)    ssh_server "sudo journalctl -u $DEPLOY_SERVICE_NAME -f --no-pager" ;;

@@ -97,18 +97,12 @@ sudo visudo -f /etc/sudoers.d/deploy
 ```
 
 ```
-# systemd unit is rewritten on every deploy (write_unit), not just at setup
 deploy ALL=(ALL) NOPASSWD: \
     /usr/bin/systemctl restart myapps, \
     /usr/bin/systemctl restart myapps-stage, \
     /usr/bin/systemctl --no-pager status myapps, \
     /usr/bin/systemctl --no-pager status myapps-stage, \
-    /usr/bin/systemctl daemon-reload, \
-    /usr/bin/tee /etc/systemd/system/myapps.service, \
-    /usr/bin/tee /etc/systemd/system/myapps-stage.service, \
     /usr/bin/journalctl *, \
-    /usr/bin/mkdir *, \
-    /usr/bin/sed *, \
     /usr/bin/cp *, \
     /usr/bin/mv *, \
     /usr/bin/chown *, \
@@ -122,11 +116,27 @@ Note what each group is for, so the list can be trimmed knowingly:
 | Rule | Used by |
 |------|---------|
 | `systemctl restart` / `status` | `restart`, `status`, and the tail of every deploy |
-| `systemctl daemon-reload`, `tee /etc/systemd/system/…` | `write_unit`, which runs on **every** deploy |
 | `journalctl` | `logs` |
-| `mkdir`, `sed`, `chown` | `write_unit` reading `.env` and preparing the FileClipboard directory |
 | `cp`, `mv`, `chmod`, `rsync` | installing the binary and `static/` |
 | `sudo -u myapps` | running CLI subcommands (`invite`, `create-user`, `cron`) as the service user |
+
+Nothing here writes to `/etc/systemd/system`, and that is deliberate: a deploy
+installs a binary and restarts a service, it does not redefine the unit. The
+unit — and with it the sandbox the app runs in — is configuration of the
+machine, and belongs wherever that machine is configured. On the ODROID that is
+the `myapps` Ansible role in the sibling `infra` repo, which also manages this
+`deploy` user and this very sudoers file; the copy above is what you install by
+hand on a server Ansible does not manage. `write_unit()` in `deploy.sh` exists
+for that second case and runs only during `setup`, from an admin account.
+
+The practical consequence: **a change to `ReadWritePaths`, to
+`RequiresMountsFor`, or to anything else in the unit does not travel with a
+deploy.** Apply it where the unit lives (for the ODROID, `ansible-playbook
+playbooks/site.yml --limit odroid --tags myapps`). This matters most for
+`FILE_CLIPBOARD_DIR`: point it outside the deploy directory in `.env` without
+the matching `ReadWritePaths` entry and every upload fails with EROFS
+("Read-only file system") — never a permission error, which is what makes it
+hard to place.
 
 `setup` needs considerably more than this — `useradd`, `apt-get`,
 `tee` into `/etc/nginx/…` and `/etc/cron.d/…`, `nginx -t`, `systemctl reload
@@ -326,8 +336,8 @@ Run once on a fresh server. It:
 4. Creates `$DEPLOY_REMOTE_DIR/{data,static}` and the FileClipboard storage
    directory, with proper ownership
 5. Creates `$DEPLOY_REMOTE_DIR/.env` template (chmod 600)
-6. Installs the systemd unit for the environment (also refreshed on every
-   deploy — see below)
+6. Installs the systemd unit for the environment (setup only — deploys never
+   rewrite it; see below)
 7. Installs a cron job for daily scheduled tasks at 06:00 (if `DEPLOY_CRON_ENABLED=true`)
 8. Installs an nginx site config for the configured domain — **only if one does
    not already exist.** When it does, `setup` leaves it alone and warns if
@@ -341,7 +351,8 @@ blank for you to fill in.
 
 `setup` is idempotent in the parts that matter (user, directories, cron, systemd
 unit) but never overwrites an existing `.env` or nginx site. Re-running it on a
-live server is safe.
+live server is safe — but on an Ansible-managed server it will fight the `myapps`
+role over the unit, so prefer the role there.
 
 After setup, enable HTTPS with certbot (see Quick Start step 5).
 
@@ -442,20 +453,25 @@ listed in `ReadWritePaths`. A directory that is not listed fails with
 have no effect, and the same path stays writable from a shell, which makes this
 look like an application bug rather than a sandbox.
 
-`write_unit()` in `deploy.sh` handles this, and it runs on **every deploy**
-(`deploy`, `install`, `release-deploy`) as well as on `setup`. It reads
-`FILE_CLIPBOARD_DIR` from the server's own `.env` — the value the app actually
-uses — and when that path is outside the deploy directory it adds it to
-`ReadWritePaths` and emits `RequiresMountsFor`, so the service waits for an
-external disk instead of racing it at boot. It prints the storage directory and
-the resulting `ReadWritePaths` as it goes.
-
-So after changing `FILE_CLIPBOARD_DIR` in the server's `.env`, a normal deploy
-is enough:
+**A deploy will not fix this for you.** Deploys do not touch the unit (see
+[Server (Odroid N2)](#server-odroid-n2)) — whoever owns the unit has to be told about the
+new path. On the ODROID that is the `myapps` Ansible role in the sibling `infra`
+repo: set `myapps_file_clipboard_dir` (or `myapps_stage_file_clipboard_dir`) to
+the same path you put in `FILE_CLIPBOARD_DIR` and apply it.
 
 ```bash
-make deploy-stage        # or ./deploy.sh stage deploy
+# in the infra repo, from ansible/
+uv run ansible-playbook playbooks/site.yml --limit odroid --tags myapps
 ```
+
+The role creates the directory, adds it to `ReadWritePaths`, and emits
+`RequiresMountsFor` so the service waits for an external disk instead of racing
+it at boot. Its value and `FILE_CLIPBOARD_DIR` in the server's `.env` are two
+separate settings that must agree; the app reads the `.env` one, the sandbox
+comes from the unit, and the failure mode when they disagree is EROFS.
+
+On a server Ansible does not manage, `write_unit()` in `deploy.sh` does the same
+job from the server's own `.env`, but only during `setup`.
 
 To patch a running server without deploying (note the **service name** differs
 per environment — `myapps` vs `myapps-stage`):
