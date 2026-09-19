@@ -126,6 +126,9 @@ release job if the version is not higher than the latest tag.
 
 ## Workflows
 
+- `./devbox.sh create <branch>` — develop in a microVM with no credentials in
+  it: a clone, the toolchain and Claude Code inside, every secret brokered from
+  the host. `sandbox/README.md`; `./devbox.sh doctor` first.
 - `/add-app <AppName>` — scaffold a new app crate and wire it into the workspace.
 - `/finish-development` — version bump, docs, PR.
 - **frontend-tester** agent (`.claude/agents/frontend-tester.md`) — write or
@@ -140,4 +143,5 @@ release job if the version is not higher than the latest tag.
 [Requirements](docs/requirements.md) ·
 [Architecture](docs/architecture.md) ·
 [Deployment](docs/deployment.md) ·
-[Worktrees](docs/worktree-workflow.md)
+[Worktrees](docs/worktree-workflow.md) ·
+[Sandboxed development](sandbox/README.md)
