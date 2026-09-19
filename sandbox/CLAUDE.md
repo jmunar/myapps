@@ -38,9 +38,33 @@ same thing for the workload without the wedge. `render.sh` does this; do not
 **A running image command wedges exec the same way.** `msb run --detach` with
 any long-lived command, and `--init` with a PID 1 handoff, both leave the
 sandbox pingable and exec-dead. Hence `msb create`, which boots it idle, and
-hence the guest image's `CMD` stays `/bin/bash`. This is also why the vsock
-bridge cannot be a daemon inside the guest and has to be `devbox.sh bridge`, a
-foreground exec the user leaves running.
+hence the guest image's `CMD` stays `/bin/bash`. Nothing long-lived may run in
+the guest — which is why the broker is a host TCP port the guest dials rather
+than anything the guest has to host.
+
+**The guest reaches the host at `host.microsandbox.internal`, and only then.**
+It resolves to the sandbox's gateway, and it only resolves to anything when the
+capability set asked for msb's `host` network group — `allow host:tcp:<port>`
+in a fragment. The gateway is a host userspace process, not a tap device, so a
+service bound to the host's `127.0.0.1` *is* reachable through it: the broker
+binds loopback and refuses to bind wider. The port is part of the rule, and a
+host port that is not in it is refused, so one capability cannot reach another
+broker.
+
+What loopback does not buy is authorisation. Every process on the host, and
+every sandbox granted `host`, can open that port, so the broker answers only
+requests carrying the sandbox's own token — `.devbox/<branch>/broker.token`,
+generated at `create`, handed to the guest as `ANTHROPIC_AUTH_TOKEN`. The
+exception is Claude Code's `/api/hello` probe, which arrives before the client
+applies the token; `UNAUTHENTICATED` in the broker lists it. Requiring a token
+there 401s the start of every session.
+
+**A port is claimed once and then frozen.** It goes into the guest's
+`ANTHROPIC_BASE_URL`, so a port that moved under a running sandbox would leave
+it talking to nothing. `claim_port` keeps what `.devbox/<branch>/broker.port`
+already says, and when picking a new one it skips ports other branches have
+claimed as well as ports currently listening — a stopped sandbox is not
+listening, and its port still belongs to it.
 
 **Every mount gets a 4096 MiB quota unless it asks for a bigger one.** msb puts
 a quota on each directory-backed mount and defaults it to 4 GiB — which a debug
@@ -52,6 +76,14 @@ spec carries one. The accounting is also write-only: deleting files never gives
 the space back, so `cargo clean` empties the directory and the volume goes on
 reporting itself full until the sandbox is recreated. Any mount that
 accumulates anything needs a quota in its fragment.
+
+**A mount source that is a symlink fails as ELOOP.** msb bind-mounts the path
+it is given without resolving it, and reports `Too many levels of symbolic
+links` naming the *mount*, not the link — `mount workspace_m_36b1a663` for a
+symlinked `models/` inside `/workspace`. Worktrees make this easy to hit, since
+sharing one whisper-model directory between them is the obvious thing to do, so
+`render()` resolves that source with `pwd -P`. Any new host path a fragment
+mounts wants the same treatment.
 
 **A tag in docker's image cache is invisible to msb.** `build-image` pipes
 `docker save` into `msb load -t`; building the image without loading it leaves
@@ -123,7 +155,8 @@ Directives: `describe`, `conflicts`, `image`, `cpus`, `memory`, `workdir`,
 `user`, `hostname`, `profile`, `env`, `mount`, `allow`, `deny`, `port`,
 `secret`, `secret_file`, `broker`, `cli`. Fragments read the sandbox's paths
 from the environment: `BRANCH`, `CLONE`, `TARGET_CACHE`, `CARGO_CACHE`,
-`MODELS`, `CLAUDE_STATE`, `BROKER_SOCKET`, `PROD_SOCKET`, `GITHUB_TOKEN_FILE`.
+`MODELS`, `CLAUDE_STATE`, `BROKER_PORT`, `PROD_PORT`, `BROKER_TOKEN`,
+`HOST_ALIAS`, `GITHUB_TOKEN_FILE`.
 
 Later fragments win on scalars and on `env`; lists concatenate and de-duplicate;
 capabilities apply in the order given, after the profile. Two capabilities that

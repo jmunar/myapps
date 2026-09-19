@@ -87,7 +87,6 @@ have `mint-token.sh` ask for `workflows` only on the branches that need it.
 
 ```bash
 ./devbox.sh create FEAT-101            # clone, render, boot, first-boot
-./devbox.sh bridge FEAT-101            # in its OWN terminal, leave it running
 ./devbox.sh seed FEAT-101              # build once, create a dev user, seed
 ./devbox.sh claude FEAT-101            # Claude Code, in the VM
 ./devbox.sh shell FEAT-101
@@ -97,11 +96,8 @@ have `mint-token.sh` ask for `workflows` only on the branches that need it.
 ./devbox.sh remove FEAT-101            # refuses to bin unpushed work
 ```
 
-**`bridge` is the one manual step.** It forwards a port in the guest to the host
-broker's socket, and Claude Code in the sandbox cannot reach the model without
-it. It has to stay in the foreground in its own terminal, and interrupting it
-wedges the sandbox — `remove` and recreate if you do. Removing the step
-altogether is the first item under *To do*.
+One terminal, no manual step: `create` starts the broker and `claude` talks to
+it over the host's loopback. Every command starts whatever it needs.
 
 Because the VM is the blast radius, running Claude Code inside it with
 permission prompts off is a defensible choice in a way it is not on the host.
@@ -164,9 +160,26 @@ from GitHub like any other, because the guest pushed it there.
 ## The broker
 
 `brokers/anthropic` is the only process that sees the Anthropic credential. One
-per sandbox, listening on `$XDG_RUNTIME_DIR/msb-devbox/<branch>-anthropic.sock`
-— the socket path is the sandbox's identity, so there is no token to manage and
-nothing on the host or the LAN can reach it.
+per sandbox, listening on a host loopback port — `127.0.0.1:18800` upwards, one
+per branch, recorded in `.devbox/<branch>/broker.port`. The guest reaches it at
+`host.microsandbox.internal` because its capability set asked for msb's `host`
+network group, scoped to that one port; the LAN cannot reach it at all, and the
+broker refuses to bind anything but loopback.
+
+Loopback is not authorisation, though: every other process on the host, and
+every other sandbox granted `host`, can open the same port. So each sandbox gets
+a bearer token, generated at `create`, kept in `.devbox/<branch>/broker.token`
+and handed to the guest as `ANTHROPIC_AUTH_TOKEN`; requests without it are
+refused and audited. This is weaker than the Unix socket it replaces, where the
+socket path *was* the sandbox's identity, and it is the price of dropping the
+in-guest bridge. A leaked token spends model tokens on the subscription; it does
+not expose the OAuth credential, which the broker substitutes on the way out and
+never returns.
+
+The one exception is Claude Code's `/api/hello` probe, a bodyless `HEAD` sent
+before the client applies the token. It is forwarded unauthenticated, because
+refusing it would 401 at the start of every session, and all it reveals is
+whether the host's own login is still valid.
 
 It discards whatever `Authorization` and `x-api-key` the guest sent, injects the
 real credential, forwards only to `api.anthropic.com` and only on
@@ -185,9 +198,11 @@ DEVBOX_BROKER_ARGS="--max-requests-per-hour 200" ./devbox.sh up FEAT-101
 Health, and how long the token has left:
 
 ```bash
-curl -s --unix-socket ~/.../msb-devbox/FEAT-101-anthropic.sock \
-     http://localhost/_broker/health
+curl -s -H "Authorization: Bearer $(cat .devbox/FEAT-101/broker.token)" \
+     "http://127.0.0.1:$(cat .devbox/FEAT-101/broker.port)/_broker/health"
 ```
+
+`./devbox.sh doctor` prints the same line for every sandbox it knows about.
 
 ## Where it stands
 
@@ -195,14 +210,16 @@ Run end to end on msb 0.7.2:
 
 | Behaviour | Verified by |
 |---|---|
-| `--vsock HOST_PATH:PORT`, guest connects at CID 2 | `/_broker/health` answered from inside the VM |
+| `--net-rule allow@host:tcp:<port>` reaches a host service | a loopback-bound host port answered from inside the VM at `host.microsandbox.internal` |
+| …and only that port | a second host port, not in the rules, refused |
+| The broker's token is what separates sandboxes | a second sandbox granted the same port got 401, and an audit line |
 | `--secret ENV@HOST[,HOST...]` reads `$ENV` on the host | `git ls-remote origin` authenticated with only the placeholder |
 | Egress is deny-by-default once any `--net-rule` exists | `example.com` refused, allowed hosts fine |
 | `-v SOURCE:DEST[:OPTIONS]`, including `:ro` | the mounts are there |
 | `--mount-dir ...:quota=<MiB>` raises the 4 GiB default | 32G on `/workspace/target`, `ro` still honoured, writes reach the host |
 | Claude Code reaches the model through the broker | `claude -p` answered, audit line written |
 | `cargo fetch` works through the allow-list | full dependency tree fetched |
-| `devbox.sh bridge` alongside normal use | other execs, `claude`, `cargo`, `git` unaffected |
+| One host port per sandbox, kept across restarts | a second branch rendered `:18801` while the first held `:18800` |
 
 ## Effect on existing workflows
 
@@ -221,20 +238,6 @@ Run end to end on msb 0.7.2:
 
 ## To do
 
-- **Move the broker to TCP and drop the bridge.** Today the guest reaches the
-  broker over a vsock route, which needs a translator process inside the guest,
-  which on msb 0.7.2 cannot be a daemon — hence the spare terminal. Running the
-  broker on a host TCP port and letting the guest reach it through msb's `host`
-  network group at `host.microsandbox.internal` needs no guest process at all.
-  What is missing is TCP support in the broker, `allow host` in place of the
-  vsock route, and the authorisation that replaces the socket path: a host TCP
-  port is reachable by any process on the host and by every other sandbox, so
-  the broker would have to require a per-sandbox bearer token, generated at
-  `create` and handed to the guest as `ANTHROPIC_AUTH_TOKEN`. A leaked token
-  would let someone spend model tokens through the subscription; it would not
-  expose the OAuth token, which the broker never returns. That is a real
-  weakening — the socket path is currently the sandbox's identity — so it is
-  written down here rather than quietly implemented.
 - **One real PR from inside a sandbox.** The `github` capability is proven as far
   as `git ls-remote`; push and `gh pr create` are not yet exercised.
 - **`/frontend-walkthrough` end to end**, which needs `build-image --browser`
@@ -242,8 +245,8 @@ Run end to end on msb 0.7.2:
 - **Try `--net-strict`** (require inspectable request authority for hostname
   allows), then **`--security restricted`**, in that order. Both are off.
 - **The prod broker**, for debugging against real data. `prod-readonly.sh`
-  already routes a second host socket; the broker would hold the Odroid SSH key
-  behind a verb-limited API rather than a tunnel —
+  already claims a second host port and the sandbox's token; the broker would
+  hold the Odroid SSH key behind a verb-limited API rather than a tunnel —
 
   ```
   GET /snapshot/leanfin.sqlite    -> ssh odroid 'sqlite3 … .dump' | scrub | gzip
@@ -275,6 +278,6 @@ Run end to end on msb 0.7.2:
 - [microsandbox docs](https://docs.microsandbox.dev/getting-started/introduction)
   · [networking](https://docs.microsandbox.dev/networking/overview)
   · [secrets](https://docs.microsandbox.dev/sandboxes/secrets)
-  · [host sockets](https://docs.microsandbox.dev/networking/host-sockets)
+  · [reaching the host](https://docs.microsandbox.dev/networking/overview)
 - [Claude Code environment variables](https://code.claude.com/docs/en/env-vars)
 - [Permissions for fine-grained PATs](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)

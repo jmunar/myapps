@@ -22,7 +22,9 @@
 #   env NAME VALUE            later fragments win
 #   mount SPEC                SOURCE:DEST[:OPTIONS]; OPTIONS may include `ro`
 #                             and `quota=<MiB>` (msb's default is 4096)
-#   allow HOST...             any allow rule makes egress deny-by-default
+#   allow TARGET...           any allow rule makes egress deny-by-default; a
+#                             target may be a host, a group (`host` is the
+#                             machine msb runs on), and may carry `:tcp:<port>`
 #   deny TARGET...            emitted before the allows: first match wins
 #   port SPEC                 HOST:GUEST or BIND_ADDR:HOST:GUEST
 #   secret NAME HOST...       msb reads $NAME on the host and substitutes it
@@ -32,8 +34,8 @@
 #   cli ARG...                any other msb flag, verbatim
 #
 # Fragments read the sandbox's paths from the environment: BRANCH, CLONE,
-# TARGET_CACHE, CARGO_CACHE, MODELS, CLAUDE_STATE, BROKER_SOCKET, PROD_SOCKET,
-# GITHUB_TOKEN_FILE.
+# TARGET_CACHE, CARGO_CACHE, MODELS, CLAUDE_STATE, BROKER_PORT, PROD_PORT,
+# BROKER_TOKEN, HOST_ALIAS, GITHUB_TOKEN_FILE.
 set -euo pipefail
 
 SANDBOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +43,8 @@ SANDBOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Defaulted so `--describe` can source a fragment without a sandbox to render;
 # the render path checks below that the ones it needs are actually set.
 : "${BRANCH:=}" "${CLONE:=}" "${TARGET_CACHE:=}" "${CARGO_CACHE:=}" "${MODELS:=}"
-: "${BROKER_SOCKET:=}" "${PROD_SOCKET:=}" "${GITHUB_TOKEN_FILE:=}" "${CLAUDE_STATE:=}"
+: "${BROKER_PORT:=}" "${PROD_PORT:=}" "${BROKER_TOKEN:=}" "${HOST_ALIAS:=}"
+: "${GITHUB_TOKEN_FILE:=}" "${CLAUDE_STATE:=}"
 
 profile="default"
 caps=""

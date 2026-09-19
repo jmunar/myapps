@@ -14,13 +14,18 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$REPO_DIR/sandbox"
 STATE_ROOT="$REPO_DIR/.devbox"
 CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/msb-devbox"
-RUN_ROOT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/msb-devbox"
 CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/msb-devbox"
 LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/msb-devbox"
 BROKER_BIN="$SANDBOX_DIR/brokers/anthropic/target/release/msb-broker-anthropic"
-# Guest-local: `devbox.sh bridge` forwards this port to the broker's socket.
-BROKER_PORT="${DEVBOX_BROKER_PORT:-8787}"
-BROKER_URL="http://127.0.0.1:$BROKER_PORT"
+# One broker per sandbox means one host loopback port per sandbox, picked once
+# and kept: the guest gets it baked into ANTHROPIC_BASE_URL, so a port that
+# moved on restart would need the sandbox recreated to notice.
+ANTHROPIC_PORT_BASE="${DEVBOX_BROKER_PORT_BASE:-18800}"
+PROD_PORT_BASE="${DEVBOX_PROD_PORT_BASE:-18900}"
+PORT_RANGE=100
+# The guest's name for the host. msb resolves it to the sandbox's gateway, and
+# only when the capability set asked for the `host` network group.
+HOST_ALIAS="host.microsandbox.internal"
 
 # cargo-cache-shared is in the default set: without it every branch recompiles
 # the whole dependency tree. It is also the one writable surface shared between
@@ -54,7 +59,7 @@ clone_dir()    { echo "$(dirname "$REPO_DIR")/myapps-$1"; }
 state_dir()    { echo "$STATE_ROOT/$1"; }
 
 check_branch() {
-    # No slashes: the branch name is also a directory name and a socket name.
+    # No slashes: the branch name is also a directory name and a sandbox name.
     [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]] || die "refusing branch name '$1' (letters, digits, . _ - only)"
 }
 
@@ -64,23 +69,84 @@ known_branch() {
 
 # --- configuration ---------------------------------------------------------
 
+# A connect that fails means nothing is listening. Pure bash, so no dependency
+# on ss or lsof; the subshell closes the descriptor on the way out.
+port_free() {
+    ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+# A stopped sandbox is not listening on its port, so "free" is not enough on its
+# own: another branch's port has to stay reserved while its broker is down.
+port_claimed_elsewhere() {
+    local port="$1" branch="$2" file="$3" dir
+    for dir in "$STATE_ROOT"/*/; do
+        [ -d "$dir" ] || continue
+        [ "$(basename "$dir")" = "$branch" ] && continue
+        [ "$(cat "$dir/$file" 2>/dev/null)" = "$port" ] && return 0
+    done
+    return 1
+}
+
+claim_port() {
+    local branch="$1" file="$2" base="$3" state port offset
+    state="$(state_dir "$branch")"
+    port="$(cat "$state/$file" 2>/dev/null || true)"
+    # Keep the one already claimed: it is in the guest's environment, and
+    # changing it silently would leave a running sandbox talking to nothing.
+    if [ -n "$port" ]; then printf '%s' "$port"; return 0; fi
+    for ((offset = 0; offset < PORT_RANGE; offset++)); do
+        port=$((base + offset))
+        port_claimed_elsewhere "$port" "$branch" "$file" && continue
+        port_free "$port" || continue
+        echo "$port" > "$state/$file"
+        printf '%s' "$port"
+        return 0
+    done
+    die "no free TCP port in $base-$((base + PORT_RANGE - 1)) for a broker"
+}
+
+# The token replaces what the Unix socket's path used to do. A host TCP port is
+# open to every process on the host and to every other sandbox granted the
+# `host` group, so the broker only answers the sandbox that can present this.
+# Generated once, at create, and kept beside the rest of the sandbox's state.
+claim_token() {
+    local state="$1" file="$state/broker.token"
+    if [ ! -s "$file" ]; then
+        (umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$file")
+    fi
+    cat "$file"
+}
+
 render() {
-    local branch="$1" state caps profile
+    local branch="$1" state caps profile models broker_port prod_port
     state="$(state_dir "$branch")"
     caps="$(cat "$state/capabilities")"
     profile="$(cat "$state/profile")"
     mkdir -p "$CACHE_ROOT/target/$branch" "$CACHE_ROOT/cargo/registry" "$CACHE_ROOT/cargo/git" \
-        "$CACHE_ROOT/claude/$branch" "$RUN_ROOT"
+        "$CACHE_ROOT/claude/$branch"
     mkdir -p "$REPO_DIR/models"
+    # Physical path: a worktree often shares one models directory with the main
+    # checkout through a symlink, and msb will not bind-mount a symlinked
+    # source — it fails as ELOOP, "too many levels of symbolic links", naming
+    # the mount that contains it rather than the link.
+    models="$(cd "$REPO_DIR/models" && pwd -P)"
+
+    # Resolved into variables rather than inline below: a `die` inside the
+    # assignment prefix of a command only kills its own subshell, and the
+    # sandbox would render with an empty port instead of stopping.
+    broker_port="$(claim_port "$branch" broker.port "$ANTHROPIC_PORT_BASE")"
+    prod_port="$(claim_port "$branch" prod.port "$PROD_PORT_BASE")"
 
     BRANCH="$branch" \
     CLONE="$(clone_dir "$branch")" \
     TARGET_CACHE="$CACHE_ROOT/target/$branch" \
     CARGO_CACHE="$CACHE_ROOT/cargo" \
-    MODELS="$REPO_DIR/models" \
+    MODELS="$models" \
     CLAUDE_STATE="$CACHE_ROOT/claude/$branch" \
-    BROKER_SOCKET="$RUN_ROOT/$branch-anthropic.sock" \
-    PROD_SOCKET="$RUN_ROOT/$branch-prod.sock" \
+    BROKER_PORT="$broker_port" \
+    PROD_PORT="$prod_port" \
+    BROKER_TOKEN="$(claim_token "$state")" \
+    HOST_ALIAS="$HOST_ALIAS" \
     GITHUB_TOKEN_FILE="$CONFIG_ROOT/github-token" \
     bash "$SANDBOX_DIR/render.sh" \
         --profile "$profile" --caps "$caps" --out-dir "$state"
@@ -130,20 +196,25 @@ ensure_brokers() {
 }
 
 start_anthropic_broker() {
-    local branch="$1" state pid socket
+    local branch="$1" state pid port
     state="$(state_dir "$branch")"
-    socket="$RUN_ROOT/$branch-anthropic.sock"
+    port="$(claim_port "$branch" broker.port "$ANTHROPIC_PORT_BASE")"
 
     if [ -f "$state/broker.pid" ] && kill -0 "$(cat "$state/broker.pid")" 2>/dev/null; then
         return 0
     fi
     [ -x "$BROKER_BIN" ] || die "broker not built — run ./devbox.sh build-broker"
 
-    mkdir -p "$RUN_ROOT" "$LOG_ROOT"
+    mkdir -p "$LOG_ROOT"
+    # The broker refuses to bind anything but loopback, and the token file is
+    # passed as a path rather than a value: /proc/<pid>/cmdline is world-readable
+    # and this is a port every process on the host can already open.
+    #
     # setsid so closing the terminal does not take the broker — and with it
     # every Claude Code session in the sandbox — down with it.
     setsid "$BROKER_BIN" \
-        --socket "$socket" \
+        --listen "127.0.0.1:$port" \
+        --token-file "$state/broker.token" \
         --sandbox "$branch" \
         --audit-log "$LOG_ROOT/audit.jsonl" \
         ${DEVBOX_BROKER_ARGS:-} \
@@ -152,7 +223,7 @@ start_anthropic_broker() {
     echo "$pid" > "$state/broker.pid"
     sleep 0.3
     kill -0 "$pid" 2>/dev/null || die "broker died on start — see $LOG_ROOT/$branch-broker.log"
-    info "broker running on $socket (pid $pid)"
+    info "broker running on 127.0.0.1:$port (pid $pid)"
 }
 
 stop_broker() {
@@ -278,13 +349,18 @@ cmd_up() {
     # and points NODE_EXTRA_CA_CERTS, SSL_CERT_FILE and CURL_CA_BUNDLE at it.
     #
     # A broker the guest cannot reach looks exactly like a Claude Code auth
-    # problem from inside the sandbox, so check rather than hope. The bridge is
-    # the sandbox's image command, so give it a moment after a cold start.
+    # problem from inside the sandbox, so check rather than hope — over the same
+    # host alias, port and token the guest itself was given, so the check fails
+    # for exactly the reasons the real thing would.
     # One attempt, never retried: each aborted exec costs the sandbox its exec
     # channel, so a failed check must not turn into four more.
     if grep -qx anthropic "$state/brokers" 2>/dev/null; then
+        local port token
+        port="$(cat "$state/broker.port")"
+        token="$(cat "$state/broker.token")"
         msb_exec_quiet "$name" curl -sf --max-time 5 -o /dev/null \
-            "$BROKER_URL/_broker/health" >/dev/null 2>&1 \
+            -H "Authorization: Bearer $token" \
+            "http://$HOST_ALIAS:$port/_broker/health" >/dev/null 2>&1 \
             || info "warning: broker not reachable from the sandbox"
     fi
 }
@@ -415,7 +491,8 @@ cmd_remove() {
 
     msb_rm "$(sandbox_name "$branch")" 2>/dev/null || true
     stop_broker "$state"
-    rm -f "$RUN_ROOT/$branch-anthropic.sock" "$RUN_ROOT/$branch-prod.sock"
+    # The state directory holds the broker token and the claimed ports; removing
+    # it is what frees them for the next sandbox.
     rm -rf "$clone" "$state" "$CACHE_ROOT/target/$branch" "$CACHE_ROOT/claude/$branch"
 
     git -C "$REPO_DIR" fetch --prune origin >/dev/null 2>&1 || true
@@ -445,22 +522,6 @@ cmd_build_image() {
         docker save myapps-dev-browser:latest | msb load -t myapps-dev-browser:latest
     fi
     info "loaded into msb: $(msb image list 2>/dev/null | grep -c myapps-dev) image(s)"
-}
-
-# The bridge cannot be started in the background: on msb 0.7.2 a persistent
-# guest process started as the image command, or through an exec, stops the
-# sandbox answering further execs — and killing the exec client poisons it too.
-# So it runs in the foreground, in its own terminal, until the broker moves to
-# TCP. See "Blocked" in sandbox/README.md.
-cmd_bridge() {
-    local branch="$1"
-    known_branch "$branch"
-    echo "devbox: bridging 127.0.0.1:$BROKER_PORT in the sandbox to the host broker."
-    echo "devbox: leave this running in its own terminal. Ctrl-C wedges the"
-    echo "devbox: sandbox's exec channel — use './devbox.sh remove' if you do."
-    msb exec "$(sandbox_name "$branch")" -- \
-        socat "TCP-LISTEN:$BROKER_PORT,fork,reuseaddr,bind=127.0.0.1" \
-        "VSOCK-CONNECT:2:5000"
 }
 
 cmd_config() {
@@ -497,17 +558,17 @@ cmd_doctor() {
     check "claude login"   "test -f '$HOME/.claude/.credentials.json'" "run 'claude' on the host once"
     check "github token"   "test -f '$CONFIG_ROOT/github-token' -o -f '$CONFIG_ROOT/github-app.json'" \
                            "put a fine-grained PAT in $CONFIG_ROOT/github-token (chmod 600)"
-    local dir branch
-    if [ -d "$STATE_ROOT" ]; then
+    local dir branch port
+    if [ -d "$STATE_ROOT" ] && command -v curl >/dev/null; then
         echo "brokers:"
         for dir in "$STATE_ROOT"/*/; do
             [ -d "$dir" ] || continue
             branch="$(basename "$dir")"
-            if [ -S "$RUN_ROOT/$branch-anthropic.sock" ] && command -v curl >/dev/null; then
-                printf '  %-20s %s\n' "$branch" \
-                    "$(curl -s --unix-socket "$RUN_ROOT/$branch-anthropic.sock" \
-                        http://localhost/_broker/health || echo unreachable)"
-            fi
+            port="$(cat "$dir/broker.port" 2>/dev/null || true)"
+            [ -n "$port" ] && [ -s "$dir/broker.token" ] || continue
+            printf '  %-20s %s\n' "$branch:$port" \
+                "$(curl -s --max-time 5 -H "Authorization: Bearer $(cat "$dir/broker.token")" \
+                    "http://127.0.0.1:$port/_broker/health" || echo unreachable)"
         done
     fi
     return $ok
@@ -532,7 +593,6 @@ Usage: ./devbox.sh <command>
   build-broker            build the host-side Anthropic broker
   build-image [--browser] build the guest image(s) and load them into msb
   config <branch>         print the exact msb command line for a sandbox
-  bridge <branch>         forward the sandbox to the host broker (foreground)
   doctor                  check the host is ready
 USAGE
     exit 1
@@ -556,7 +616,6 @@ case "$command" in
     build-broker) cmd_build_broker ;;
     build-image)  cmd_build_image "$@" ;;
     config)       cmd_config "${1:?branch}" ;;
-    bridge)       cmd_bridge "${1:?branch}" ;;
     doctor)       cmd_doctor ;;
     *)            usage ;;
 esac
