@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential pkg-config libssl-dev \
-        ca-certificates curl git jq sqlite3 socat openssl xz-utils \
+        ca-certificates curl git jq sqlite3 openssl xz-utils \
         procps less vim-tiny bash-completion iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
