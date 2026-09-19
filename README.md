@@ -41,7 +41,7 @@ hide per-user.
   <img src="docs/screenshots/leanfin-balance.png" width="270" alt="LeanFin – Balance evolution" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/leanfin-expenses.png" width="270" alt="LeanFin – Expenses" />
+  <img src="docs/screenshots/leanfin-breakdown.png" width="270" alt="LeanFin – Breakdown" />
   <img src="docs/screenshots/leanfin-labels.png" width="270" alt="LeanFin – Labels" />
   <img src="docs/screenshots/leanfin-transaction-details.png" width="270" alt="LeanFin – Transaction details" />
 </p>

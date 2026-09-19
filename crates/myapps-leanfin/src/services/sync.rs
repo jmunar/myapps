@@ -286,20 +286,9 @@ async fn sync_account(
         }
     }
 
-    // 4. Auto-labeling on newly fetched transactions
-    if inserted > 0 {
-        match super::labeling::apply_rules(pool, account.user_id).await {
-            Ok(labeled) => {
-                if labeled > 0 {
-                    tracing::info!(
-                        "Account '{}': auto-labeled {labeled} transactions",
-                        account.bank_name
-                    );
-                }
-            }
-            Err(e) => tracing::warn!("Auto-labeling failed: {e:#}"),
-        }
-    }
+    // Labeling rules are deliberately NOT applied here. A rule only suggests a
+    // label in the allocation editor; nothing is allocated until the user
+    // presses "Done", so a sync never reconciles transactions behind their back.
 
     Ok((inserted, reconciliation_warning))
 }

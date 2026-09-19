@@ -6,7 +6,9 @@ use axum::{
 };
 use serde::Deserialize;
 
+use super::colors::label_color;
 use super::models::Transaction;
+use super::services::labeling::{self, Suggestion};
 use myapps_core::auth::UserId;
 use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
@@ -22,6 +24,7 @@ pub fn routes() -> Router<AppState> {
             post(alloc_delete),
         )
         .route("/transactions/{txn_id}/row", get(txn_row))
+        .route("/transactions/{txn_id}/done", post(alloc_done))
         .route("/transactions/{txn_id}/rules/create", post(rule_create))
         .route("/transactions/{txn_id}/details", get(txn_details))
 }
@@ -35,15 +38,13 @@ struct AllocRow {
     label_id: i64,
     amount: f64,
     label_name: String,
-    label_color: Option<String>,
+    group_id: Option<i64>,
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct LabelInfo {
     id: i64,
     name: String,
-    color: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -53,12 +54,28 @@ struct TransactionWithColor {
     account_color: Option<String>,
 }
 
+const ALLOC_SELECT: &str = r#"SELECT a.id, a.transaction_id, a.label_id, a.amount,
+                  l.name AS label_name, l.group_id
+           FROM leanfin_allocations a
+           JOIN leanfin_labels l ON a.label_id = l.id"#;
+
 // ── Render helpers ───────────────────────────────────────────
 
-fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
+/// Badges for one transaction's labels. When nothing is allocated yet but a
+/// rule matches, the suggested label is shown as a dashed "pending" badge — it
+/// is not in the database and will not be until the user presses Done.
+fn render_badges(
+    allocs: &[&AllocRow],
+    suggestion: Option<&Suggestion>,
+    base: &str,
+    txn_id: i64,
+    lang: Lang,
+) -> String {
+    let t = super::i18n::t(lang);
     let mut html = String::new();
+
     for a in allocs {
-        let color = a.label_color.as_deref().unwrap_or("#6B6B6B");
+        let color = label_color(a.group_id);
         let display_amount = if allocs.len() > 1 {
             format!(" {:.2}", a.amount)
         } else {
@@ -69,6 +86,18 @@ fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
             html_escape(&a.label_name),
         ));
     }
+
+    if allocs.is_empty()
+        && let Some(s) = suggestion
+    {
+        let color = label_color(s.group_id);
+        html.push_str(&format!(
+            r#"<span class="label-badge label-badge-sm label-badge-suggested" style="--label-color:{color}" title="{title}">{name}</span> "#,
+            title = t.alloc_suggested_hint,
+            name = html_escape(&s.label_name),
+        ));
+    }
+
     html.push_str(&format!(
         r##"<span class="label-add-btn"
                 hx-get="{base}/leanfin/transactions/{txn_id}/allocations"
@@ -83,8 +112,10 @@ fn render_badges(allocs: &[&AllocRow], base: &str, txn_id: i64) -> String {
 fn render_row(
     t: &Transaction,
     txn_allocs: &[&AllocRow],
+    suggestion: Option<&Suggestion>,
     base: &str,
     account_color: Option<&str>,
+    lang: Lang,
 ) -> String {
     let counterparty = html_escape(t.counterparty.as_deref().unwrap_or("—"));
     let sign = if t.amount < 0.0 {
@@ -95,12 +126,16 @@ fn render_row(
     let balance = t
         .balance_after
         .map_or("—".to_string(), |b| format!("{b:.2}"));
-    let badge_html = render_badges(txn_allocs, base, t.id);
+    let badge_html = render_badges(txn_allocs, suggestion, base, t.id, lang);
 
     let allocated: f64 = txn_allocs.iter().map(|a| a.amount).sum();
     let abs_total = t.amount.abs();
     let alloc_class = if txn_allocs.is_empty() {
-        "txn-unallocated"
+        if suggestion.is_some() {
+            "txn-unallocated txn-suggested"
+        } else {
+            "txn-unallocated"
+        }
     } else if (allocated - abs_total).abs() < 0.01 {
         ""
     } else {
@@ -275,14 +310,8 @@ async fn list(
     // Fetch all allocations for these transactions
     let txn_ids: Vec<i64> = transactions.iter().map(|t| t.txn.id).collect();
     let placeholders = txn_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let query_str = format!(
-        r#"SELECT a.id, a.transaction_id, a.label_id, a.amount,
-                  l.name AS label_name, l.color AS label_color
-           FROM leanfin_allocations a
-           JOIN leanfin_labels l ON a.label_id = l.id
-           WHERE a.transaction_id IN ({placeholders})
-           ORDER BY a.amount DESC"#
-    );
+    let query_str =
+        format!("{ALLOC_SELECT} WHERE a.transaction_id IN ({placeholders}) ORDER BY a.amount DESC");
     let mut alloc_query = sqlx::query_as::<_, AllocRow>(&query_str);
     for id in &txn_ids {
         alloc_query = alloc_query.bind(id);
@@ -295,17 +324,33 @@ async fn list(
             Default::default()
         });
 
+    // Rules are loaded once for the whole page: an unallocated transaction gets
+    // a *suggested* badge, never a stored allocation.
+    let rules = labeling::load_rules(&state.pool, user_id.0)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to load label rules: {e:#}");
+            Default::default()
+        });
+
     let mut rows = String::new();
     for t in &transactions {
         let txn_allocs: Vec<&AllocRow> = allocs
             .iter()
             .filter(|a| a.transaction_id == t.txn.id)
             .collect();
+        let suggestion = if txn_allocs.is_empty() {
+            suggest(&rules, &t.txn)
+        } else {
+            None
+        };
         rows.push_str(&render_row(
             &t.txn,
             &txn_allocs,
+            suggestion.as_ref(),
             base,
             t.account_color.as_deref(),
+            lang,
         ));
     }
 
@@ -363,6 +408,19 @@ async fn list(
     ))
 }
 
+/// Match an already-fetched transaction against already-loaded rules, so a page
+/// of 50 rows costs one rule query rather than 50.
+fn suggest(rules: &[labeling::Rule], txn: &Transaction) -> Option<Suggestion> {
+    labeling::match_rule(rules, &txn.description, txn.counterparty.as_deref()).map(|rule| {
+        Suggestion {
+            label_id: rule.label_id,
+            label_name: rule.label_name.clone(),
+            group_id: rule.group_id,
+            amount: txn.amount.abs(),
+        }
+    })
+}
+
 // ── Allocation editor (HTMX partial, inserted as row below) ─
 
 async fn alloc_editor(
@@ -403,14 +461,9 @@ async fn alloc_editor_inner(
     let abs_total = txn_amount.abs();
 
     // Current allocations
-    let allocs: Vec<AllocRow> = sqlx::query_as(
-        r#"SELECT a.id, a.transaction_id, a.label_id, a.amount,
-                  l.name AS label_name, l.color AS label_color
-           FROM leanfin_allocations a
-           JOIN leanfin_labels l ON a.label_id = l.id
-           WHERE a.transaction_id = ?
-           ORDER BY a.amount DESC"#,
-    )
+    let allocs: Vec<AllocRow> = sqlx::query_as(&format!(
+        "{ALLOC_SELECT} WHERE a.transaction_id = ? ORDER BY a.amount DESC"
+    ))
     .bind(txn_id)
     .fetch_all(&state.pool)
     .await
@@ -420,16 +473,32 @@ async fn alloc_editor_inner(
     });
 
     // All labels for picker
-    let labels: Vec<LabelInfo> = sqlx::query_as(
-        "SELECT id, name, color FROM leanfin_labels WHERE user_id = ? ORDER BY name",
-    )
-    .bind(user_id.0)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!("DB query failed: {e:#}");
-        Default::default()
-    });
+    let labels: Vec<LabelInfo> =
+        sqlx::query_as("SELECT id, name FROM leanfin_labels WHERE user_id = ? ORDER BY name")
+            .bind(user_id.0)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!("DB query failed: {e:#}");
+                Default::default()
+            });
+
+    // A rule match only pre-fills the editor; it is written on Done.
+    let suggestion = if allocs.is_empty() {
+        let rules = labeling::load_rules(&state.pool, user_id.0)
+            .await
+            .unwrap_or_default();
+        labeling::match_rule(&rules, &txn_description, txn_counterparty.as_deref()).map(|rule| {
+            Suggestion {
+                label_id: rule.label_id,
+                label_name: rule.label_name.clone(),
+                group_id: rule.group_id,
+                amount: abs_total,
+            }
+        })
+    } else {
+        None
+    };
 
     let allocated: f64 = allocs.iter().map(|a| a.amount).sum();
     let remaining = abs_total - allocated;
@@ -437,7 +506,7 @@ async fn alloc_editor_inner(
     // Render existing allocations
     let mut alloc_rows = String::new();
     for a in &allocs {
-        let color = a.label_color.as_deref().unwrap_or("#6B6B6B");
+        let color = label_color(a.group_id);
         alloc_rows.push_str(&format!(
             r##"<div class="alloc-row">
                 <span class="label-badge" style="--label-color:{color}">{name}</span>
@@ -455,10 +524,30 @@ async fn alloc_editor_inner(
         ));
     }
 
+    // The suggestion sits in the same list, marked as pending.
+    if let Some(s) = &suggestion {
+        let color = label_color(s.group_id);
+        alloc_rows.push_str(&format!(
+            r##"<div class="alloc-row alloc-row-suggested">
+                <span class="label-badge label-badge-suggested" style="--label-color:{color}">{name}</span>
+                <span class="alloc-amount mono">{amount:.2}</span>
+                <span class="alloc-suggested-note text-sm">{note}</span>
+            </div>"##,
+            name = html_escape(&s.label_name),
+            amount = s.amount,
+            note = t.alloc_suggested_note,
+        ));
+    }
+
     // Label picker options
     let mut options = format!(
-        r#"<option value="" disabled selected>{}</option>"#,
-        t.alloc_choose_label
+        r#"<option value="" disabled{unselected}>{}</option>"#,
+        t.alloc_choose_label,
+        unselected = if suggestion.is_some() {
+            ""
+        } else {
+            " selected"
+        },
     );
     for l in &labels {
         // Skip labels already allocated
@@ -466,7 +555,25 @@ async fn alloc_editor_inner(
         if already {
             continue;
         }
+        let selected = if suggestion.as_ref().is_some_and(|s| s.label_id == l.id) {
+            " selected"
+        } else {
+            ""
+        };
         options.push_str(&format!(
+            r#"<option value="{}"{selected}>{}</option>"#,
+            l.id,
+            html_escape(&l.name),
+        ));
+    }
+
+    // The rule form's picker must not inherit the suggestion's preselection.
+    let mut rule_label_options = format!(
+        r#"<option value="" disabled selected>{}</option>"#,
+        t.alloc_choose_label
+    );
+    for l in &labels {
+        rule_label_options.push_str(&format!(
             r#"<option value="{}">{}</option>"#,
             l.id,
             html_escape(&l.name),
@@ -540,8 +647,8 @@ async fn alloc_editor_inner(
                                 hx-get="{base}/leanfin/transactions/{txn_id}/details"
                                 hx-target="#txn-details-{txn_id}"
                                 hx-swap="innerHTML">{txn_more_details}</button>
-                        <button class="btn btn-secondary btn-sm"
-                                hx-get="{base}/leanfin/transactions/{txn_id}/row"
+                        <button class="btn btn-primary btn-sm"
+                                hx-post="{base}/leanfin/transactions/{txn_id}/done"
                                 hx-target="#txn-{txn_id}"
                                 hx-swap="outerHTML"
                                 onclick="var e=document.getElementById('alloc-editor-{txn_id}');if(e)setTimeout(function(){{e.remove()}},100)">{alloc_done}</button>
@@ -571,7 +678,6 @@ async fn alloc_editor_inner(
         },
         counterparty_val = counterparty_val,
         description_val = description_val,
-        rule_label_options = options,
     ))
 }
 
@@ -701,21 +807,47 @@ async fn rule_create(
         return alloc_editor_inner(&state, user_id, lang, txn_id, None).await;
     }
 
-    // Apply rules to all unallocated transactions
-    match super::services::labeling::apply_rules(&state.pool, user_id.0).await {
-        Ok(n) => tracing::info!("Rule created from txn {txn_id}: auto-labeled {n} transactions"),
-        Err(e) => tracing::error!("Failed to apply rules after creation: {e}"),
-    }
-
+    // The new rule does not allocate anything: it re-renders this editor with a
+    // suggestion, and every other matching transaction picks one up on its next
+    // render.
     alloc_editor_inner(&state, user_id, lang, txn_id, Some(t.alloc_rule_created)).await
 }
 
-// ── Single row (for "Done" button — refreshes row with correct class) ──
+// ── Single row ───────────────────────────────────────────────
 
 async fn txn_row(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
     Path(txn_id): Path<i64>,
+) -> Html<String> {
+    render_single_row(&state, user_id, lang, txn_id).await
+}
+
+/// "Done" — commit whatever the rules suggested for this transaction, then hand
+/// back the refreshed row. This is the only place a rule ever writes.
+async fn alloc_done(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    Path(txn_id): Path<i64>,
+) -> Html<String> {
+    match labeling::commit_suggestion(&state.pool, user_id.0, txn_id).await {
+        Ok(Some(label)) => {
+            tracing::debug!("Transaction {txn_id}: committed suggested label '{label}'")
+        }
+        Ok(None) => {}
+        Err(e) => tracing::error!("Failed to commit suggested allocation: {e:#}"),
+    }
+
+    render_single_row(&state, user_id, lang, txn_id).await
+}
+
+async fn render_single_row(
+    state: &axum::extract::State<AppState>,
+    user_id: UserId,
+    lang: Lang,
+    txn_id: i64,
 ) -> Html<String> {
     let base = &state.config.base_path;
 
@@ -737,14 +869,9 @@ async fn txn_row(
         return Html("".to_string());
     };
 
-    let allocs: Vec<AllocRow> = sqlx::query_as(
-        r#"SELECT a.id, a.transaction_id, a.label_id, a.amount,
-                  l.name AS label_name, l.color AS label_color
-           FROM leanfin_allocations a
-           JOIN leanfin_labels l ON a.label_id = l.id
-           WHERE a.transaction_id = ?
-           ORDER BY a.amount DESC"#,
-    )
+    let allocs: Vec<AllocRow> = sqlx::query_as(&format!(
+        "{ALLOC_SELECT} WHERE a.transaction_id = ? ORDER BY a.amount DESC"
+    ))
     .bind(txn_id)
     .fetch_all(&state.pool)
     .await
@@ -754,7 +881,23 @@ async fn txn_row(
     });
 
     let refs: Vec<&AllocRow> = allocs.iter().collect();
-    Html(render_row(&t.txn, &refs, base, t.account_color.as_deref()))
+    let suggestion = if refs.is_empty() {
+        let rules = labeling::load_rules(&state.pool, user_id.0)
+            .await
+            .unwrap_or_default();
+        suggest(&rules, &t.txn)
+    } else {
+        None
+    };
+
+    Html(render_row(
+        &t.txn,
+        &refs,
+        suggestion.as_ref(),
+        base,
+        t.account_color.as_deref(),
+        lang,
+    ))
 }
 
 // ── Transaction details (raw API payload) ───────────────────

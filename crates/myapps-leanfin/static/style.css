@@ -346,7 +346,10 @@
     padding: 0.15rem 0.5rem;
     border-radius: 100px;
     background: color-mix(in srgb, var(--label-color) 15%, transparent);
-    color: var(--label-color);
+    /* The group palette is stepped for chart marks; as *text* on the light
+       surface three of its hues sit under 3:1, so badges darken it. This
+       reproduces the validated darkened set exactly (srgb mix with black). */
+    color: color-mix(in srgb, var(--label-color) 78%, #000);
     white-space: nowrap;
     border: 1px solid color-mix(in srgb, var(--label-color) 25%, transparent);
 }
@@ -997,4 +1000,220 @@ nav a.brand {
 nav a.brand:hover {
     color: var(--text-nav-active);
     border-bottom: none;
+}
+
+/* ── Action icons ───────────────────────────────────────────── */
+/* `.btn-icon` is also defined by VoiceToText in the same concatenated sheet,
+   so the icon itself carries an app-prefixed class. */
+.leanfin-icon {
+    width: 1rem;
+    height: 1rem;
+    display: block;
+    stroke-width: 1.8;
+}
+
+/* These are submit buttons, so core.css's `button[type="submit"]` rule would
+   otherwise paint them with the accent fill — `:has()` here outranks it. */
+.btn-icon:has(.leanfin-icon) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem;
+    line-height: 1;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.btn-icon:has(.leanfin-icon):hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.btn-icon-danger:has(.leanfin-icon) {
+    color: var(--negative);
+    border-color: color-mix(in srgb, var(--negative) 25%, transparent);
+}
+
+.btn-icon-danger:has(.leanfin-icon):hover {
+    background: var(--negative-bg);
+    color: var(--negative);
+}
+
+/* ── Account balance as a link into the Balance tab ─────────── */
+.account-balance-link {
+    display: inline-block;
+    text-decoration: none;
+    border-bottom: 1px dashed color-mix(in srgb, currentColor 40%, transparent);
+    cursor: pointer;
+}
+
+.account-balance-link:hover {
+    border-bottom-style: solid;
+}
+
+/* ── Label groups ───────────────────────────────────────────── */
+/* ── Suggested (not yet assigned) labels ────────────────────── */
+/* A rule match is shown, not stored. Dashed border + reduced weight keeps it
+   visually distinct from a committed allocation until "Done" is pressed. */
+.label-badge-suggested {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--label-color) 55%, transparent);
+    background: transparent;
+    font-style: italic;
+    font-weight: 500;
+}
+
+.alloc-row-suggested {
+    border-style: dashed;
+}
+
+.alloc-suggested-note {
+    color: var(--text-secondary);
+    font-style: italic;
+    white-space: nowrap;
+}
+
+.alloc-row-suggested .alloc-amount {
+    margin-left: auto;
+}
+
+/* A row with a pending suggestion is one tap from done, so it reads calmer
+   than a row nothing matches. */
+.txn-table tbody tr.txn-suggested {
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.txn-table tbody tr.txn-suggested:hover {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* core.css gives every `form` `display: flex`, which silently beats the UA's
+   `[hidden] { display: none }` — so the inline edit form was always open on
+   every label row. */
+.label-edit-form[hidden] {
+    display: none;
+}
+
+/* ── Labels page: groups, chips and the one open panel ──────── */
+.lf-group {
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.lf-group:last-child {
+    border-bottom: none;
+}
+
+/* The group heading is a trigger, so it must not inherit the filled look
+   core.css gives a bare `button`. */
+.lf-group-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.15rem 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    justify-content: flex-start;
+}
+
+.lf-group-head .label-badge {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.65rem;
+}
+
+.lf-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.4rem 0 0.1rem;
+}
+
+.lf-chip {
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.lf-chip .label-badge {
+    cursor: pointer;
+}
+
+.lf-chip.lf-open .label-badge,
+.lf-group-head.lf-open .label-badge {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--label-color) 45%, transparent);
+}
+
+.lf-group-empty {
+    padding: 0.15rem 0;
+}
+
+.lf-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+    padding: 0.75rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.lf-panel-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.lf-panel-row input[type="text"],
+.lf-panel-row select {
+    flex: 1;
+    min-width: 0;
+}
+
+.lf-panel-footer {
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    padding-top: 0.6rem;
+}
+
+.lf-panel .rules-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.6rem;
+}
+
+.btn-danger {
+    background: var(--negative);
+    color: #FFFFFF;
+}
+
+.btn-danger:hover {
+    background: color-mix(in srgb, var(--negative) 85%, #000);
+    color: #FFFFFF;
+}
+
+@media (max-width: 640px) {
+    .lf-panel-row {
+        flex-wrap: wrap;
+    }
+
+    .rule-add-form input[type="text"] {
+        flex-basis: 100%;
+    }
+
+    /* The pattern is the point of the rule, and ellipsis inside a phone-width
+       panel hid it entirely. Give it its own line instead of truncating. */
+    .rule-pattern {
+        flex-basis: 100%;
+        order: 3;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
 }

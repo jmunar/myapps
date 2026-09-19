@@ -147,11 +147,19 @@ After login, the top-level router serves:
   - `/leanfin/accounts/manual/{id}/value` — Record a new value for a manual account (GET form, POST submit)
   - `/leanfin/accounts/manual/{id}/import-csv` — Bulk-import balance history from CSV (GET form, POST multipart upload)
   - `POST /leanfin/sync` — Trigger transaction sync for the user (HTMX partial)
-  - `/leanfin/balance-evolution` — Balance evolution page (Chart.js line chart)
+  - `/leanfin/balance-evolution?account_id=` — Balance evolution page (Chart.js line chart; `account_id` preselects one account)
   - `/leanfin/balance-evolution/data?account_id=&days=90` — Balance chart data (HTMX)
-  - `/leanfin/expenses` — Expenses page (multi-label selector + chart + transaction list)
-  - `/leanfin/expenses/chart?label_ids=1,2&days=90` — Expense chart data (HTMX)
-  - `/leanfin/labels` — Label CRUD
+  - `/leanfin/breakdown` — Breakdown page (single-group selector + time series + per-label bar chart + transaction list)
+  - `/leanfin/breakdown/chart?group_id=1&days=90` — Breakdown chart payload (HTMX; one JSON payload drives both charts)
+  - `/leanfin/expenses` — Permanent redirect to `/leanfin/breakdown` (the tab's former name)
+  - `/leanfin/labels` — Create label, create group, then the groups list (labels as chips)
+  - `/leanfin/labels/{id}/panel` — Label detail frame: rename, move, rules, delete (HTMX)
+  - `POST /leanfin/labels/{id}/group` — Move a label to another group
+  - `/leanfin/label-groups/{id}/panel` — Group detail frame: rename, delete (HTMX)
+  - `POST /leanfin/label-groups/create` — Create an empty group
+  - `POST /leanfin/label-groups/{id}/edit` — Rename a group
+  - `POST /leanfin/label-groups/{id}/delete` — Delete a group (its labels fall back to the default group; `is_default` rows refuse)
+  - `POST /leanfin/transactions/{id}/done` — Commit the rule-suggested allocation for a transaction
   - `/leanfin/settings` — Enable Banking credentials and Indexa API token (GET form, POST multipart)
 - `/voice/` — VoiceToText sub-app (nested router)
   - `/voice/` — Job list dashboard (auto-polls for status updates via HTMX)

@@ -106,7 +106,13 @@ async fn list_accounts(
         let session_expires_at = a.session_expires_at;
         let expires = session_expires_at.format("%Y-%m-%d").to_string();
         let iban = html_escape(a.iban.as_deref().unwrap_or("\u{2014}"));
-        let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
+        let balance_html = format_balance(
+            base,
+            (!a.archived).then_some(a.id),
+            a.balance_amount,
+            a.balance_currency.as_deref(),
+            lang,
+        );
 
         if a.archived {
             bank_items.push_str(&format!(
@@ -118,11 +124,11 @@ async fn list_accounts(
                     </div>
                     <div class="account-actions">
                         <form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
-                            <button type="submit" class="btn-icon">{unarchive}</button>
+                            <button type="submit" class="btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                               onsubmit="return confirm('{delete_confirm_bank}')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
+                            <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                         </form>
                     </div>
                 </div>"#,
@@ -130,7 +136,9 @@ async fn list_accounts(
                 id = a.id,
                 archived = t.acc_archived,
                 unarchive = t.acc_unarchive,
+                unarchive_icon = super::icons::UNARCHIVE,
                 delete = t.acc_delete,
+                delete_icon = super::icons::TRASH,
                 delete_confirm_bank = t.acc_delete_confirm_bank,
             ));
         } else {
@@ -151,10 +159,11 @@ async fn list_accounts(
             let reauth_btn = if is_expired || session_expires_at < warn_threshold {
                 format!(
                     r#"<form method="POST" action="{base}/leanfin/accounts/{}/reauth" style="display:inline">
-                        <button type="submit" class="btn-icon">{reauthorize}</button>
+                        <button type="submit" class="btn-icon" aria-label="{reauthorize}" title="{reauthorize}">{reauth_icon}</button>
                     </form>"#,
                     a.id,
                     reauthorize = t.acc_reauthorize,
+                    reauth_icon = super::icons::UNLOCK,
                 )
             } else {
                 String::new()
@@ -175,18 +184,20 @@ async fn list_accounts(
                                onchange="fetch('{base}/leanfin/accounts/{id}/color',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'color='+encodeURIComponent(this.value)}}).then(function(){{var el=event.target.closest('.account-item');el.style.setProperty('--account-color',event.target.value)}})">
                         {reauth_btn}
                         <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
-                            <button type="submit" class="btn-icon">{archive}</button>
+                            <button type="submit" class="btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                               onsubmit="return confirm('{delete_confirm_bank}')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
+                            <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                         </form>
                     </div>
                 </div>"##,
                 bank = html_escape(&a.bank_name),
                 id = a.id,
                 archive = t.acc_archive,
+                archive_icon = super::icons::ARCHIVE,
                 delete = t.acc_delete,
+                delete_icon = super::icons::TRASH,
                 delete_confirm_bank = t.acc_delete_confirm_bank,
             ));
         }
@@ -200,7 +211,13 @@ async fn list_accounts(
     let mut manual_items = String::new();
     for a in &manual_accounts {
         let name = html_escape(a.account_name.as_deref().unwrap_or(&a.bank_name));
-        let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
+        let balance_html = format_balance(
+            base,
+            (!a.archived).then_some(a.id),
+            a.balance_amount,
+            a.balance_currency.as_deref(),
+            lang,
+        );
         let category_badge = match a.asset_category.as_deref() {
             Some(cat) => format!(r#"<span class="category-badge">{cat}</span>"#),
             None => String::new(),
@@ -216,18 +233,20 @@ async fn list_accounts(
                     </div>
                     <div class="account-actions">
                         <form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
-                            <button type="submit" class="btn-icon">{unarchive}</button>
+                            <button type="submit" class="btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                               onsubmit="return confirm('{delete_confirm_manual}')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
+                            <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                         </form>
                     </div>
                 </div>"#,
                 id = a.id,
                 archived = t.acc_archived,
                 unarchive = t.acc_unarchive,
+                unarchive_icon = super::icons::UNARCHIVE,
                 delete = t.acc_delete,
+                delete_icon = super::icons::TRASH,
                 delete_confirm_manual = t.acc_delete_confirm_manual,
             ));
         } else {
@@ -247,11 +266,11 @@ async fn list_accounts(
                         <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn-icon">{import_csv}</a>
                         <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">{edit}</a>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
-                            <button type="submit" class="btn-icon">{archive}</button>
+                            <button type="submit" class="btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                               onsubmit="return confirm('{delete_confirm_manual}')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
+                            <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                         </form>
                     </div>
                 </div>"##,
@@ -260,7 +279,9 @@ async fn list_accounts(
                 import_csv = t.acc_import_csv,
                 edit = t.acc_edit,
                 archive = t.acc_archive,
+                archive_icon = super::icons::ARCHIVE,
                 delete = t.acc_delete,
+                delete_icon = super::icons::TRASH,
                 delete_confirm_manual = t.acc_delete_confirm_manual,
             ));
         }
@@ -284,7 +305,13 @@ async fn list_accounts(
     let mut indexa_items = String::new();
     for a in &indexa_accounts {
         let name = html_escape(a.account_name.as_deref().unwrap_or(&a.bank_name));
-        let balance_html = format_balance(a.balance_amount, a.balance_currency.as_deref());
+        let balance_html = format_balance(
+            base,
+            (!a.archived).then_some(a.id),
+            a.balance_amount,
+            a.balance_currency.as_deref(),
+            lang,
+        );
         let color_val = a.color.as_deref().unwrap_or("#6B6B6B");
         let archived_badge = if a.archived {
             format!(r#" <span class="archived-badge">{}</span>"#, t.acc_archived)
@@ -294,18 +321,20 @@ async fn list_accounts(
         let toggle_btn = if a.archived {
             format!(
                 r#"<form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
-                    <button type="submit" class="btn-icon">{unarchive}</button>
+                    <button type="submit" class="btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
                 </form>"#,
                 id = a.id,
                 unarchive = t.acc_unarchive,
+                unarchive_icon = super::icons::UNARCHIVE,
             )
         } else {
             format!(
                 r#"<form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
-                    <button type="submit" class="btn-icon">{archive}</button>
+                    <button type="submit" class="btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
                 </form>"#,
                 id = a.id,
                 archive = t.acc_archive,
+                archive_icon = super::icons::ARCHIVE,
             )
         };
         indexa_items.push_str(&format!(
@@ -320,13 +349,14 @@ async fn list_accounts(
                     {toggle_btn}
                     <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                           onsubmit="return confirm('{delete_confirm}')" style="display:inline">
-                        <button type="submit" class="btn-icon btn-icon-danger">{delete}</button>
+                        <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                     </form>
                 </div>
             </div>"##,
             id = a.id,
             category = t.acc_cat_investment,
             delete = t.acc_delete,
+            delete_icon = super::icons::TRASH,
             delete_confirm = t.acc_delete_confirm_manual,
         ));
     }
@@ -435,13 +465,29 @@ async fn list_accounts(
     ))
 }
 
-fn format_balance(amount: Option<f64>, currency: Option<&str>) -> String {
-    match (amount, currency) {
-        (Some(amt), Some(cur)) => {
-            let sign = if amt < 0.0 { "negative" } else { "positive" };
-            format!(r#"<div class="account-balance {sign}">{amt:.2} {cur}</div>"#)
-        }
-        _ => String::new(),
+/// The account's balance. For a live account the amount is a link into the
+/// Balance tab pre-filtered to it; archived accounts are not offered in that
+/// tab's picker, so theirs stays plain text.
+fn format_balance(
+    base: &str,
+    account_id: Option<i64>,
+    amount: Option<f64>,
+    currency: Option<&str>,
+    lang: Lang,
+) -> String {
+    let (Some(amt), Some(cur)) = (amount, currency) else {
+        return String::new();
+    };
+    let sign = if amt < 0.0 { "negative" } else { "positive" };
+
+    match account_id {
+        Some(id) => format!(
+            r#"<a class="account-balance account-balance-link {sign}"
+                  href="{base}/leanfin/balance-evolution?account_id={id}"
+                  title="{title}">{amt:.2} {cur}</a>"#,
+            title = super::i18n::t(lang).acc_balance_link,
+        ),
+        None => format!(r#"<div class="account-balance {sign}">{amt:.2} {cur}</div>"#),
     }
 }
 

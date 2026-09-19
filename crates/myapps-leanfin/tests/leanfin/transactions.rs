@@ -117,15 +117,15 @@ async fn dashboard_has_label_ids_filter() {
 }
 
 #[tokio::test]
-async fn dashboard_nav_includes_expenses_tab() {
+async fn dashboard_nav_includes_breakdown_tab() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
     let response = app.server.get("/leanfin").await;
     let body = response.text();
 
-    assert!(body.contains("/leanfin/expenses"));
-    assert!(body.contains("Expenses"));
+    assert!(body.contains("/leanfin/breakdown"));
+    assert!(body.contains("Breakdown"));
 }
 
 // ── Transaction label_ids filter ─────────────────────────────
@@ -424,7 +424,7 @@ async fn rule_create_returns_editor_with_flash_message() {
 }
 
 #[tokio::test]
-async fn rule_create_auto_allocates_matching_unallocated_transactions() {
+async fn rule_create_suggests_but_does_not_allocate() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -472,8 +472,9 @@ async fn rule_create_auto_allocates_matching_unallocated_transactions() {
             .await
             .unwrap();
 
-    // Create the rule — this should auto-allocate all matching transactions
-    app.server
+    // Creating the rule must NOT write allocations — it only suggests.
+    let response = app
+        .server
         .post(&format!("/leanfin/transactions/{txn_id}/rules/create"))
         .form(&serde_json::json!({
             "label_id": label_id,
@@ -482,8 +483,27 @@ async fn rule_create_auto_allocates_matching_unallocated_transactions() {
         }))
         .await;
 
-    // Verify: the two UniqueVendor transactions now have allocations
     let (alloc_count,): (i64,) = sqlx::query_as(
+        r#"SELECT COUNT(*) FROM leanfin_allocations al
+           JOIN leanfin_transactions t ON al.transaction_id = t.id
+           WHERE t.counterparty = 'UniqueVendor'"#,
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert_eq!(alloc_count, 0, "a rule must not allocate by itself");
+
+    // ...but the editor it returns shows the suggestion, pending Done.
+    let body = response.text();
+    assert!(body.contains("label-badge-suggested"));
+    assert!(body.contains("Groceries"));
+
+    // Pressing Done on one transaction commits only that one.
+    app.server
+        .post(&format!("/leanfin/transactions/{txn_id}/done"))
+        .await;
+
+    let (allocated,): (i64,) = sqlx::query_as(
         r#"SELECT COUNT(*) FROM leanfin_allocations al
            JOIN leanfin_transactions t ON al.transaction_id = t.id
            WHERE t.counterparty = 'UniqueVendor' AND al.label_id = ?"#,
@@ -492,8 +512,16 @@ async fn rule_create_auto_allocates_matching_unallocated_transactions() {
     .fetch_one(&app.pool)
     .await
     .unwrap();
+    assert_eq!(allocated, 1, "only the transaction Done was pressed on");
 
-    assert_eq!(alloc_count, 2);
+    // The committed allocation covers the full transaction amount.
+    let (amount,): (f64,) =
+        sqlx::query_as("SELECT amount FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert!((amount - 15.00).abs() < 0.01);
 }
 
 #[tokio::test]
@@ -999,4 +1027,253 @@ async fn single_transaction_row_refresh_includes_account_color() {
         body.contains("--account-color:#2ecc71"),
         "single row refresh should include --account-color CSS variable"
     );
+}
+
+// ── "Done": the only place a rule ever writes ────────────────
+//
+// `POST /transactions/{id}/done` commits whatever a rule suggested. Every path
+// through it that must NOT write is covered here, because the handler swallows
+// its errors and hands back a row either way.
+
+/// A transaction on the seeded user's first account, with no allocations.
+async fn insert_unallocated_txn(
+    app: &myapps_test_harness::TestApp,
+    external_id: &str,
+    amount: f64,
+    counterparty: &str,
+) -> i64 {
+    let (account_id,): (i64,) = sqlx::query_as("SELECT id FROM leanfin_accounts LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency, description, counterparty)
+         VALUES (?, ?, '2025-06-01', ?, 'EUR', 'Done path', ?)",
+    )
+    .bind(account_id)
+    .bind(external_id)
+    .bind(amount)
+    .bind(counterparty)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    sqlx::query_scalar("SELECT id FROM leanfin_transactions WHERE external_id = ?")
+        .bind(external_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn done_requires_authentication() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+
+    let response = app
+        .server
+        .post("/leanfin/transactions/1/done")
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+}
+
+#[tokio::test]
+async fn done_without_a_matching_rule_allocates_nothing() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let txn_id = insert_unallocated_txn(&app, "done-no-rule", -25.00, "NoRuleMatchesThis").await;
+
+    let body = app
+        .server
+        .post(&format!("/leanfin/transactions/{txn_id}/done"))
+        .await
+        .text();
+
+    let allocations: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(allocations, 0, "Done invented an allocation");
+
+    // The row still comes back, and it still reads as unallocated.
+    assert!(body.contains(&format!(r#"id="txn-{txn_id}""#)));
+    assert!(body.contains("txn-unallocated"));
+    assert!(!body.contains("label-badge-suggested"));
+}
+
+#[tokio::test]
+async fn done_on_an_already_allocated_transaction_adds_nothing() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // Matches the seeded Groceries rule, but the user split it by hand first.
+    let txn_id = insert_unallocated_txn(&app, "done-allocated", -40.00, "Mercadona").await;
+
+    let dining: i64 = sqlx::query_scalar("SELECT id FROM leanfin_labels WHERE name = 'Dining'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO leanfin_allocations (transaction_id, label_id, amount) VALUES (?, ?, 40.0)",
+    )
+    .bind(txn_id)
+    .bind(dining)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app
+        .server
+        .post(&format!("/leanfin/transactions/{txn_id}/done"))
+        .await
+        .text();
+
+    let labels: Vec<i64> =
+        sqlx::query_scalar("SELECT label_id FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_all(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        labels,
+        vec![dining],
+        "Done must not add a rule's label on top of a manual split"
+    );
+
+    // The row shows the manual label, not the rule's suggestion.
+    assert!(body.contains("Dining"));
+    assert!(!body.contains("label-badge-suggested"));
+    assert!(!body.contains("txn-unallocated"));
+}
+
+#[tokio::test]
+async fn done_is_idempotent() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let txn_id = insert_unallocated_txn(&app, "done-twice", -18.00, "Mercadona").await;
+
+    for _ in 0..2 {
+        app.server
+            .post(&format!("/leanfin/transactions/{txn_id}/done"))
+            .await;
+    }
+
+    let rows: Vec<(i64, f64)> =
+        sqlx::query_as("SELECT label_id, amount FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_all(&app.pool)
+            .await
+            .unwrap();
+
+    assert_eq!(rows.len(), 1, "a second Done must not double-allocate");
+    assert!((rows[0].1 - 18.00).abs() < 0.01, "full amount, not a split");
+}
+
+#[tokio::test]
+async fn done_commits_the_full_amount_and_drops_the_pending_badge() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let txn_id = insert_unallocated_txn(&app, "done-commit", -33.33, "Mercadona").await;
+
+    // Before: the row carries a dashed, database-free suggestion.
+    let before = app
+        .server
+        .get(&format!("/leanfin/transactions/{txn_id}/row"))
+        .await
+        .text();
+    assert!(before.contains("label-badge-suggested"));
+    assert!(before.contains("txn-suggested"));
+
+    let after = app
+        .server
+        .post(&format!("/leanfin/transactions/{txn_id}/done"))
+        .await
+        .text();
+
+    // After: a real badge, and nothing pending.
+    assert!(after.contains("Groceries"));
+    assert!(!after.contains("label-badge-suggested"));
+    assert!(!after.contains("txn-unallocated"));
+    assert!(!after.contains("txn-misallocated"));
+
+    let (amount,): (f64,) =
+        sqlx::query_as("SELECT amount FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert!((amount - 33.33).abs() < 0.01);
+}
+
+#[tokio::test]
+async fn done_on_a_zero_amount_transaction_allocates_nothing() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // A rule matches it, but there is nothing to allocate.
+    let txn_id = insert_unallocated_txn(&app, "done-zero", 0.00, "Mercadona").await;
+
+    app.server
+        .post(&format!("/leanfin/transactions/{txn_id}/done"))
+        .await;
+
+    let allocations: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(allocations, 0, "a 0.00 allocation must not be written");
+}
+
+#[tokio::test]
+async fn done_on_an_unknown_transaction_renders_nothing() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let body = app
+        .server
+        .post("/leanfin/transactions/999999/done")
+        .await
+        .text();
+    assert!(body.is_empty());
+}
+
+#[tokio::test]
+async fn a_higher_priority_rule_wins_the_suggestion() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let txn_id = insert_unallocated_txn(&app, "done-priority", -12.00, "Mercadona").await;
+
+    // Mercadona already maps to Groceries at priority 0; outrank it.
+    let dining: i64 = sqlx::query_scalar("SELECT id FROM leanfin_labels WHERE name = 'Dining'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO leanfin_label_rules (label_id, field, pattern, priority) VALUES (?, 'counterparty', 'Mercadona', 5)",
+    )
+    .bind(dining)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    app.server
+        .post(&format!("/leanfin/transactions/{txn_id}/done"))
+        .await;
+
+    let committed: i64 =
+        sqlx::query_scalar("SELECT label_id FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(committed, dining, "the highest-priority rule must win");
 }

@@ -60,6 +60,12 @@ non-null `transcription`. Inserting a done job without one fails at the DB.
 for another app's tables through `app.pool` gets an authorization error rather
 than a row.
 
+**A status-only test passes over a broken query.** Handlers swallow DB errors
+into `Default::default()`, so a query that stopped matching its `FromRow` struct
+renders the empty state with a 200. Assert the data you expect *and* that the
+empty-state string is absent — `assert!(response.status_code().is_success())` on
+its own proves nothing.
+
 ## Conventions
 
 - One `spawn_app()` per test — no shared state between tests.
