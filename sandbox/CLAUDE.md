@@ -42,6 +42,17 @@ hence the guest image's `CMD` stays `/bin/bash`. This is also why the vsock
 bridge cannot be a daemon inside the guest and has to be `devbox.sh bridge`, a
 foreground exec the user leaves running.
 
+**Every mount gets a 4096 MiB quota unless it asks for a bigger one.** msb puts
+a quota on each directory-backed mount and defaults it to 4 GiB — which a debug
+build of this workspace exhausts partway through, reported inside the guest as
+an ordinary `No space left on device` while the host still has hundreds of
+gigabytes free. `--volume` cannot set it; only `--mount-dir` takes
+`quota=<MiB>`, so `render.sh` emits a mount as `--mount-dir` exactly when its
+spec carries one. The accounting is also write-only: deleting files never gives
+the space back, so `cargo clean` empties the directory and the volume goes on
+reporting itself full until the sandbox is recreated. Any mount that
+accumulates anything needs a quota in its fragment.
+
 **A tag in docker's image cache is invisible to msb.** `build-image` pipes
 `docker save` into `msb load -t`; building the image without loading it leaves
 `create` pulling a nonexistent image from a registry.
