@@ -4,6 +4,10 @@ use crate::i18n::{self, Lang};
 /// Swipe between neighbouring nav tabs on a phone. Inlined into every page so
 /// it needs no round trip, and kept in its own file so the braces need no
 /// escaping.
+///
+/// It goes in `<head>`, not at the end of `<body>`: it arms the slide-in of the
+/// page just swiped to, which has to be set before `<main>` first paints. The
+/// script touches nothing but `<html>` until a finger lands on the screen.
 const NAV_SWIPE_JS: &str = include_str!("../../../static/nav-swipe.js");
 
 /// A single nav item for the shared layout.
@@ -315,6 +319,7 @@ pub fn render_page(
     <link rel="apple-touch-icon" href="{base_path}/static/icon.svg?v={sv}">
     <script src="{base_path}/static/htmx.min.js?v={sv}"></script>
     <script src="{base_path}/static/chart.min.js?v={sv}"></script>
+    <script>{NAV_SWIPE_JS}</script>
 </head>
 <body>
     <script>
@@ -359,7 +364,6 @@ pub fn render_page(
         {body_html}
     </main>
     {command_bar}
-    <script>{NAV_SWIPE_JS}</script>
 </body>
 </html>"##
     )

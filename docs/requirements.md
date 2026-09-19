@@ -135,6 +135,11 @@ visibility into spending patterns.
 - Swipe between tabs — on a phone, a horizontal swipe across an area with no
   widget of its own moves to the neighbouring nav tab. Swipes that start on a
   control, a chart or anything that scrolls sideways are left alone.
+  The page follows the finger: a half-swipe shows where it would land, names
+  the tab it is heading for and springs back when released, and only a drag
+  past a threshold (or a flick) commits. The page being left slides out and
+  the one arriving slides in from the opposite edge. Under
+  `prefers-reduced-motion` the swipe still changes tab, without the movement.
 - Progressive Web App (PWA) — installable on mobile and desktop via web app
   manifest, service worker for offline static asset caching and network-first
   HTML page loading.
