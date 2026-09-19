@@ -155,6 +155,24 @@ always a bug.
 Assertion failures are the point — keep going. Only framework-level errors mean
 the spec itself needs fixing.
 
+**Guard every interaction with a count check first.** Clicking a locator that
+matches nothing does not fail — it blocks until the 120s timeout and takes the
+whole run with it, and because the report is only written at the end you lose
+every finding collected so far. Make a missing element a finding instead:
+
+```typescript
+if (await page.locator(".txn-suggested").count() === 0) {
+  note("BUG", "no suggested row to open"); return;
+}
+```
+
+**Seeded data does not necessarily exercise the feature.** The seed allocates
+almost every transaction, so there was nothing for a labeling rule to match and
+the suggestion path rendered zero times. Check the precondition with a query
+first, and insert the fixture you need straight into the walkthrough DB
+(`sqlite3 /tmp/frontend-walkthrough/test.db "INSERT ..."`) before starting the
+spec — it is a throwaway database, that is what it is for.
+
 ## 4. Report, then clean up
 
 Read `report.json` alongside `server.log` and sort what you found:

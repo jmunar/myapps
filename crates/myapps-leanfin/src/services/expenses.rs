@@ -2,13 +2,13 @@ use anyhow::Result;
 use chrono::{Duration, Utc};
 use sqlx::SqlitePool;
 
-/// A single data point: one label on one date.
+/// A single data point: one label on one date. Labels have no colour of their
+/// own — the Breakdown charts paint with the group's.
 #[derive(sqlx::FromRow, Clone)]
 pub struct ExpensePoint {
     pub date: String,
     pub label_id: i64,
     pub label_name: String,
-    pub label_color: Option<String>,
     pub total: f64,
 }
 
@@ -29,7 +29,7 @@ pub async fn get_expense_series(
 
     let placeholders = label_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
-        r#"SELECT t.date, l.id as label_id, l.name as label_name, l.color as label_color,
+        r#"SELECT t.date, l.id as label_id, l.name as label_name,
                   SUM(al.amount * CASE WHEN t.amount < 0 THEN 1 ELSE -1 END) as total
            FROM leanfin_allocations al
            JOIN leanfin_transactions t ON al.transaction_id = t.id

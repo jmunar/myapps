@@ -1,8 +1,10 @@
 mod accounts;
 mod balance_evolution;
+mod breakdown;
+pub mod colors;
 mod dashboard;
-mod expenses;
 pub mod i18n;
+mod icons;
 mod labels;
 pub mod models;
 pub mod ops;
@@ -25,7 +27,7 @@ pub fn router() -> Router<AppState> {
         .merge(labels::routes())
         .merge(sync_handler::routes())
         .merge(balance_evolution::routes())
-        .merge(expenses::routes())
+        .merge(breakdown::routes())
         .merge(settings::routes())
 }
 

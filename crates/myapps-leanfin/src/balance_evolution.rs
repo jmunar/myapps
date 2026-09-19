@@ -25,10 +25,19 @@ struct AccountOption {
     account_name: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+struct PageParams {
+    /// Lenient on purpose: this one arrives in a URL a person can edit, so a
+    /// junk value falls back to the aggregate view rather than a 400.
+    #[serde(default)]
+    account_id: Option<String>,
+}
+
 async fn page(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
     Extension(lang): Extension<Lang>,
+    axum::extract::Query(params): axum::extract::Query<PageParams>,
 ) -> Html<String> {
     let base = &state.config.base_path;
     let t = super::i18n::t(lang);
@@ -66,7 +75,24 @@ async fn page(
         ));
     }
 
-    let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
+    // A deep link from the Accounts tab preselects its account; an id that is
+    // not the user's own (or is archived, so it has no option) falls back to
+    // the aggregate view.
+    let selected_id = params
+        .account_id
+        .as_deref()
+        .and_then(|s| s.parse::<i64>().ok())
+        .filter(|id| accounts.iter().any(|a| a.id == *id));
+
+    let mut account_options = format!(
+        r#"<option value=""{}>{}</option>"#,
+        if selected_id.is_none() {
+            " selected"
+        } else {
+            ""
+        },
+        t.txn_all_accounts,
+    );
     for a in &accounts {
         let display = if a.account_type != "bank" {
             a.account_name
@@ -79,11 +105,18 @@ async fn page(
             }
         };
         account_options.push_str(&format!(
-            r#"<option value="{}">{}</option>"#,
+            r#"<option value="{}"{}>{}</option>"#,
             a.id,
+            if selected_id == Some(a.id) {
+                " selected"
+            } else {
+                ""
+            },
             html_escape(&display),
         ));
     }
+
+    let initial_account = selected_id.map_or(String::new(), |id| id.to_string());
 
     let body = format!(
         r##"<div class="page-header">
@@ -115,7 +148,7 @@ async fn page(
             <div class="chart-container"><canvas id="balance-canvas"></canvas></div>
             <div id="balance-empty" class="empty-state" style="display:none"></div>
             <div id="balance-data"
-                 hx-get="{base}/leanfin/balance-evolution/data?account_id=&days=90"
+                 hx-get="{base}/leanfin/balance-evolution/data?account_id={initial_account}&days=90"
                  hx-trigger="load, sync-done from:body">
             </div>
         </div>
@@ -131,7 +164,23 @@ async fn page(
             var basePath = '{base}';
             var balanceChart = null;
 
-            window.updateBalanceChart = function(dates, values, accountId) {{
+            function addDay(date) {{
+                var d = new Date(date + 'T00:00:00Z');
+                d.setUTCDate(d.getUTCDate() + 1);
+                return d.toISOString().slice(0, 10);
+            }}
+
+            // Each plotted point is the *end* of a bucket (a day at 30d, a week
+            // at 90d, a month beyond that), so the transactions behind it run
+            // from the day after the previous point up to the point itself.
+            function periodFor(dates, index, windowStart) {{
+                var to = dates[index];
+                var from = index > 0 ? addDay(dates[index - 1]) : windowStart;
+                if (from > to) from = to;
+                return [from, to];
+            }}
+
+            window.updateBalanceChart = function(dates, values, accountId, windowStart) {{
                 var canvas = document.getElementById('balance-canvas');
                 var emptyEl = document.getElementById('balance-empty');
                 if (dates.length === 0) {{
@@ -145,7 +194,10 @@ async fn page(
                     balanceChart.data.labels = dates;
                     balanceChart.data.datasets[0].data = values;
                     balanceChart.options.onClick = function(evt, elems) {{
-                        if (elems.length > 0) window.loadBalanceTxn(accountId, dates[elems[0].index]);
+                        if (elems.length > 0) {{
+                            var p = periodFor(dates, elems[0].index, windowStart);
+                            window.loadBalanceTxn(accountId, p[0], p[1]);
+                        }}
                     }};
                     balanceChart.update();
                 }} else {{
@@ -179,7 +231,10 @@ async fn page(
                                 y: {{ ticks: {{ callback: function(v) {{ return v.toLocaleString(); }} }} }}
                             }},
                             onClick: function(evt, elems) {{
-                                if (elems.length > 0) window.loadBalanceTxn(accountId, dates[elems[0].index]);
+                                if (elems.length > 0) {{
+                                    var p = periodFor(dates, elems[0].index, windowStart);
+                                    window.loadBalanceTxn(accountId, p[0], p[1]);
+                                }}
                             }}
                         }}
                     }});
@@ -201,12 +256,13 @@ async fn page(
                 document.getElementById('balance-txn-card').style.display = 'none';
             }};
 
-            window.loadBalanceTxn = function(accountId, date) {{
-                var url = basePath + '/leanfin/transactions?date_from=' + date + '&date_to=' + date;
+            window.loadBalanceTxn = function(accountId, dateFrom, dateTo) {{
+                var url = basePath + '/leanfin/transactions?date_from=' + dateFrom + '&date_to=' + dateTo;
                 if (accountId) url += '&account_id=' + accountId;
                 var card = document.getElementById('balance-txn-card');
                 card.style.display = '';
-                document.getElementById('balance-txn-date').textContent = date;
+                document.getElementById('balance-txn-date').textContent =
+                    dateFrom === dateTo ? dateFrom : dateFrom + ' \u2192 ' + dateTo;
                 htmx.ajax('GET', url, '#balance-txn-table');
             }};
         }})();
@@ -340,6 +396,10 @@ async fn data(
             })
     };
 
+    // Captured before downsampling: the first plotted point is the END of its
+    // bucket, so the period it covers starts here.
+    let window_start = series.first().map(|p| p.date.clone()).unwrap_or_default();
+
     let series = downsample_balance(&series, params.days);
 
     if series.is_empty() {
@@ -358,6 +418,6 @@ async fn data(
     let account_id_str = params.account_id.map_or(String::new(), |id| id.to_string());
 
     Html(format!(
-        r#"<script>window.updateBalanceChart({labels_json},{values_json},'{account_id_str}');</script>"#,
+        r#"<script>window.updateBalanceChart({labels_json},{values_json},'{account_id_str}','{window_start}');</script>"#,
     ))
 }

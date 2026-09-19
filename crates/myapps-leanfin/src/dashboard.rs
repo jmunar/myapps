@@ -40,9 +40,9 @@ pub fn leanfin_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
             right: false,
         },
         NavItem {
-            href: format!("{base}/leanfin/expenses"),
+            href: format!("{base}/leanfin/breakdown"),
             label: t.expenses.to_string(),
-            active: active == "expenses",
+            active: active == "breakdown",
             right: false,
         },
         NavItem {

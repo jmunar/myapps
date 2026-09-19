@@ -3,7 +3,16 @@ pub struct Label {
     pub id: i64,
     pub user_id: i64,
     pub name: String,
-    pub color: Option<String>,
+    /// Group the label belongs to. Its colour comes from `colors::group_color`;
+    /// labels carry no colour of their own.
+    pub group_id: Option<i64>,
+}
+
+#[derive(sqlx::FromRow)]
+pub struct LabelGroup {
+    pub id: i64,
+    pub user_id: i64,
+    pub name: String,
 }
 
 #[derive(sqlx::FromRow)]

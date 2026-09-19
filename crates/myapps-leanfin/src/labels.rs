@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::Deserialize;
 
+use super::colors::group_color;
 use super::dashboard::leanfin_nav;
 use myapps_core::auth::UserId;
 use myapps_core::components::html_escape;
@@ -13,29 +14,124 @@ use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
 
+/// Name the default group is seeded with. It is only a default: the group is
+/// renameable like any other, and `is_default` — never the name — is what marks
+/// it as the one that cannot be deleted.
+pub const DEFAULT_GROUP: &str = "No group";
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/labels", get(list_labels))
         .route("/labels/create", post(create_label))
+        .route("/labels/{id}/panel", get(label_panel))
         .route("/labels/{id}/delete", post(delete_label))
         .route("/labels/{id}/edit", post(edit_label))
+        .route("/labels/{id}/group", post(move_label))
         .route("/labels/{id}/rules", get(list_rules))
         .route("/labels/{id}/rules/create", post(create_rule))
         .route(
             "/labels/{label_id}/rules/{rule_id}/delete",
             post(delete_rule),
         )
+        .route("/label-groups/create", post(create_group))
+        .route("/label-groups/{id}/panel", get(group_panel))
+        .route("/label-groups/{id}/edit", post(edit_group))
+        .route("/label-groups/{id}/delete", post(delete_group))
 }
 
-// ── List labels ──────────────────────────────────────────────
+// ── Groups ───────────────────────────────────────────────────
+
+#[derive(sqlx::FromRow)]
+pub struct GroupRow {
+    pub id: i64,
+    pub name: String,
+    pub is_default: bool,
+}
+
+/// The seeded default name is translated; anything the user typed is shown as
+/// they typed it. Returns RAW text — HTML callers must escape it.
+pub fn group_display_name(name: &str, lang: Lang) -> String {
+    if name == DEFAULT_GROUP {
+        super::i18n::t(lang).lbl_group_other.to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+/// Id of the user's default group, creating it if this user has never had one.
+pub async fn ensure_other_group(pool: &sqlx::SqlitePool, user_id: i64) -> Result<i64, sqlx::Error> {
+    if let Some((id,)) = sqlx::query_as::<_, (i64,)>(
+        "SELECT id FROM leanfin_label_groups WHERE user_id = ? AND is_default = 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    {
+        return Ok(id);
+    }
+
+    // ON CONFLICT covers the case where a user already made a group under this
+    // name by hand: promote it rather than failing the unique index.
+    sqlx::query_scalar(
+        "INSERT INTO leanfin_label_groups (user_id, name, is_default) VALUES (?, ?, 1)
+         ON CONFLICT(user_id, name) DO UPDATE SET is_default = 1
+         RETURNING id",
+    )
+    .bind(user_id)
+    .bind(DEFAULT_GROUP)
+    .fetch_one(pool)
+    .await
+}
+
+/// Every group the user has, default first and the rest alphabetically. Also
+/// repairs labels whose group went missing, so `group_id` is never NULL in the
+/// rows the page goes on to render.
+pub async fn user_groups(
+    pool: &sqlx::SqlitePool,
+    user_id: i64,
+) -> Result<Vec<GroupRow>, sqlx::Error> {
+    let other_id = ensure_other_group(pool, user_id).await?;
+
+    sqlx::query("UPDATE leanfin_labels SET group_id = ? WHERE user_id = ? AND group_id IS NULL")
+        .bind(other_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
+    sqlx::query_as::<_, GroupRow>(
+        "SELECT id, name, is_default FROM leanfin_label_groups WHERE user_id = ?
+         ORDER BY is_default DESC, name COLLATE NOCASE",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// `<option>` list of the user's groups, with `selected` on `selected_id`.
+fn group_options(groups: &[GroupRow], selected_id: Option<i64>, lang: Lang) -> String {
+    let mut out = String::new();
+    for g in groups {
+        out.push_str(&format!(
+            r#"<option value="{id}"{selected}>{name}</option>"#,
+            id = g.id,
+            selected = if selected_id == Some(g.id) {
+                " selected"
+            } else {
+                ""
+            },
+            name = html_escape(&group_display_name(&g.name, lang)),
+        ));
+    }
+    out
+}
+
+// ── List ─────────────────────────────────────────────────────
 
 #[derive(sqlx::FromRow)]
 struct LabelRow {
     id: i64,
     name: String,
-    color: Option<String>,
-    rule_count: i32,
-    txn_count: i32,
+    group_id: Option<i64>,
 }
 
 async fn list_labels(
@@ -46,13 +142,15 @@ async fn list_labels(
     let base = &state.config.base_path;
     let t = super::i18n::t(lang);
 
+    let groups = user_groups(&state.pool, user_id.0)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("DB query failed: {e:#}");
+            Default::default()
+        });
+
     let labels: Vec<LabelRow> = sqlx::query_as(
-        r#"SELECT l.id, l.name, l.color,
-                  (SELECT COUNT(*) FROM leanfin_label_rules WHERE label_id = l.id) AS rule_count,
-                  (SELECT COUNT(*) FROM leanfin_allocations WHERE label_id = l.id) AS txn_count
-           FROM leanfin_labels l
-           WHERE l.user_id = ?
-           ORDER BY l.name"#,
+        "SELECT id, name, group_id FROM leanfin_labels WHERE user_id = ? ORDER BY name COLLATE NOCASE",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -62,83 +160,62 @@ async fn list_labels(
         Default::default()
     });
 
-    let lbl_rules = t.lbl_rules;
-    let lbl_edit = t.lbl_edit;
-    let lbl_delete = t.lbl_delete;
-    let lbl_delete_confirm = t.lbl_delete_confirm;
-    let lbl_save = t.lbl_save;
+    // Each group is a heading plus a flow of label chips. Details for either
+    // open in the one slot at the end of the group, which is what keeps a
+    // single frame open at a time.
+    let mut sections = String::new();
+    for g in &groups {
+        let color = group_color(g.id);
+        let members: Vec<&LabelRow> = labels.iter().filter(|l| l.group_id == Some(g.id)).collect();
 
-    let mut items = String::new();
-    for l in &labels {
-        let color = l.color.as_deref().unwrap_or("#6B6B6B");
-        let id = l.id;
-        let name = html_escape(&l.name);
-        let rules_url = format!("{base}/leanfin/labels/{id}/rules");
-        let delete_url = format!("{base}/leanfin/labels/{id}/delete");
-        let edit_url = format!("{base}/leanfin/labels/{id}/edit");
+        let mut chips = String::new();
+        for l in &members {
+            chips.push_str(&format!(
+                r#"<button type="button" class="lf-chip" data-url="{base}/leanfin/labels/{id}/panel"
+                        onclick="lfPanel(this)"><span class="label-badge">{name}</span></button>"#,
+                id = l.id,
+                name = html_escape(&l.name),
+            ));
+        }
+        if chips.is_empty() {
+            chips = format!(
+                r#"<span class="text-secondary text-sm lf-group-empty">{}</span>"#,
+                t.lbl_group_empty
+            );
+        }
 
-        items.push_str(&format!(
-            concat!(
-                r##"<div class="label-item" id="label-{id}">"##,
-                r##"<div class="label-item-info">"##,
-                r##"<span class="label-badge" style="--label-color:{color}">{name}</span>"##,
-                r##"<span class="text-secondary text-sm">{rule_count}r / {txn_count}t</span>"##,
-                r##"</div>"##,
-                r##"<div class="label-item-actions">"##,
-                r##"<button class="btn-icon" hx-get="{rules_url}" hx-target="#rules-{id}" hx-swap="innerHTML">{lbl_rules}</button>"##,
-                r##"<button class="btn-icon" onclick="this.closest('.label-item').querySelector('.label-edit-form').toggleAttribute('hidden')">{lbl_edit}</button>"##,
-                r##"<form method="POST" action="{delete_url}" style="display:inline" onsubmit="return confirm('{lbl_delete_confirm}')">"##,
-                r##"<button class="btn-icon btn-icon-danger">{lbl_delete}</button>"##,
-                r##"</form>"##,
-                r##"</div>"##,
-                r##"<form method="POST" action="{edit_url}" class="label-edit-form" hidden>"##,
-                r##"<input type="text" name="name" value="{name}" required>"##,
-                r##"<input type="color" name="color" value="{color}">"##,
-                r##"<button type="submit" class="btn btn-primary btn-sm">{lbl_save}</button>"##,
-                r##"</form>"##,
-                r##"<div id="rules-{id}" class="rules-panel-container"></div>"##,
-                r##"</div>"##,
-            ),
-            id = id,
-            name = name,
-            color = color,
-            rule_count = l.rule_count,
-            txn_count = l.txn_count,
-            rules_url = rules_url,
-            delete_url = delete_url,
-            edit_url = edit_url,
-            lbl_rules = lbl_rules,
-            lbl_edit = lbl_edit,
-            lbl_delete = lbl_delete,
-            lbl_delete_confirm = lbl_delete_confirm,
-            lbl_save = lbl_save,
+        sections.push_str(&format!(
+            r#"<div class="lf-group" style="--label-color:{color}">
+                <button type="button" class="lf-group-head" data-url="{base}/leanfin/label-groups/{id}/panel"
+                        onclick="lfPanel(this)">
+                    <span class="label-badge">{name}</span>
+                    <span class="lf-count text-secondary text-sm">{count}</span>
+                </button>
+                <div class="lf-chips">{chips}</div>
+                <div class="lf-detail"></div>
+            </div>"#,
+            id = g.id,
+            name = html_escape(&group_display_name(&g.name, lang)),
+            count = members.len(),
         ));
     }
 
-    if items.is_empty() {
-        items = format!(
+    if labels.is_empty() {
+        sections.push_str(&format!(
             r#"<div class="empty-state"><p>{}</p></div>"#,
             t.lbl_no_labels
-        );
+        ));
     }
 
-    let default_color = "#4CAF50";
+    let create_options = group_options(&groups, groups.first().map(|g| g.id), lang);
+
     let body = format!(
-        r#"<div class="page-header">
+        r##"<div class="page-header">
             <h1>{title}</h1>
             <p>{subtitle}</p>
         </div>
 
-        <div class="card" style="max-width:36rem;">
-            <div class="card-header">
-                <h2>{your_labels}</h2>
-            </div>
-            <div class="card-body">
-                <div class="label-list">{items}</div>
-            </div>
-        </div>
-
-        <div class="card mt-2" style="max-width:36rem;">
+        <div class="card" style="max-width:42rem;">
             <div class="card-header">
                 <h2>{create}</h2>
             </div>
@@ -150,20 +227,64 @@ async fn list_labels(
                             <input type="text" id="name" name="name" required placeholder="e.g. Groceries">
                         </div>
                         <div class="form-group">
-                            <label for="color">{lbl_color}</label>
-                            <input type="color" id="color" name="color" value="{default_color}">
+                            <label for="group_id">{lbl_group}</label>
+                            <select id="group_id" name="group_id">{create_options}</select>
                         </div>
                     </div>
                     <button type="submit">{create_btn}</button>
                 </form>
             </div>
-        </div>"#,
+        </div>
+
+        <div class="card mt-2" style="max-width:42rem;">
+            <div class="card-header">
+                <h2>{create_group}</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{base}/leanfin/label-groups/create" class="label-create-form">
+                    <div class="form-row">
+                        <div class="form-group" style="flex:1">
+                            <label for="group-name">{group_name}</label>
+                            <input type="text" id="group-name" name="name" required placeholder="{group_placeholder}">
+                        </div>
+                    </div>
+                    <button type="submit">{create_group_btn}</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-2" style="max-width:42rem;">
+            <div class="card-header">
+                <h2>{groups_heading}</h2>
+            </div>
+            <div class="card-body">
+                {sections}
+            </div>
+        </div>
+
+        <script>
+        // Only one frame is ever open: opening any panel clears every other
+        // slot first, and clicking the open trigger again closes it.
+        window.lfPanel = function(btn) {{
+            var slot = btn.closest('.lf-group').querySelector('.lf-detail');
+            var wasOpen = btn.classList.contains('lf-open');
+            document.querySelectorAll('.lf-detail').forEach(function(d) {{ d.innerHTML = ''; }});
+            document.querySelectorAll('.lf-open').forEach(function(b) {{ b.classList.remove('lf-open'); }});
+            if (wasOpen) return;
+            btn.classList.add('lf-open');
+            htmx.ajax('GET', btn.dataset.url, slot);
+        }};
+        </script>"##,
         title = t.lbl_title,
         subtitle = t.lbl_subtitle,
-        your_labels = t.lbl_your_labels,
         create = t.lbl_create,
+        create_group = t.lbl_group_create,
+        create_group_btn = t.lbl_group_create_btn,
+        groups_heading = t.lbl_groups,
+        group_name = t.lbl_group_name,
+        group_placeholder = t.lbl_group_placeholder,
         lbl_name = t.lbl_name,
-        lbl_color = t.lbl_color,
+        lbl_group = t.lbl_group,
         create_btn = t.lbl_create_btn,
     );
 
@@ -176,12 +297,240 @@ async fn list_labels(
     ))
 }
 
+// ── Group panel ──────────────────────────────────────────────
+
+async fn group_panel(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    Path(id): Path<i64>,
+) -> Html<String> {
+    let base = &state.config.base_path;
+    let t = super::i18n::t(lang);
+
+    let group: Option<GroupRow> = sqlx::query_as(
+        "SELECT id, name, is_default FROM leanfin_label_groups WHERE id = ? AND user_id = ?",
+    )
+    .bind(id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some(group) = group else {
+        return Html(String::new());
+    };
+
+    // The default group is where labels land when a group is deleted, so it has
+    // nowhere to fall back to and stays.
+    let delete_block = if group.is_default {
+        format!(
+            r#"<p class="text-secondary text-sm">{}</p>"#,
+            t.lbl_group_default_hint
+        )
+    } else {
+        format!(
+            r#"<form method="POST" action="{base}/leanfin/label-groups/{id}/delete"
+                      onsubmit="return confirm('{confirm}')">
+                <button type="submit" class="btn btn-danger btn-sm">{delete}</button>
+            </form>"#,
+            confirm = t.lbl_group_delete_confirm,
+            delete = t.lbl_group_delete,
+        )
+    };
+
+    Html(format!(
+        r#"<div class="lf-panel">
+            <form method="POST" action="{base}/leanfin/label-groups/{id}/edit" class="lf-panel-row">
+                <input type="text" name="name" value="{name}" required aria-label="{group_name}">
+                <button type="submit" class="btn btn-primary btn-sm">{save}</button>
+            </form>
+            <div class="lf-panel-row">{delete_block}</div>
+        </div>"#,
+        name = html_escape(&group_display_name(&group.name, lang)),
+        group_name = t.lbl_group_name,
+        save = t.lbl_save,
+    ))
+}
+
+// ── Label panel ──────────────────────────────────────────────
+
+#[derive(sqlx::FromRow)]
+struct LabelDetail {
+    id: i64,
+    name: String,
+    group_id: Option<i64>,
+    rule_count: i32,
+    txn_count: i32,
+}
+
+async fn label_panel(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    Path(id): Path<i64>,
+) -> Html<String> {
+    let base = &state.config.base_path;
+    let t = super::i18n::t(lang);
+
+    let label: Option<LabelDetail> = sqlx::query_as(
+        r#"SELECT l.id, l.name, l.group_id,
+                  (SELECT COUNT(*) FROM leanfin_label_rules WHERE label_id = l.id) AS rule_count,
+                  (SELECT COUNT(*) FROM leanfin_allocations WHERE label_id = l.id) AS txn_count
+           FROM leanfin_labels l WHERE l.id = ? AND l.user_id = ?"#,
+    )
+    .bind(id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let Some(label) = label else {
+        return Html(String::new());
+    };
+
+    let groups = user_groups(&state.pool, user_id.0)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("DB query failed: {e:#}");
+            Default::default()
+        });
+
+    let rules: Vec<RuleRow> = sqlx::query_as(
+        "SELECT id, field, pattern, priority FROM leanfin_label_rules WHERE label_id = ? ORDER BY priority DESC, id",
+    )
+    .bind(label.id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    });
+
+    Html(format!(
+        r#"<div class="lf-panel">
+            <form method="POST" action="{base}/leanfin/labels/{id}/edit" class="lf-panel-row">
+                <input type="text" name="name" value="{name}" required aria-label="{lbl_name}">
+                <button type="submit" class="btn btn-primary btn-sm">{save}</button>
+            </form>
+            <form method="POST" action="{base}/leanfin/labels/{id}/group" class="lf-panel-row">
+                <select name="group_id" aria-label="{lbl_group}">{group_options}</select>
+                <button type="submit" class="btn btn-secondary btn-sm">{move_btn}</button>
+            </form>
+            <div id="rules-{id}">{rules_panel}</div>
+            <div class="lf-panel-row lf-panel-footer">
+                <span class="text-secondary text-sm">{rule_count}r / {txn_count}t</span>
+                <form method="POST" action="{base}/leanfin/labels/{id}/delete"
+                      onsubmit="return confirm('{delete_confirm}')">
+                    <button type="submit" class="btn btn-danger btn-sm">{delete}</button>
+                </form>
+            </div>
+        </div>"#,
+        id = label.id,
+        name = html_escape(&label.name),
+        lbl_name = t.lbl_name,
+        lbl_group = t.lbl_group,
+        save = t.lbl_save,
+        move_btn = t.lbl_group_move,
+        group_options = group_options(&groups, label.group_id, lang),
+        rules_panel = render_rules_panel(base, label.id, &rules, lang),
+        rule_count = label.rule_count,
+        txn_count = label.txn_count,
+        delete = t.lbl_delete,
+        delete_confirm = t.lbl_delete_confirm,
+    ))
+}
+
+// ── Create / edit / delete groups ────────────────────────────
+
+#[derive(Deserialize)]
+struct GroupNameForm {
+    name: String,
+}
+
+async fn create_group(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Form(form): Form<GroupNameForm>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+    let name = form.name.trim();
+
+    if !name.is_empty()
+        && let Err(e) =
+            sqlx::query("INSERT OR IGNORE INTO leanfin_label_groups (user_id, name) VALUES (?, ?)")
+                .bind(user_id.0)
+                .bind(name)
+                .execute(&state.pool)
+                .await
+    {
+        tracing::error!("Failed to create label group: {e}");
+    }
+    Redirect::to(&format!("{base}/leanfin/labels"))
+}
+
+async fn edit_group(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(id): Path<i64>,
+    Form(form): Form<GroupNameForm>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+    let name = form.name.trim();
+
+    // A clash with another group's name is a unique-index error, not a crash.
+    if !name.is_empty()
+        && let Err(e) =
+            sqlx::query("UPDATE leanfin_label_groups SET name = ? WHERE id = ? AND user_id = ?")
+                .bind(name)
+                .bind(id)
+                .bind(user_id.0)
+                .execute(&state.pool)
+                .await
+    {
+        tracing::warn!("Failed to rename label group {id}: {e}");
+    }
+    Redirect::to(&format!("{base}/leanfin/labels"))
+}
+
+async fn delete_group(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+
+    // Labels outlive their group: move them home before the row disappears.
+    if let Ok(other_id) = ensure_other_group(&state.pool, user_id.0).await
+        && other_id != id
+    {
+        sqlx::query("UPDATE leanfin_labels SET group_id = ? WHERE group_id = ? AND user_id = ?")
+            .bind(other_id)
+            .bind(id)
+            .bind(user_id.0)
+            .execute(&state.pool)
+            .await
+            .ok();
+
+        sqlx::query(
+            "DELETE FROM leanfin_label_groups WHERE id = ? AND user_id = ? AND is_default = 0",
+        )
+        .bind(id)
+        .bind(user_id.0)
+        .execute(&state.pool)
+        .await
+        .ok();
+    }
+
+    Redirect::to(&format!("{base}/leanfin/labels"))
+}
+
 // ── Create label ─────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct CreateLabelForm {
     name: String,
-    color: String,
+    group_id: Option<i64>,
 }
 
 async fn create_label(
@@ -190,11 +539,13 @@ async fn create_label(
     Form(form): Form<CreateLabelForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
+    let group_id = resolve_group(&state.pool, user_id.0, form.group_id).await;
+
     if let Err(e) =
-        sqlx::query("INSERT INTO leanfin_labels (user_id, name, color) VALUES (?, ?, ?)")
+        sqlx::query("INSERT INTO leanfin_labels (user_id, name, group_id) VALUES (?, ?, ?)")
             .bind(user_id.0)
             .bind(&form.name)
-            .bind(&form.color)
+            .bind(group_id)
             .execute(&state.pool)
             .await
     {
@@ -203,12 +554,34 @@ async fn create_label(
     Redirect::to(&format!("{base}/leanfin/labels"))
 }
 
-// ── Edit label ───────────────────────────────────────────────
+/// Validate that a submitted group belongs to the user, falling back to the
+/// default group. Returns `None` only if the default group cannot be created.
+async fn resolve_group(
+    pool: &sqlx::SqlitePool,
+    user_id: i64,
+    requested: Option<i64>,
+) -> Option<i64> {
+    if let Some(id) = requested {
+        let owns: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM leanfin_label_groups WHERE id = ? AND user_id = ?)",
+        )
+        .bind(id)
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
+        if owns {
+            return Some(id);
+        }
+    }
+    ensure_other_group(pool, user_id).await.ok()
+}
+
+// ── Edit / move / delete label ───────────────────────────────
 
 #[derive(Deserialize)]
 struct EditLabelForm {
     name: String,
-    color: String,
 }
 
 async fn edit_label(
@@ -218,9 +591,8 @@ async fn edit_label(
     Form(form): Form<EditLabelForm>,
 ) -> impl IntoResponse {
     let base = &state.config.base_path;
-    sqlx::query("UPDATE leanfin_labels SET name = ?, color = ? WHERE id = ? AND user_id = ?")
+    sqlx::query("UPDATE leanfin_labels SET name = ? WHERE id = ? AND user_id = ?")
         .bind(&form.name)
-        .bind(&form.color)
         .bind(id)
         .bind(user_id.0)
         .execute(&state.pool)
@@ -229,7 +601,30 @@ async fn edit_label(
     Redirect::to(&format!("{base}/leanfin/labels"))
 }
 
-// ── Delete label ─────────────────────────────────────────────
+#[derive(Deserialize)]
+struct MoveLabelForm {
+    group_id: i64,
+}
+
+async fn move_label(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(id): Path<i64>,
+    Form(form): Form<MoveLabelForm>,
+) -> impl IntoResponse {
+    let base = &state.config.base_path;
+    let group_id = resolve_group(&state.pool, user_id.0, Some(form.group_id)).await;
+
+    sqlx::query("UPDATE leanfin_labels SET group_id = ? WHERE id = ? AND user_id = ?")
+        .bind(group_id)
+        .bind(id)
+        .bind(user_id.0)
+        .execute(&state.pool)
+        .await
+        .ok();
+
+    Redirect::to(&format!("{base}/leanfin/labels"))
+}
 
 async fn delete_label(
     state: axum::extract::State<AppState>,
@@ -281,8 +676,8 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) 
                 r##"</form>"##,
                 r##"</div>"##,
             ),
-            field = r.field,
-            pattern = r.pattern,
+            field = html_escape(&r.field),
+            pattern = html_escape(&r.pattern),
             priority = r.priority,
             delete_url = delete_url,
             label_id = label_id,
@@ -306,6 +701,7 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) 
             r##"<div class="rules-panel-header">"##,
             r##"<span class="text-sm" style="font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-secondary)">{auto_rules}</span>"##,
             r##"</div>"##,
+            r##"<p class="text-secondary text-sm rules-panel-hint">{hint}</p>"##,
             r##"<div class="rules-list">{rows}</div>"##,
             r##"<form class="rule-add-form" method="POST" action="{create_url}" "##,
             r##"hx-post="{create_url}" "##,
@@ -325,12 +721,36 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) 
         create_url = create_url,
         label_id = label_id,
         auto_rules = t.lbl_auto_rules,
+        hint = t.lbl_rules_hint,
         counterparty = t.lbl_counterparty,
         description = t.lbl_description,
         contains = t.lbl_contains,
         priority = t.lbl_priority,
         add_rule = t.lbl_add_rule,
     )
+}
+
+async fn owns_label(pool: &sqlx::SqlitePool, label_id: i64, user_id: i64) -> bool {
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM leanfin_labels WHERE id = ? AND user_id = ?")
+        .bind(label_id)
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
+        > 0
+}
+
+async fn fetch_rules(pool: &sqlx::SqlitePool, label_id: i64) -> Vec<RuleRow> {
+    sqlx::query_as(
+        "SELECT id, field, pattern, priority FROM leanfin_label_rules WHERE label_id = ? ORDER BY priority DESC, id",
+    )
+    .bind(label_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("DB query failed: {e:#}");
+        Default::default()
+    })
 }
 
 async fn list_rules(
@@ -340,35 +760,12 @@ async fn list_rules(
     Path(label_id): Path<i64>,
 ) -> Html<String> {
     let base = &state.config.base_path;
-
-    let owns = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM leanfin_labels WHERE id = ? AND user_id = ?",
-    )
-    .bind(label_id)
-    .bind(user_id.0)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(0);
-
-    if owns == 0 {
+    if !owns_label(&state.pool, label_id, user_id.0).await {
         return Html(String::new());
     }
-
-    let rules: Vec<RuleRow> = sqlx::query_as(
-        "SELECT id, field, pattern, priority FROM leanfin_label_rules WHERE label_id = ? ORDER BY priority DESC, id",
-    )
-    .bind(label_id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!("DB query failed: {e:#}");
-        Default::default()
-    });
-
+    let rules = fetch_rules(&state.pool, label_id).await;
     Html(render_rules_panel(base, label_id, &rules, lang))
 }
-
-// ── Create rule ─────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct CreateRuleForm {
@@ -386,24 +783,12 @@ async fn create_rule(
 ) -> Html<String> {
     let base = &state.config.base_path;
 
-    let owns = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM leanfin_labels WHERE id = ? AND user_id = ?",
-    )
-    .bind(label_id)
-    .bind(user_id.0)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(0);
-
-    if owns == 0 {
+    if !owns_label(&state.pool, label_id, user_id.0).await {
         return Html(String::new());
     }
-
     if form.field != "description" && form.field != "counterparty" {
         return Html(String::new());
     }
-
-    let priority = form.priority.unwrap_or(0);
 
     if let Err(e) = sqlx::query(
         "INSERT INTO leanfin_label_rules (label_id, field, pattern, priority) VALUES (?, ?, ?, ?)",
@@ -411,28 +796,16 @@ async fn create_rule(
     .bind(label_id)
     .bind(&form.field)
     .bind(&form.pattern)
-    .bind(priority)
+    .bind(form.priority.unwrap_or(0))
     .execute(&state.pool)
     .await
     {
         tracing::error!("Failed to create rule: {e}");
     }
 
-    let rules: Vec<RuleRow> = sqlx::query_as(
-        "SELECT id, field, pattern, priority FROM leanfin_label_rules WHERE label_id = ? ORDER BY priority DESC, id",
-    )
-    .bind(label_id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!("DB query failed: {e:#}");
-        Default::default()
-    });
-
+    let rules = fetch_rules(&state.pool, label_id).await;
     Html(render_rules_panel(base, label_id, &rules, lang))
 }
-
-// ── Delete rule ─────────────────────────────────────────────
 
 async fn delete_rule(
     state: axum::extract::State<AppState>,
@@ -441,6 +814,13 @@ async fn delete_rule(
     Path((label_id, rule_id)): Path<(i64, i64)>,
 ) -> Html<String> {
     let base = &state.config.base_path;
+
+    // The DELETE below is already scoped to the caller, but the panel this
+    // handler re-renders afterwards is not: rendering it for a label someone
+    // else owns would hand back their rule patterns.
+    if !owns_label(&state.pool, label_id, user_id.0).await {
+        return Html(String::new());
+    }
 
     sqlx::query(
         r#"DELETE FROM leanfin_label_rules
@@ -453,16 +833,6 @@ async fn delete_rule(
     .await
     .ok();
 
-    let rules: Vec<RuleRow> = sqlx::query_as(
-        "SELECT id, field, pattern, priority FROM leanfin_label_rules WHERE label_id = ? ORDER BY priority DESC, id",
-    )
-    .bind(label_id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_else(|e| {
-        tracing::error!("DB query failed: {e:#}");
-        Default::default()
-    });
-
+    let rules = fetch_rules(&state.pool, label_id).await;
     Html(render_rules_panel(base, label_id, &rules, lang))
 }

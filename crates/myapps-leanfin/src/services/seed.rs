@@ -443,29 +443,53 @@ async fn insert_manual_account(
 }
 
 async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
-    let labels = &[
-        ("Groceries", "#4CAF50"),
-        ("Subscriptions", "#9C27B0"),
-        ("Transport", "#FF9800"),
-        ("Housing", "#795548"),
-        ("Dining", "#E91E63"),
-        ("Health", "#00BCD4"),
-        ("Income", "#2196F3"),
-        ("Savings", "#607D8B"),
-        ("Utilities", "#FF5722"),
-        ("Entertainment", "#FFC107"),
-    ];
+    // Labels carry no colour of their own — they inherit their group's, which is
+    // derived from the group id. Seeding a few groups (and leaving "Other"
+    // empty) exercises both halves of the Breakdown tab.
+    let other_id = crate::labels::ensure_other_group(pool, user_id).await?;
 
-    for (name, color) in labels {
-        sqlx::query("INSERT INTO leanfin_labels (user_id, name, color) VALUES (?, ?, ?)")
+    let groups = &["Essentials", "Lifestyle", "Income"];
+    for name in groups {
+        sqlx::query("INSERT OR IGNORE INTO leanfin_label_groups (user_id, name) VALUES (?, ?)")
             .bind(user_id)
             .bind(name)
-            .bind(color)
             .execute(pool)
             .await?;
     }
 
-    // Add some auto-labeling rules
+    let labels: &[(&str, &str)] = &[
+        ("Groceries", "Essentials"),
+        ("Subscriptions", "Lifestyle"),
+        ("Transport", "Essentials"),
+        ("Housing", "Essentials"),
+        ("Dining", "Lifestyle"),
+        ("Health", "Essentials"),
+        ("Income", "Income"),
+        ("Savings", "Income"),
+        ("Utilities", "Essentials"),
+        ("Entertainment", "Lifestyle"),
+    ];
+
+    for (name, group) in labels {
+        let group_id: i64 = sqlx::query_scalar(
+            "SELECT id FROM leanfin_label_groups WHERE user_id = ? AND name = ?",
+        )
+        .bind(user_id)
+        .bind(group)
+        .fetch_optional(pool)
+        .await?
+        .unwrap_or(other_id);
+
+        sqlx::query("INSERT INTO leanfin_labels (user_id, name, group_id) VALUES (?, ?, ?)")
+            .bind(user_id)
+            .bind(name)
+            .bind(group_id)
+            .execute(pool)
+            .await?;
+    }
+
+    // Add some auto-labeling rules. These only ever *suggest* a label in the
+    // allocation editor; seeded allocations below are written explicitly.
     let rules: &[(&str, &str, &str)] = &[
         ("Groceries", "counterparty", "Mercadona"),
         ("Groceries", "counterparty", "Carrefour"),
@@ -498,7 +522,12 @@ async fn seed_labels(pool: &SqlitePool, user_id: i64) -> Result<()> {
         .await?;
     }
 
-    tracing::info!("Seeded {} labels with {} rules", labels.len(), rules.len());
+    tracing::info!(
+        "Seeded {} labels across {} groups with {} rules",
+        labels.len(),
+        groups.len() + 1,
+        rules.len()
+    );
     Ok(())
 }
 
