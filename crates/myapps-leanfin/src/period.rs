@@ -78,6 +78,19 @@ impl Window {
     }
 }
 
+/// Whether the running period is charted. Lenient in the same way as
+/// `Window::parse`, and for the same reason: only `0`/`false` turn it off, and
+/// anything the server does not recognise — including a missing parameter —
+/// leaves the selector's own default in place rather than silently dropping
+/// the period the user is living in.
+pub fn parse_include_current(raw: Option<&str>) -> bool {
+    match raw {
+        Some("1") | Some("true") => true,
+        Some("0") | Some("false") => false,
+        _ => DEFAULT_INCLUDE_CURRENT,
+    }
+}
+
 /// Last day of the month `day` falls in.
 fn month_end(day: NaiveDate) -> NaiveDate {
     let (y, m) = (day.year(), day.month());
@@ -346,6 +359,18 @@ mod tests {
         assert_eq!(last.end, d("2028-02-29"));
         assert_eq!(last.weight, 1.0);
         assert_eq!(p.periods[5].end, d("2028-01-31"));
+    }
+
+    #[test]
+    fn a_junk_current_flag_leaves_the_running_period_in_place() {
+        assert!(parse_include_current(Some("1")));
+        assert!(!parse_include_current(Some("0")));
+        // Only an explicit no turns it off; junk and silence keep the default.
+        assert_eq!(
+            parse_include_current(Some("banana")),
+            DEFAULT_INCLUDE_CURRENT
+        );
+        assert_eq!(parse_include_current(None), DEFAULT_INCLUDE_CURRENT);
     }
 
     #[test]

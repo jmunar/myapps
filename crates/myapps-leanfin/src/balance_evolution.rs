@@ -246,12 +246,12 @@ async fn data(
     let t = super::i18n::t(lang);
 
     let window = Window::parse(params.window.as_deref());
-    let include_current = match params.current.as_deref() {
-        Some(v) => v == "1" || v == "true",
-        None => period::DEFAULT_INCLUDE_CURRENT,
-    };
     let today = chrono::Utc::now().date_naive();
-    let periods = period::periods(window, include_current, today);
+    let periods = period::periods(
+        window,
+        period::parse_include_current(params.current.as_deref()),
+        today,
+    );
     // The series query counts back from today, so the window start becomes a
     // number of days. Buckets that reach past today simply take today's value.
     let days = (today - periods.start()).num_days().max(0);

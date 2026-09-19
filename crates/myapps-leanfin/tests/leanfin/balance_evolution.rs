@@ -792,3 +792,97 @@ async fn window_start_is_blank_when_there_is_no_series() {
     assert!(body.contains("showBalanceEmpty("));
     assert!(!body.contains("updateBalanceChart("));
 }
+
+// ── The fields the data request carries ──────────────────────
+//
+// The account picker owns the htmx request; the window selector only writes
+// into two hidden inputs that `hx-include` sweeps up. If an id, a name or the
+// `hx-include` goes, the chart quietly ignores the selector and keeps
+// answering for the default window.
+
+#[tokio::test]
+async fn the_balance_page_puts_the_window_in_the_fields_its_request_includes() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let body = app.server.get("/leanfin/balance-evolution").await.text();
+
+    assert!(body.contains(r#"id="balance-controls""#));
+    // Where the script roots every request it makes on its own.
+    assert!(body.contains(r#"class="balance-controls" id="balance-controls" data-base=""#));
+    assert!(body.contains(r##"hx-include="#balance-controls""##));
+    // The selector writes here; the request reads it back by name.
+    assert!(
+        body.contains(r#"<input type="hidden" name="window" id="balance-window" value="10w">"#)
+    );
+    assert!(
+        body.contains(r#"<input type="hidden" name="current" id="balance-current" value="1">"#)
+    );
+    // And the selector is wired to the function that fills those two in.
+    assert!(body.contains(r#"data-onchange="balanceWindowChanged""#));
+}
+
+#[tokio::test]
+async fn data_endpoint_falls_back_to_the_default_window_on_junk() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let account_id = santander_id(&app).await;
+
+    // These reach the server from a URL a person can edit, so nothing here may
+    // answer a 400 or a 500 — the page has nowhere to show either.
+    for (window, current) in [("banana", "1"), ("", "1"), ("90d", "banana"), ("10W", "")] {
+        let body = app
+            .server
+            .get("/leanfin/balance-evolution/data")
+            .add_query_param("account_id", &account_id.to_string())
+            .add_query_param("window", window)
+            .add_query_param("current", current)
+            .await
+            .text();
+
+        assert!(
+            body.contains("updateBalanceChart("),
+            "window={window} current={current} charted nothing: {body}"
+        );
+        assert!(!body.contains("showBalanceEmpty("));
+        // The default window is weekly, so every point lands on a Sunday.
+        let dates: Vec<String> =
+            serde_json::from_value(chart_payload(&body)["dates"].clone()).unwrap();
+        for date in &dates {
+            let d = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap();
+            assert_eq!(
+                d.weekday(),
+                chrono::Weekday::Sun,
+                "window={window} was not bucketed weekly"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_unnamed_current_flag_keeps_the_running_period() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let account_id = santander_id(&app).await;
+
+    let dates_for = async |current: Option<&str>| -> Vec<String> {
+        let mut request = app
+            .server
+            .get("/leanfin/balance-evolution/data")
+            .add_query_param("account_id", &account_id.to_string())
+            .add_query_param("window", "12m");
+        if let Some(c) = current {
+            request = request.add_query_param("current", c);
+        }
+        serde_json::from_value(chart_payload(&request.await.text())["dates"].clone()).unwrap()
+    };
+
+    // The page opens with the `+` on, so a request that never mentions the flag
+    // must still chart the month we are in — otherwise the first load would
+    // stop short of today and the last point would look like the latest balance.
+    assert_eq!(dates_for(None).await, dates_for(Some("1")).await);
+    assert_eq!(
+        dates_for(None).await.len(),
+        dates_for(Some("0")).await.len() + 1
+    );
+}

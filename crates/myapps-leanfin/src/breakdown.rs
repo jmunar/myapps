@@ -206,13 +206,6 @@ struct ChartQuery {
     current: Option<String>,
 }
 
-fn include_current(raw: Option<&str>) -> bool {
-    match raw {
-        Some(v) => v == "1" || v == "true",
-        None => period::DEFAULT_INCLUDE_CURRENT,
-    }
-}
-
 async fn chart_data(
     state: axum::extract::State<AppState>,
     Extension(user_id): Extension<UserId>,
@@ -252,7 +245,11 @@ async fn chart_data(
 
     let window = Window::parse(params.window.as_deref());
     let today = chrono::Utc::now().date_naive();
-    let periods = period::periods(window, include_current(params.current.as_deref()), today);
+    let periods = period::periods(
+        window,
+        period::parse_include_current(params.current.as_deref()),
+        today,
+    );
     let window_start = periods.start();
     let window_end = periods
         .periods

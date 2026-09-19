@@ -676,3 +676,164 @@ async fn expenses_redirect_requires_authentication() {
         "the legacy URL must go to login, not straight to /breakdown"
     );
 }
+
+// ── The config the page's script reads back out of the DOM ───
+//
+// `breakdown.js` takes its base path, its opening window and every string it
+// ever puts on screen from the `#breakdown-controls` dataset. None of that is
+// visible in the rendered page, so dropping an attribute costs the page its
+// empty-state text — or its data, if `data-base` goes — with no other symptom.
+
+#[tokio::test]
+async fn the_breakdown_page_hands_its_script_the_whole_config() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let body = app.server.get("/leanfin/breakdown").await.text();
+
+    assert!(body.contains(r#"id="breakdown-controls""#));
+    for attr in [
+        // Where every request the script makes is rooted.
+        r#"data-base=""#,
+        // The window the first chart request must agree with the selector on.
+        r#"data-window="10w""#,
+        r#"data-current="1""#,
+    ] {
+        assert!(body.contains(attr), "#breakdown-controls is missing {attr}");
+    }
+
+    // The two strings the script writes into the page itself, which no other
+    // assertion would catch because nothing renders them server-side.
+    assert!(
+        body.contains(
+            r#"data-msg-select-group="Select a group to see how its spending breaks down""#
+        )
+    );
+    assert!(body.contains(r#"data-msg-full-range="Whole period""#));
+
+    // And the same prompt is already on screen before any group is picked.
+    assert!(body.contains(r#"<div id="breakdown-empty" class="empty-state""#));
+    assert!(body.contains("Select a group to see how its spending breaks down"));
+}
+
+// ── Junk in the query string ─────────────────────────────────
+//
+// Both parameters ride in a URL a person can edit and htmx rebuilds, so a
+// value the server has never heard of must chart the default window rather
+// than answer a 400 or a 500 the page has no way to show.
+
+#[tokio::test]
+async fn a_junk_window_charts_the_default_one() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    let f = fresh_fixture(&app).await;
+    spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
+
+    for junk in ["banana", "", "90d", "10W"] {
+        let p = payload_with(&app, f.group, junk, "1").await;
+        let d = dates(&p);
+        // The default is ten whole weeks plus the running one.
+        assert_eq!(d.len(), 11, "window={junk} did not fall back to 10w");
+        for date in &d {
+            assert_eq!(date.weekday(), chrono::Weekday::Sun, "window={junk}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_junk_current_flag_still_answers_with_a_chart() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    let f = fresh_fixture(&app).await;
+    // In a week that has closed, so the payload is never empty even when the
+    // running period is left out.
+    spend_on(&app, &f, Utc::now().date_naive() - Duration::days(14), 5.0).await;
+
+    for junk in ["banana", "", "2"] {
+        let p = payload_with(&app, f.group, "10w", junk).await;
+        let d = dates(&p);
+        // Junk falls back to the default the same way a junk window does, so
+        // it keeps the running period rather than silently dropping it: ten
+        // whole weeks plus the one we are in.
+        assert_eq!(d.len(), 11, "current={junk} charted the wrong buckets");
+        for date in &d {
+            assert_eq!(date.weekday(), chrono::Weekday::Sun, "current={junk}");
+        }
+    }
+
+    // Only an explicit no turns it off.
+    for off in ["0", "false"] {
+        let p = payload_with(&app, f.group, "10w", off).await;
+        assert_eq!(dates(&p).len(), 10, "current={off} kept the running week");
+    }
+}
+
+#[tokio::test]
+async fn an_unnamed_current_flag_keeps_the_running_period() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    let f = fresh_fixture(&app).await;
+    spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
+
+    // The page opens with the `+` on, so a request that does not mention the
+    // flag at all must chart the period we are in — otherwise today's spending
+    // disappears on the page's very first request.
+    let body = app
+        .server
+        .get("/leanfin/breakdown/chart")
+        .add_query_param("group_id", &f.group.to_string())
+        .add_query_param("window", "10w")
+        .await
+        .text();
+    let json = body
+        .trim_start_matches("<script>window.updateBreakdown(")
+        .trim_end_matches(");</script>");
+    let p: serde_json::Value = serde_json::from_str(json).unwrap();
+    assert_eq!(dates(&p).len(), 11);
+    assert!(
+        (matrix_total(&p) + 5.0).abs() < 0.01,
+        "today's spend was dropped"
+    );
+}
+
+// ── The series query's own bounds ────────────────────────────
+//
+// `get_expense_series` took a day count until the stepped window replaced it
+// with a pair of dates. Both ends are inclusive: the window's first and last
+// days are whole periods' edges, and a transaction that lands exactly on one
+// belongs inside the chart, not next to it.
+
+#[tokio::test]
+async fn the_series_query_counts_both_of_its_own_end_days() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    let f = fresh_fixture(&app).await;
+
+    let user_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'bucketuser'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let from = NaiveDate::from_ymd_opt(2026, 3, 1).unwrap();
+    let to = NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
+    spend_on(&app, &f, from - Duration::days(1), 1.0).await;
+    spend_on(&app, &f, from, 10.0).await;
+    spend_on(&app, &f, to, 20.0).await;
+    spend_on(&app, &f, to + Duration::days(1), 2.0).await;
+
+    let points = myapps_leanfin::services::expenses::get_expense_series(
+        &app.pool,
+        user_id,
+        &[f.label],
+        "2026-03-01",
+        "2026-03-31",
+    )
+    .await
+    .unwrap();
+
+    let dates: Vec<&str> = points.iter().map(|p| p.date.as_str()).collect();
+    assert_eq!(
+        dates,
+        vec!["2026-03-01", "2026-03-31"],
+        "the bounds must take their own days and nothing outside them"
+    );
+    // Spending keeps its statement sign, so both come back negative.
+    let total: f64 = points.iter().map(|p| p.total).sum();
+    assert!((total + 30.0).abs() < 0.01, "totalled {total}");
+}
