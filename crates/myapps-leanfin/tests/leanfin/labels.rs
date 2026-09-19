@@ -449,3 +449,214 @@ async fn renaming_the_default_group_keeps_it_default() {
             .unwrap();
     assert_eq!(defaults, 1, "exactly one default group per user");
 }
+
+// ── Group form error paths ───────────────────────────────────
+//
+// Every one of these handlers redirects to /leanfin/labels whatever happens, so
+// the response says nothing — the assertions have to look at the table.
+
+#[tokio::test]
+async fn creating_a_group_with_a_blank_name_creates_nothing() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM leanfin_label_groups")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    for name in ["", "   "] {
+        let response = app
+            .server
+            .post("/leanfin/label-groups/create")
+            .form(&serde_json::json!({ "name": name }))
+            .expect_failure()
+            .await;
+        assert_eq!(response.status_code(), 303);
+    }
+
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM leanfin_label_groups")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(after, before, "a blank name created a group");
+}
+
+#[tokio::test]
+async fn creating_a_group_that_already_exists_does_not_duplicate_it() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    app.server
+        .post("/leanfin/label-groups/create")
+        .form(&serde_json::json!({"name": "Essentials"}))
+        .expect_failure()
+        .await;
+
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM leanfin_label_groups WHERE name = 'Essentials'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn renaming_a_group_to_a_blank_name_is_ignored() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let lifestyle = group_id(&app.pool, "Lifestyle").await;
+    app.server
+        .post(&format!("/leanfin/label-groups/{lifestyle}/edit"))
+        .form(&serde_json::json!({"name": "  "}))
+        .expect_failure()
+        .await;
+
+    let name: String = sqlx::query_scalar("SELECT name FROM leanfin_label_groups WHERE id = ?")
+        .bind(lifestyle)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(name, "Lifestyle");
+}
+
+#[tokio::test]
+async fn renaming_a_group_onto_an_existing_name_leaves_both_alone() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let lifestyle = group_id(&app.pool, "Lifestyle").await;
+
+    // (user_id, name) is unique — the clash must not take the page down.
+    let response = app
+        .server
+        .post(&format!("/leanfin/label-groups/{lifestyle}/edit"))
+        .form(&serde_json::json!({"name": "Essentials"}))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+
+    let name: String = sqlx::query_scalar("SELECT name FROM leanfin_label_groups WHERE id = ?")
+        .bind(lifestyle)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(name, "Lifestyle", "the rename should have been refused");
+
+    let body = app.server.get("/leanfin/labels").await.text();
+    assert!(body.contains("Essentials") && body.contains("Lifestyle"));
+}
+
+#[tokio::test]
+async fn an_empty_group_says_so_and_counts_its_labels() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let body = app.server.get("/leanfin/labels").await.text();
+
+    // The seed leaves the default group empty and puts four labels in
+    // Essentials; both facts are on the page.
+    assert!(body.contains("No labels in this group yet."));
+    assert!(body.contains("lf-group-empty"));
+
+    let essentials = group_id(&app.pool, "Essentials").await;
+    let expected: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM leanfin_labels WHERE group_id = ?")
+            .bind(essentials)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert!(expected > 0, "the fixture should put labels in Essentials");
+    assert!(
+        body.contains(&format!(
+            r#"<span class="lf-count text-secondary text-sm">{expected}</span>"#
+        )),
+        "each group heading should carry its label count"
+    );
+}
+
+// ── Logged-out redirects for the new routes ──────────────────
+
+#[tokio::test]
+async fn every_label_group_route_requires_authentication() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+
+    for route in ["/leanfin/labels/1/panel", "/leanfin/label-groups/1/panel"] {
+        let response = app.server.get(route).expect_failure().await;
+        assert_eq!(response.status_code(), 303, "{route} did not redirect");
+    }
+
+    for route in [
+        "/leanfin/label-groups/create",
+        "/leanfin/label-groups/1/edit",
+        "/leanfin/label-groups/1/delete",
+        "/leanfin/labels/1/group",
+    ] {
+        let response = app.server.post(route).expect_failure().await;
+        assert_eq!(response.status_code(), 303, "{route} did not redirect");
+    }
+}
+
+#[tokio::test]
+async fn a_label_whose_group_went_missing_is_repaired_on_render() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    // `ON DELETE SET NULL` is the backstop behind group deletion, so a NULL
+    // group_id is reachable in a deployed database. It must not make the label
+    // disappear from the page.
+    let (user_id,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let orphan: i64 = sqlx::query_scalar(
+        "INSERT INTO leanfin_labels (user_id, name, group_id) VALUES (?, 'Orphan', NULL) RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get("/leanfin/labels").await.text();
+    assert!(body.contains("Orphan"), "an ungrouped label vanished");
+
+    let repaired: Option<i64> =
+        sqlx::query_scalar("SELECT group_id FROM leanfin_labels WHERE id = ?")
+            .bind(orphan)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    let default: i64 =
+        sqlx::query_scalar("SELECT id FROM leanfin_label_groups WHERE is_default = 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        repaired,
+        Some(default),
+        "it should be moved to the default group"
+    );
+}
+
+#[tokio::test]
+async fn breakdown_pills_use_the_group_colour() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let essentials = group_id(&app.pool, "Essentials").await;
+    let lifestyle = group_id(&app.pool, "Lifestyle").await;
+
+    let body = app.server.get("/leanfin/breakdown").await.text();
+
+    for g in [essentials, lifestyle] {
+        let colour = myapps_leanfin::colors::group_color(g);
+        let at = body
+            .find(&format!(r#"data-group-id="{g}""#))
+            .unwrap_or_else(|| panic!("no pill for group {g}"));
+        assert!(
+            body[at.saturating_sub(120)..at].contains(&format!("--label-color:{colour}")),
+            "group {g} should be painted {colour}"
+        );
+    }
+}

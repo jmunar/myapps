@@ -1,5 +1,6 @@
 mod leanfin {
     pub mod accounts;
+    pub mod authorization;
     pub mod balance;
     pub mod balance_evolution;
     pub mod breakdown;

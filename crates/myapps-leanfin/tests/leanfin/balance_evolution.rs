@@ -532,3 +532,227 @@ async fn aggregated_series_excludes_archived_accounts() {
         "archived account should not contribute to the total, got: {body}"
     );
 }
+
+// ── Deep link from the Accounts tab ──────────────────────────
+//
+// The balance amount on /leanfin/accounts is an anchor to
+// `?account_id=N`. The parameter arrives in a URL a person can edit, so every
+// shape of junk must land on the aggregate view rather than a 400.
+
+async fn santander_id(app: &myapps_test_harness::TestApp) -> i64 {
+    sqlx::query_scalar("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn deep_link_preselects_the_requested_account() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let account_id = santander_id(&app).await;
+
+    let body = app
+        .server
+        .get("/leanfin/balance-evolution")
+        .add_query_param("account_id", &account_id.to_string())
+        .await
+        .text();
+
+    assert!(
+        body.contains(&format!(r#"<option value="{account_id}" selected>"#)),
+        "the linked account should be selected in the picker"
+    );
+    assert!(
+        !body.contains(r#"<option value="" selected>"#),
+        "All accounts must not also be selected"
+    );
+    // The first data request must already be filtered, or the page would flash
+    // the aggregate series before anyone touched the picker.
+    assert!(body.contains(&format!("account_id={account_id}&days=90")));
+}
+
+#[tokio::test]
+async fn deep_link_with_a_junk_account_id_falls_back_to_all_accounts() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    for junk in ["not-a-number", "", "9e99", "-1"] {
+        let response = app
+            .server
+            .get("/leanfin/balance-evolution")
+            .add_query_param("account_id", junk)
+            .await;
+        assert_eq!(
+            response.status_code(),
+            200,
+            "account_id={junk} was rejected"
+        );
+        assert!(
+            response
+                .text()
+                .contains(r#"<option value="" selected>All accounts</option>"#),
+            "account_id={junk} should fall back to the aggregate view"
+        );
+    }
+}
+
+#[tokio::test]
+async fn deep_link_to_an_archived_account_falls_back_to_all_accounts() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // BBVA is seeded archived; it has no <option>, so it cannot be selected.
+    let archived: i64 =
+        sqlx::query_scalar("SELECT id FROM leanfin_accounts WHERE bank_name = 'BBVA'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let body = app
+        .server
+        .get("/leanfin/balance-evolution")
+        .add_query_param("account_id", &archived.to_string())
+        .await
+        .text();
+
+    assert!(body.contains(r#"<option value="" selected>All accounts</option>"#));
+    assert!(
+        !body.contains(&format!(r#"<option value="{archived}""#)),
+        "an archived account must not appear in the picker"
+    );
+    assert!(body.contains("account_id=&days=90"));
+}
+
+// ── Window start (4th argument) ──────────────────────────────
+
+/// The arguments of the single `updateBalanceChart(...)` call in a response.
+fn chart_args(body: &str) -> Vec<String> {
+    let call = body
+        .split_once("updateBalanceChart(")
+        .unwrap_or_else(|| panic!("no chart call in: {body}"))
+        .1;
+    let call = call
+        .rsplit_once(");</script>")
+        .expect("unterminated call")
+        .0;
+
+    // Split on top-level commas only — the first argument is a JSON array.
+    let mut args = Vec::new();
+    let mut depth = 0;
+    let mut current = String::new();
+    for c in call.chars() {
+        match c {
+            '[' => {
+                depth += 1;
+                current.push(c);
+            }
+            ']' => {
+                depth -= 1;
+                current.push(c);
+            }
+            ',' if depth == 0 => args.push(std::mem::take(&mut current)),
+            _ => current.push(c),
+        }
+    }
+    args.push(current);
+    args
+}
+
+#[tokio::test]
+async fn data_endpoint_passes_the_window_start_as_the_fourth_argument() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let account_id = santander_id(&app).await;
+
+    let body = app
+        .server
+        .get("/leanfin/balance-evolution/data")
+        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("days", "90")
+        .await
+        .text();
+
+    let args = chart_args(&body);
+    assert_eq!(
+        args.len(),
+        4,
+        "a chart point covers a period, so it needs a window start: {body}"
+    );
+
+    let window_start = args[3].trim().trim_matches('\'');
+    assert!(
+        chrono::NaiveDate::parse_from_str(window_start, "%Y-%m-%d").is_ok(),
+        "the 4th argument should be a date, got {window_start:?}"
+    );
+
+    // Whatever the bucketing, the window must open no later than the first
+    // plotted point — the JS uses it as the start of that point's period.
+    let first_point: String = serde_json::from_str::<Vec<String>>(args[0].trim())
+        .expect("first argument should be a JSON array of dates")
+        .first()
+        .expect("series should not be empty")
+        .clone();
+    assert!(
+        window_start <= first_point.as_str(),
+        "windowStart {window_start} is after the first point {first_point}"
+    );
+}
+
+#[tokio::test]
+async fn window_start_predates_the_first_point_when_buckets_are_monthly() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let account_id = santander_id(&app).await;
+
+    // At 365d the series is bucketed by month and each point is that month's
+    // last reading, so the raw first day is genuinely earlier than point one.
+    let body = app
+        .server
+        .get("/leanfin/balance-evolution/data")
+        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("days", "365")
+        .await
+        .text();
+
+    let args = chart_args(&body);
+    let window_start = args[3].trim().trim_matches('\'').to_string();
+    let points: Vec<String> = serde_json::from_str(args[0].trim()).unwrap();
+
+    assert!(
+        !window_start.is_empty(),
+        "monthly buckets still need a start"
+    );
+    assert!(
+        window_start <= points[0],
+        "windowStart {window_start} is after the first monthly point {}",
+        points[0]
+    );
+    assert!(
+        points.len() > 1,
+        "a year of seeded history should produce several monthly points"
+    );
+}
+
+#[tokio::test]
+async fn window_start_is_blank_when_there_is_no_series() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    sqlx::query("DELETE FROM leanfin_balance_snapshots")
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let body = app
+        .server
+        .get("/leanfin/balance-evolution/data")
+        .add_query_param("account_id", &santander_id(&app).await.to_string())
+        .add_query_param("days", "90")
+        .await
+        .text();
+
+    // No series means the empty-state call, never a chart call with a blank date.
+    assert!(body.contains("showBalanceEmpty("));
+    assert!(!body.contains("updateBalanceChart("));
+}

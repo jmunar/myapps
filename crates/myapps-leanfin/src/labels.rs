@@ -815,6 +815,13 @@ async fn delete_rule(
 ) -> Html<String> {
     let base = &state.config.base_path;
 
+    // The DELETE below is already scoped to the caller, but the panel this
+    // handler re-renders afterwards is not: rendering it for a label someone
+    // else owns would hand back their rule patterns.
+    if !owns_label(&state.pool, label_id, user_id.0).await {
+        return Html(String::new());
+    }
+
     sqlx::query(
         r#"DELETE FROM leanfin_label_rules
            WHERE id = ? AND label_id IN (SELECT id FROM leanfin_labels WHERE id = ? AND user_id = ?)"#,

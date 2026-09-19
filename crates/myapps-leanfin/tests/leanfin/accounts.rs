@@ -613,3 +613,107 @@ async fn accounts_page_hides_balance_when_null() {
     let body = response.text();
     assert!(!body.contains("account-balance"));
 }
+
+// ── Icon actions ─────────────────────────────────────────────
+//
+// The row actions are SVG now, so the only thing left naming them is the
+// aria-label/title pair. A regression here is invisible on screen.
+
+#[tokio::test]
+async fn account_actions_are_icons_that_keep_their_name() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let body = app
+        .server
+        .get("/leanfin/accounts")
+        .add_query_param("show_archived", "1")
+        .await
+        .text();
+
+    for action in ["Archive", "Unarchive", "Delete"] {
+        assert!(
+            body.contains(&format!(r#"aria-label="{action}""#)),
+            "{action} lost its accessible name"
+        );
+        assert!(
+            body.contains(&format!(r#"title="{action}""#)),
+            "{action} lost its hover title"
+        );
+    }
+    assert!(
+        body.contains("leanfin-icon"),
+        "actions should render an SVG"
+    );
+    assert!(
+        body.contains(r#"aria-hidden="true""#),
+        "the SVG must not be announced next to its label"
+    );
+}
+
+#[tokio::test]
+async fn reauthorize_icon_keeps_its_name_when_the_session_is_expiring() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    sqlx::query(
+        "UPDATE leanfin_accounts SET session_expires_at = '2000-01-01T00:00:00' WHERE bank_name = 'Santander'",
+    )
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get("/leanfin/accounts").await.text();
+    assert!(body.contains(r#"aria-label="Re-authorize""#));
+    assert!(body.contains(r#"title="Re-authorize""#));
+}
+
+#[tokio::test]
+async fn archived_account_balance_is_not_a_deep_link() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // An archived account has no <option> on the Balance tab, so linking to it
+    // would land on the aggregate view with no explanation.
+    let archived: i64 = sqlx::query_scalar(
+        "UPDATE leanfin_accounts SET balance_amount = 777.00, balance_currency = 'EUR'
+         WHERE bank_name = 'BBVA' RETURNING id",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app
+        .server
+        .get("/leanfin/accounts")
+        .add_query_param("show_archived", "1")
+        .await
+        .text();
+
+    assert!(body.contains("777.00 EUR"), "the balance is still shown");
+    assert!(
+        !body.contains(&format!("/leanfin/balance-evolution?account_id={archived}")),
+        "an archived account's balance must not deep-link"
+    );
+}
+
+#[tokio::test]
+async fn manual_account_balance_deep_links_too() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let manual: i64 = sqlx::query_scalar(
+        "UPDATE leanfin_accounts SET balance_amount = 16450.00, balance_currency = 'EUR'
+         WHERE account_type = 'manual' RETURNING id",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get("/leanfin/accounts").await.text();
+    assert!(body.contains(&format!("/leanfin/balance-evolution?account_id={manual}")));
+    assert!(
+        body.contains("View this account's balance history"),
+        "the link needs a title explaining where it goes"
+    );
+}
