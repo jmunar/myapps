@@ -51,13 +51,27 @@ it. App class names are not reserved either — `.btn-icon` is defined by both
 LeanFin and VoiceToText, and the later one in the concatenation wins.
 
 **A horizontal swipe anywhere empty changes tab.** `static/nav-swipe.js` is
-inlined into every page by `layout.rs`, and on a phone it navigates to the
-neighbouring nav item. It bows out when the gesture starts on a control, a
-chart or anything that scrolls sideways — but that list is a CSS selector
-(`SKIP`) plus an overflow check, not an inference. A new widget that handles
-its own horizontal drag has to be named there, or `[data-no-swipe]` put on it;
-otherwise the page vanishes mid-gesture. A widget that handles *vertical* drags
-needs `touch-action: none` for the same reason the window selector has it.
+inlined into every page by `layout.rs`, and on a phone it drags `<main>` with
+the finger and navigates to the neighbouring nav item. It bows out when the
+gesture starts on a control, a chart or anything that scrolls sideways — but
+that list is a CSS selector (`SKIP`) plus an overflow check, not an inference.
+A new widget that handles its own horizontal drag has to be named there, or
+`[data-no-swipe]` put on it; otherwise the swipe claims the gesture with
+`preventDefault()` and the widget never sees it. A widget that handles
+*vertical* drags needs `touch-action: none` for the same reason the window
+selector has it.
+
+The script is in `<head>`, and it has to stay there: it arms the slide-in of
+the page just swiped to (`data-nav-swipe-in` on `<html>`, styled in
+`core.css`), which must be set before `<main>` first paints. Moved to the end
+of `<body>` it still *works* — the page appears at rest for a frame, then
+jumps offscreen to slide back in.
+
+**Nothing in CI parses `static/*.js`.** The files are `include_str!`'d into the
+page as strings, so a misspelt identifier is not a build error but a
+`ReferenceError` thrown mid-gesture in one browser — `make check` passes and
+the feature is simply dead on a phone. Check a JS change actually runs; a
+`node --check` only catches syntax, not an undeclared name.
 
 **Handlers build HTML with `format!`, which escapes nothing.** Any user- or
 provider-supplied string (account names, labels, transaction descriptions,
