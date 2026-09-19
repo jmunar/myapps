@@ -799,11 +799,17 @@ The version in `Cargo.toml` is bumped during development as part of the
 `/finish-development` workflow, before the PR is opened. Bump type is
 determined by the branch name and commit prefixes:
 
-| Prefix        | Bump  | Example                          |
-|---------------|-------|----------------------------------|
-| `[FEAT-*]`   | minor | `[FEAT-42] Add new dashboard`    |
-| `[BREAKING-*]`| major | `[BREAKING] Remove legacy API`  |
-| anything else | patch | `[BUG-99] Fix login redirect`    |
+| Prefix         | Bump  | Example                          |
+|----------------|-------|----------------------------------|
+| `[FEAT-*]`     | minor | `[FEAT-42] Add new dashboard`    |
+| `[BREAKING-*]` | major | `[BREAKING] Remove legacy API`   |
+| anything else  | patch | `[BUG-99] Fix login redirect`    |
+
+Branch names are `<prefix>-<issue>-<slug>`: `feat-42-add-dashboard`,
+`bug-99-fix-login-redirect`, `maint-42-upgrade-dependencies`. The PR title
+brackets mirror the branch prefix (`[FEAT-42]`, `[BUG-99]`, `[MAINT-42]`). Only
+`feat-` and `[BREAKING]` change the bump type; `bug-` and `maint-` both ship as
+patch releases.
 
 Makefile targets are available for manual use: `make bump-patch`,
 `make bump-minor`, `make bump-major`.

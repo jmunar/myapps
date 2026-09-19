@@ -5,4 +5,7 @@ ignore = [
     "RUSTSEC-2023-0071",
     # `instant` is unmaintained, replaced by `web-time`. Transitive dep, no action possible.
     "RUSTSEC-2024-0384",
+    # `smallstr` is unmaintained. Transitive dep via yrs (Notes CRDT); unmaintained only,
+    # no vulnerability. No action possible until yrs drops it.
+    "RUSTSEC-2026-0215",
 ]

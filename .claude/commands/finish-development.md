@@ -40,7 +40,8 @@ Resolve any conflicts and commit the merge.
 
 CD fails the release if the version isn't higher than the latest tag. Pick the
 bump from the branch name and commit messages: `[BREAKING` → major, `feat-` or
-`[FEAT` → minor, otherwise patch. Then:
+`[FEAT` → minor, otherwise patch (`bug-`, `maint-`, or no recognisable prefix).
+Then:
 
 ```
 make bump-<type>
@@ -70,7 +71,8 @@ If the branch touched routes, handlers, templates or CSS:
 `make check` until it passes, then `git push -u origin HEAD`.
 
 Open the PR against `main` with `gh pr create`. The title must start with the
-ticket from the branch name in brackets — `feat-12-feature-xyz` → `[FEAT-12]` —
+ticket from the branch name in brackets — `feat-12-feature-xyz` → `[FEAT-12]`,
+`bug-99-fix-login` → `[BUG-99]`, `maint-42-upgrade-deps` → `[MAINT-42]` —
 followed by a summary of the whole branch. Body:
 
 ```
