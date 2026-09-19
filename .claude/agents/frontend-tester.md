@@ -66,6 +66,42 @@ renders the empty state with a 200. Assert the data you expect *and* that the
 empty-state string is absent — `assert!(response.status_code().is_success())` on
 its own proves nothing.
 
+**A test that asserts on the inlined script asserts on itself.** `layout.rs`
+inlines `static/nav-swipe.js` and the command bar's JS into every page, so
+`body.contains("nav a.active")` passes on the strength of the script's own
+source and says nothing about the nav. To test the shell's markup, parse the
+`<nav>` region; to test the script, read the file.
+
+**The shared shell's contract with `static/core.css` is all string matching**,
+and both halves are served, so it is testable: the nav classes the script
+filters on (`brand`, `nav-right`, `active`), the classes and `data-` values it
+writes (`nav-swipe-dragging`, `nav-swipe-peek[data-side]`,
+`html[data-nav-swipe-in]`), the `640px` breakpoint spelled in both languages,
+the `--ease` token, and the durations that have to match across a page load.
+Fetch `/static/core.css` from the test server rather than `include_str!`-ing it.
+
+**A client-side gesture is only visible here as the material it is handed.**
+The drag, the spring-back and the animations cannot be observed by `axum-test`;
+do not write a test whose name implies otherwise.
+
+**The nav shape, as served** (needed to test the swipe, and not obvious):
+every app's nav lists its own landing href *twice* (app name, then first tab) —
+`tabs()` dedupes them into one stop; the launcher `/` has no active tab and no
+tabs at all, so it is not a swipe page; `base_path` and `static_version` are
+both empty in the root harness, so URLs in test assertions carry no prefix or
+`?v=`.
+
+**Mutation-check a new assertion before trusting it.** Break the thing it
+guards, watch it fail, revert. Beware `sed` in this repo: the same attribute is
+spelled `class="active"` inside a `format!` raw string and `class=\"active\"`
+inside a normal one, so a pattern that works on one silently no-ops on the
+other and the "test still passes" conclusion is wrong. Prefer a `python3`
+edit that asserts its own match count.
+
+**If `/workspace/target` is full** (it is, on the per-branch microVM, and cannot
+be reclaimed), build with `CARGO_TARGET_DIR=/tmp/mt CARGO_INCREMENTAL=0
+CARGO_PROFILE_DEV_DEBUG=0`; never `cargo clean`.
+
 ## Conventions
 
 - One `spawn_app()` per test — no shared state between tests.
