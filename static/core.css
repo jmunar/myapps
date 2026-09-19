@@ -931,3 +931,81 @@ button:active, .btn:active {
     color: var(--text-secondary);
     font-style: italic;
 }
+
+/* ── Tab swipe ──────────────────────────────────────────────────
+   The gesture itself is in `static/nav-swipe.js`, inlined into <head>. While a
+   drag is in flight that script writes `transform` on <main>; what lives here
+   is the half that has to exist before the script can act — the entry
+   animation of the page being swiped *to*, which is armed in <head> via
+   `data-nav-swipe-in` and so must be styled before <main> first paints.
+
+   Phone only. There is no gesture to soften anywhere else, and `main` on a
+   desktop is a centred column whose edges are not the screen's.
+
+   Note what is deliberately absent: no `touch-action` on <main>. It would read
+   as the obvious way to keep the browser out of a horizontal drag, but
+   `touch-action` binds descendants too, so `pan-y` here would stop every
+   sideways-scrolling table inside a page from scrolling. The script calls
+   `preventDefault()` once it owns the gesture instead.
+
+   Also absent, and relied upon: nothing here clips the page while it is
+   translated off screen. A transform still counts towards an ancestor's
+   scrollable overflow, so a drag would let the document scroll sideways into
+   the gap — except `html, body { overflow-x: hidden }` in the responsive
+   block above already holds below 640px. Sliding <main> is only safe for as
+   long as that rule stays.                                           */
+@media (max-width: 640px) {
+    .nav-swipe-dragging {
+        will-change: transform;
+    }
+
+    html[data-nav-swipe-in="next"] main {
+        animation: nav-swipe-in-next 0.22s var(--ease) both;
+    }
+
+    html[data-nav-swipe-in="prev"] main {
+        animation: nav-swipe-in-prev 0.22s var(--ease) both;
+    }
+
+    /* The name of the tab the drag is heading for, shown in the gap the page
+       opens up behind it. The neighbouring page is a server render nobody has
+       asked for yet, so the gap says where the swipe lands rather than
+       pretending to show it. */
+    .nav-swipe-peek {
+        position: fixed;
+        top: 3.25rem;               /* clears the nav bar */
+        bottom: 0;
+        width: 7rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 0.75rem;
+        font-family: var(--font-body);
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-align: center;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 50;                /* below the nav (100), above the page */
+    }
+
+    .nav-swipe-peek[data-side="right"] { right: 0; }
+    .nav-swipe-peek[data-side="left"] { left: 0; }
+}
+
+@keyframes nav-swipe-in-next {
+    from { transform: translateX(100%); opacity: 0.3; }
+    to { transform: none; opacity: 1; }
+}
+
+@keyframes nav-swipe-in-prev {
+    from { transform: translateX(-100%); opacity: 0.3; }
+    to { transform: none; opacity: 1; }
+}
+
+/* A swipe still changes tab; it just stops sliding to do it. The script skips
+   the exit animation under the same query. */
+@media (prefers-reduced-motion: reduce) {
+    html[data-nav-swipe-in] main { animation: none; }
+}
