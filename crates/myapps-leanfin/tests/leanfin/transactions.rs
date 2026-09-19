@@ -117,15 +117,15 @@ async fn dashboard_has_label_ids_filter() {
 }
 
 #[tokio::test]
-async fn dashboard_nav_includes_expenses_tab() {
+async fn dashboard_nav_includes_breakdown_tab() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
     let response = app.server.get("/leanfin").await;
     let body = response.text();
 
-    assert!(body.contains("/leanfin/expenses"));
-    assert!(body.contains("Expenses"));
+    assert!(body.contains("/leanfin/breakdown"));
+    assert!(body.contains("Breakdown"));
 }
 
 // ── Transaction label_ids filter ─────────────────────────────
@@ -424,7 +424,7 @@ async fn rule_create_returns_editor_with_flash_message() {
 }
 
 #[tokio::test]
-async fn rule_create_auto_allocates_matching_unallocated_transactions() {
+async fn rule_create_suggests_but_does_not_allocate() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
@@ -472,8 +472,9 @@ async fn rule_create_auto_allocates_matching_unallocated_transactions() {
             .await
             .unwrap();
 
-    // Create the rule — this should auto-allocate all matching transactions
-    app.server
+    // Creating the rule must NOT write allocations — it only suggests.
+    let response = app
+        .server
         .post(&format!("/leanfin/transactions/{txn_id}/rules/create"))
         .form(&serde_json::json!({
             "label_id": label_id,
@@ -482,8 +483,27 @@ async fn rule_create_auto_allocates_matching_unallocated_transactions() {
         }))
         .await;
 
-    // Verify: the two UniqueVendor transactions now have allocations
     let (alloc_count,): (i64,) = sqlx::query_as(
+        r#"SELECT COUNT(*) FROM leanfin_allocations al
+           JOIN leanfin_transactions t ON al.transaction_id = t.id
+           WHERE t.counterparty = 'UniqueVendor'"#,
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+    assert_eq!(alloc_count, 0, "a rule must not allocate by itself");
+
+    // ...but the editor it returns shows the suggestion, pending Done.
+    let body = response.text();
+    assert!(body.contains("label-badge-suggested"));
+    assert!(body.contains("Groceries"));
+
+    // Pressing Done on one transaction commits only that one.
+    app.server
+        .post(&format!("/leanfin/transactions/{txn_id}/done"))
+        .await;
+
+    let (allocated,): (i64,) = sqlx::query_as(
         r#"SELECT COUNT(*) FROM leanfin_allocations al
            JOIN leanfin_transactions t ON al.transaction_id = t.id
            WHERE t.counterparty = 'UniqueVendor' AND al.label_id = ?"#,
@@ -492,8 +512,16 @@ async fn rule_create_auto_allocates_matching_unallocated_transactions() {
     .fetch_one(&app.pool)
     .await
     .unwrap();
+    assert_eq!(allocated, 1, "only the transaction Done was pressed on");
 
-    assert_eq!(alloc_count, 2);
+    // The committed allocation covers the full transaction amount.
+    let (amount,): (f64,) =
+        sqlx::query_as("SELECT amount FROM leanfin_allocations WHERE transaction_id = ?")
+            .bind(txn_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert!((amount - 15.00).abs() < 0.01);
 }
 
 #[tokio::test]

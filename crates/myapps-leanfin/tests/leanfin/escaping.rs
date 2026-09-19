@@ -1,9 +1,10 @@
 //! Regression coverage for HTML escaping of user-controlled strings.
 //!
-//! LeanFin rendered account and label names straight into `format!` templates,
-//! so a name containing markup executed script on the accounts list, the
-//! dashboard and balance-evolution `<option>` lists, and the expenses label
-//! pills. Every render site must escape.
+//! LeanFin rendered account, label and group names straight into `format!`
+//! templates, so a name containing markup executed script on the accounts list,
+//! the dashboard and balance-evolution `<option>` lists, and the breakdown
+//! group pills. Every render site must escape — including the JSON payload the
+//! breakdown chart embeds in a `<script>` body.
 
 #[tokio::test]
 async fn user_controlled_names_are_html_escaped() {
@@ -31,9 +32,21 @@ async fn user_controlled_names_are_html_escaped() {
     .await
     .expect("failed to insert account");
 
-    sqlx::query("INSERT INTO leanfin_labels (user_id, name, color) VALUES (?, ?, '#ff0000')")
+    // A group whose name is markup, holding a label whose name is markup: both
+    // reach the labels page, the group pills and the chart's JSON payload.
+    let group_id: i64 = sqlx::query_scalar(
+        "INSERT INTO leanfin_label_groups (user_id, name) VALUES (?, ?) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(payload)
+    .fetch_one(&app.pool)
+    .await
+    .expect("failed to insert group");
+
+    sqlx::query("INSERT INTO leanfin_labels (user_id, name, group_id) VALUES (?, ?, ?)")
         .bind(user_id)
         .bind(payload)
+        .bind(group_id)
         .execute(&app.pool)
         .await
         .expect("failed to insert label");
@@ -42,9 +55,10 @@ async fn user_controlled_names_are_html_escaped() {
         "/leanfin",
         "/leanfin/accounts",
         "/leanfin/balance-evolution",
-        "/leanfin/expenses",
+        "/leanfin/breakdown",
         "/leanfin/labels",
         "/leanfin/transactions",
+        &format!("/leanfin/breakdown/chart?group_id={group_id}&days=90"),
     ] {
         let body = app.server.get(route).await.text();
         assert!(

@@ -568,7 +568,16 @@ async fn accounts_page_shows_balance_when_present() {
     let response = app.server.get("/leanfin/accounts").await;
     let body = response.text();
     assert!(body.contains("1234.56 EUR"));
-    assert!(body.contains(r#"class="account-balance positive""#));
+    assert!(body.contains("account-balance account-balance-link positive"));
+    // The amount deep-links into the Balance tab, filtered to this account.
+    let (account_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert!(body.contains(&format!(
+        "/leanfin/balance-evolution?account_id={account_id}"
+    )));
 }
 
 #[tokio::test]
@@ -586,7 +595,7 @@ async fn accounts_page_shows_negative_balance() {
     let response = app.server.get("/leanfin/accounts").await;
     let body = response.text();
     assert!(body.contains("-500.00"));
-    assert!(body.contains(r#"class="account-balance negative""#));
+    assert!(body.contains("account-balance account-balance-link negative"));
 }
 
 #[tokio::test]

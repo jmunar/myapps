@@ -3,5 +3,5 @@ mod label;
 mod transaction;
 
 pub use account::Account;
-pub use label::{Allocation, Label, LabelRule};
+pub use label::{Allocation, Label, LabelGroup, LabelRule};
 pub use transaction::Transaction;

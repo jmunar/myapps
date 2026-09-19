@@ -30,7 +30,7 @@ async fn balance_evolution_page_has_all_accounts_option() {
 
     let response = app.server.get("/leanfin/balance-evolution").await;
     let body = response.text();
-    assert!(body.contains(r#"<option value="">All accounts</option>"#));
+    assert!(body.contains(r#"<option value="" selected>All accounts</option>"#));
 }
 
 #[tokio::test]
