@@ -27,11 +27,28 @@ prefixed with its own app key (`db::init_scoped`). A table named without the
 `<app_key>_` prefix is invisible to the app that owns it, and the failure
 surfaces as an authorization error from SQLite, not as a missing table.
 
+**A `sqlx::FromRow` struct and its `SELECT`s drift silently.** Queries are
+runtime-checked, so adding or removing a field compiles fine — every `SELECT`
+that builds that struct has to be updated by hand. A mismatch makes the row fail
+to map, and the usual `.unwrap_or_else(|e| { tracing::error!(…);
+Default::default() })` turns that into an *empty result*, so the page renders
+"no data" rather than an error and the log line is easy to miss. When you change
+one of these structs, grep for every query that names it.
+
 **CSS has no scoping.** Every app's stylesheet is concatenated into one
 `/static/apps.css` served on every page, so a bare `table { … }` in one app
 restyles every other app. Scope every rule to an app-specific class. For tables
 that collapse into cards on phones, opt into the shared `table-cards` utility
 in `static/core.css` and add only cell placement locally.
+
+Scoping to a class is not enough on its own, because `static/core.css` styles
+bare elements and an element selector there outranks a class here:
+`button[type="submit"]` paints any icon button with the accent fill, and
+`form { display: flex }` silently beats the UA's `[hidden] { display: none }`, so
+a `hidden` form stays open. Check what core.css already says about an element
+before styling it, and use `:has()` or a second class when you need to outrank
+it. App class names are not reserved either — `.btn-icon` is defined by both
+LeanFin and VoiceToText, and the later one in the concatenation wins.
 
 **Handlers build HTML with `format!`, which escapes nothing.** Any user- or
 provider-supplied string (account names, labels, transaction descriptions,
@@ -67,7 +84,8 @@ live in `crates/myapps-core/migrations/`, app ones in each crate's
 `migrations/`. Timestamps are the primary key, so they must not collide across
 crates. The migrator runs with `ignore_missing: true` — a migration deleted or
 retimestamped after it shipped will not fail a deployed database, and will also
-not be re-applied to it.
+not be re-applied to it. So a migration that has reached any environment is
+frozen: correct it with a *new* migration, never by editing the old one.
 
 **Memory is the binding constraint** — 4 GB shared with whisper.cpp and
 llama.cpp. Prefer borrowing over cloning, and weigh any new dependency.

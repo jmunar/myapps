@@ -94,7 +94,14 @@ visibility into spending patterns.
 
 ### Labeling and allocations (LeanFin)
 
-- Users can create labels (e.g. "Groceries", "Rent", "Salary") with a color.
+- Users can create labels (e.g. "Groceries", "Rent", "Salary"). Every label
+  belongs to exactly one **group**, and takes its colour from that group —
+  labels have no colour of their own.
+- Groups are created empty and labels moved into them. New labels start in the
+  default group ("No group"), which is the only one that cannot be deleted;
+  deleting any other group returns its labels to it. A group's colour is derived
+  from its id, so it is fixed when the group is created and is never picked by
+  the user.
 - Transactions are categorized via **allocations**: each allocation assigns a
   portion of the transaction amount to a label.
 - A transaction can have one allocation (simple labeling) or multiple
@@ -103,12 +110,15 @@ visibility into spending patterns.
 - Allocations can be created/removed through an inline editor in the
   transaction list.
 - Users can define auto-labeling rules (pattern matching on description or
-  counterparty). Rules run automatically on newly fetched transactions and
-  create a single allocation for the full amount.
+  counterparty). A rule never allocates on its own: it **suggests** its label
+  for the full amount of any unallocated transaction it matches, shown as a
+  pending badge in the transaction list and pre-filled in the allocation
+  editor. The suggestion is written only when the user presses "Done" on that
+  transaction, so a sync never reconciles transactions unattended.
 - Rules can also be created directly from the allocation editor in the
   transaction list. The pattern is pre-filled from the transaction's
-  counterparty or description. On creation, the rule is immediately applied
-  to all existing unallocated transactions.
+  counterparty or description. On creation it starts suggesting on every
+  matching unallocated transaction, each still awaiting its own "Done".
 - Manual allocations take precedence over auto-assigned ones.
 
 ### Notifications
@@ -280,15 +290,15 @@ visibility into spending patterns.
   accounts (Indexa accounts sync through their own provider). Users can
   bulk-import historical balance data from CSV files (two-column format:
   date + value) with all-or-nothing validation and idempotent upserts.
-- **Expense visualization** — a dedicated Expenses page with multi-label
-  selection (toggle pills), a Chart.js stacked bar chart showing totals per
-  selected label with period-appropriate intervals (daily for 30d, weekly for
-  90d, monthly for 180d/365d). Intervals use canonical end dates (Sunday for
-  weekly, last day of month for monthly) so bars align across labels. Positive
-  expenses stack upward, negative (income/refunds) stack downward from zero.
-  Clicking a bar filters the transaction list to the full time window
-  represented by that bar. The transaction list reuses the same endpoint as
-  the Transactions page with label_ids and date range filters.
+- **Spending breakdown** — a dedicated Breakdown page (formerly Expenses;
+  `/leanfin/expenses` still redirects) where the user picks exactly one label
+  group. It shows a Chart.js time series of that group's total per interval
+  (daily for 30d, weekly for 90d, monthly for 180d/365d, using canonical end
+  dates) and, below it, a horizontal bar per label in the group, sorted
+  largest first. One JSON payload drives both charts, so selecting a time
+  bucket re-cuts the bar chart to that range without another request; clicking
+  a bar lists the transactions behind it. The transaction list reuses the same
+  endpoint as the Transactions page with label_ids and date range filters.
 
 - **Account coloring** — each account (bank or manual) can be assigned a custom
   color via an inline color picker on the accounts page. The color appears as a
