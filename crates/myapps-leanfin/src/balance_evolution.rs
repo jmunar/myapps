@@ -1,14 +1,26 @@
+//! Balance tab: how one account's balance — or every account's together —
+//! moved over a window of whole calendar periods.
+//!
+//! The window comes from `period`, so the points line up bucket for bucket with
+//! the Breakdown tab: one point per day, week or month, ending at the last
+//! complete one, plus the running period when the selector's `+` is on.
+
 use axum::{Extension, Router, response::Html, routing::get};
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use serde::Deserialize;
 
 use super::dashboard::leanfin_nav;
+use super::period::{self, Window};
 use super::services::balance::{self, BalancePoint};
 use myapps_core::auth::UserId;
 use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
+
+/// Chart wiring for this page. Kept in its own file so the Rust side never has
+/// to brace-escape a page of JavaScript.
+const BALANCE_JS: &str = include_str!("../static/balance-evolution.js");
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -20,8 +32,6 @@ pub fn routes() -> Router<AppState> {
 struct AccountOption {
     id: i64,
     bank_name: String,
-    iban: Option<String>,
-    account_type: String,
     account_name: Option<String>,
 }
 
@@ -43,7 +53,7 @@ async fn page(
     let t = super::i18n::t(lang);
 
     let accounts: Vec<AccountOption> = sqlx::query_as(
-        "SELECT id, bank_name, iban, account_type, account_name FROM leanfin_accounts WHERE user_id = ? AND archived = 0 ORDER BY bank_name",
+        "SELECT id, bank_name, account_name FROM leanfin_accounts WHERE user_id = ? AND archived = 0 ORDER BY bank_name",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -94,16 +104,9 @@ async fn page(
         t.txn_all_accounts,
     );
     for a in &accounts {
-        let display = if a.account_type != "bank" {
-            a.account_name
-                .clone()
-                .unwrap_or_else(|| a.bank_name.clone())
-        } else {
-            match &a.iban {
-                Some(iban) => format!("{} ({})", a.bank_name, iban),
-                None => a.bank_name.clone(),
-            }
-        };
+        // Whatever the account is called, and nothing else: an IBAN here is
+        // 24 characters of noise on a phone, and two accounts at the same bank
+        // are told apart by renaming them.
         account_options.push_str(&format!(
             r#"<option value="{}"{}>{}</option>"#,
             a.id,
@@ -112,11 +115,23 @@ async fn page(
             } else {
                 ""
             },
-            html_escape(&display),
+            html_escape(a.account_name.as_deref().unwrap_or(&a.bank_name)),
         ));
     }
 
     let initial_account = selected_id.map_or(String::new(), |id| id.to_string());
+    let window = period::DEFAULT_WINDOW.key();
+    let current = if period::DEFAULT_INCLUDE_CURRENT {
+        "1"
+    } else {
+        "0"
+    };
+    let selector = period::render_selector(
+        period::DEFAULT_WINDOW,
+        period::DEFAULT_INCLUDE_CURRENT,
+        "balanceWindowChanged",
+        lang,
+    );
 
     let body = format!(
         r##"<div class="page-header">
@@ -124,7 +139,7 @@ async fn page(
             <p>{subtitle}</p>
         </div>
         <div class="card">
-            <div class="balance-controls" id="balance-controls">
+            <div class="balance-controls" id="balance-controls" data-base="{base}">
                 <select name="account_id"
                         class="txn-filter-select"
                         hx-get="{base}/leanfin/balance-evolution/data"
@@ -133,22 +148,14 @@ async fn page(
                         hx-include="#balance-controls">
                     {account_options}
                 </select>
-                <div class="period-selector">
-                    <button type="button" class="period-btn" data-days="30"
-                            onclick="selectPeriod(this, 30)">30d</button>
-                    <button type="button" class="period-btn period-btn-active" data-days="90"
-                            onclick="selectPeriod(this, 90)">90d</button>
-                    <button type="button" class="period-btn" data-days="180"
-                            onclick="selectPeriod(this, 180)">180d</button>
-                    <button type="button" class="period-btn" data-days="365"
-                            onclick="selectPeriod(this, 365)">365d</button>
-                </div>
-                <input type="hidden" name="days" id="balance-days" value="90">
+                {selector}
+                <input type="hidden" name="window" id="balance-window" value="{window}">
+                <input type="hidden" name="current" id="balance-current" value="{current}">
             </div>
             <div class="chart-container"><canvas id="balance-canvas"></canvas></div>
             <div id="balance-empty" class="empty-state" style="display:none"></div>
             <div id="balance-data"
-                 hx-get="{base}/leanfin/balance-evolution/data?account_id={initial_account}&days=90"
+                 hx-get="{base}/leanfin/balance-evolution/data?account_id={initial_account}&window={window}&current={current}"
                  hx-trigger="load, sync-done from:body">
             </div>
         </div>
@@ -159,117 +166,13 @@ async fn page(
             </div>
             <div id="balance-txn-table"></div>
         </div>
-        <script>
-        (function() {{
-            var basePath = '{base}';
-            var balanceChart = null;
-
-            function addDay(date) {{
-                var d = new Date(date + 'T00:00:00Z');
-                d.setUTCDate(d.getUTCDate() + 1);
-                return d.toISOString().slice(0, 10);
-            }}
-
-            // Each plotted point is the *end* of a bucket (a day at 30d, a week
-            // at 90d, a month beyond that), so the transactions behind it run
-            // from the day after the previous point up to the point itself.
-            function periodFor(dates, index, windowStart) {{
-                var to = dates[index];
-                var from = index > 0 ? addDay(dates[index - 1]) : windowStart;
-                if (from > to) from = to;
-                return [from, to];
-            }}
-
-            window.updateBalanceChart = function(dates, values, accountId, windowStart) {{
-                var canvas = document.getElementById('balance-canvas');
-                var emptyEl = document.getElementById('balance-empty');
-                if (dates.length === 0) {{
-                    canvas.parentElement.style.display = 'none';
-                    emptyEl.style.display = '';
-                    return;
-                }}
-                canvas.parentElement.style.display = '';
-                emptyEl.style.display = 'none';
-                if (balanceChart) {{
-                    balanceChart.data.labels = dates;
-                    balanceChart.data.datasets[0].data = values;
-                    balanceChart.options.onClick = function(evt, elems) {{
-                        if (elems.length > 0) {{
-                            var p = periodFor(dates, elems[0].index, windowStart);
-                            window.loadBalanceTxn(accountId, p[0], p[1]);
-                        }}
-                    }};
-                    balanceChart.update();
-                }} else {{
-                    balanceChart = new Chart(canvas, {{
-                        type: 'line',
-                        data: {{
-                            labels: dates,
-                            datasets: [{{
-                                data: values,
-                                borderColor: '#1A6B5A',
-                                backgroundColor: 'rgba(26,107,90,0.15)',
-                                fill: true,
-                                tension: 0.3,
-                                pointRadius: 3,
-                                pointHoverRadius: 5
-                            }}]
-                        }},
-                        options: {{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {{
-                                legend: {{ display: false }},
-                                tooltip: {{
-                                    callbacks: {{
-                                        label: function(ctx) {{ return ctx.parsed.y.toLocaleString(undefined, {{minimumFractionDigits: 2, maximumFractionDigits: 2}}); }}
-                                    }}
-                                }}
-                            }},
-                            scales: {{
-                                x: {{ ticks: {{ maxRotation: 45, font: {{ size: 11 }} }} }},
-                                y: {{ ticks: {{ callback: function(v) {{ return v.toLocaleString(); }} }} }}
-                            }},
-                            onClick: function(evt, elems) {{
-                                if (elems.length > 0) {{
-                                    var p = periodFor(dates, elems[0].index, windowStart);
-                                    window.loadBalanceTxn(accountId, p[0], p[1]);
-                                }}
-                            }}
-                        }}
-                    }});
-                }}
-            }};
-
-            window.showBalanceEmpty = function(msg) {{
-                document.getElementById('balance-canvas').parentElement.style.display = 'none';
-                var el = document.getElementById('balance-empty');
-                el.innerHTML = '<p>' + msg + '</p>';
-                el.style.display = '';
-            }};
-
-            window.selectPeriod = function(btn, days) {{
-                document.querySelectorAll('.period-btn').forEach(function(b) {{ b.classList.remove('period-btn-active'); }});
-                btn.classList.add('period-btn-active');
-                document.getElementById('balance-days').value = days;
-                htmx.trigger(document.querySelector('#balance-controls select'), 'change');
-                document.getElementById('balance-txn-card').style.display = 'none';
-            }};
-
-            window.loadBalanceTxn = function(accountId, dateFrom, dateTo) {{
-                var url = basePath + '/leanfin/transactions?date_from=' + dateFrom + '&date_to=' + dateTo;
-                if (accountId) url += '&account_id=' + accountId;
-                var card = document.getElementById('balance-txn-card');
-                card.style.display = '';
-                document.getElementById('balance-txn-date').textContent =
-                    dateFrom === dateTo ? dateFrom : dateFrom + ' \u2192 ' + dateTo;
-                htmx.ajax('GET', url, '#balance-txn-table');
-            }};
-        }})();
-        </script>"##,
+        <script>{selector_js}</script>
+        <script>{balance_js}</script>"##,
         title = t.bal_title,
         subtitle = t.bal_subtitle,
         transactions = t.exp_transactions,
+        selector_js = period::SELECTOR_JS,
+        balance_js = BALANCE_JS,
     );
 
     Html(render_page(
@@ -285,12 +188,10 @@ async fn page(
 struct DataQuery {
     #[serde(default, deserialize_with = "deserialize_optional_id")]
     account_id: Option<i64>,
-    #[serde(default = "default_days")]
-    days: i64,
-}
-
-fn default_days() -> i64 {
-    90
+    #[serde(default)]
+    window: Option<String>,
+    #[serde(default)]
+    current: Option<String>,
 }
 
 /// Deserialize empty string as None, numeric string as Some(i64).
@@ -306,53 +207,34 @@ where
     }
 }
 
-/// Downsample a daily balance series to the appropriate interval:
-/// - 30d → daily (no change)
-/// - 90d → weekly (Mon–Sun, last value in each week)
-/// - 180d/365d → monthly (last value in each calendar month)
-fn downsample_balance(series: &[BalancePoint], days: i64) -> Vec<BalancePoint> {
-    if days <= 30 || series.is_empty() {
-        return series.to_vec();
-    }
+/// Pick the balance each bucket closed on: the last daily value at or before
+/// its end date. Buckets that end before the account has any history at all
+/// are dropped rather than plotted at zero, which would read as an empty
+/// account rather than an unknown one.
+fn downsample_balance(series: &[BalancePoint], ends: &[NaiveDate]) -> Vec<(usize, f64)> {
+    let mut points: Vec<(NaiveDate, f64)> = series
+        .iter()
+        .filter_map(|p| {
+            NaiveDate::parse_from_str(&p.date, "%Y-%m-%d")
+                .ok()
+                .map(|d| (d, p.balance))
+        })
+        .collect();
+    points.sort_by_key(|(d, _)| *d);
 
-    let mut result: Vec<BalancePoint> = Vec::new();
-
-    if days <= 90 {
-        // Weekly: group by ISO week (Mon–Sun), take last value per week
-        let mut current_key: Option<(i32, u32)> = None; // (iso_year, iso_week)
-        for p in series {
-            if let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") {
-                let key = (d.iso_week().year(), d.iso_week().week());
-                if current_key == Some(key) {
-                    // Same week — replace with latest
-                    if let Some(last) = result.last_mut() {
-                        *last = p.clone();
-                    }
-                } else {
-                    current_key = Some(key);
-                    result.push(p.clone());
-                }
-            }
+    let mut out = Vec::new();
+    let mut cursor = 0;
+    let mut last: Option<f64> = None;
+    for (i, end) in ends.iter().enumerate() {
+        while cursor < points.len() && points[cursor].0 <= *end {
+            last = Some(points[cursor].1);
+            cursor += 1;
         }
-    } else {
-        // Monthly: group by (year, month), take last value per month
-        let mut current_key: Option<(i32, u32)> = None;
-        for p in series {
-            if let Ok(d) = NaiveDate::parse_from_str(&p.date, "%Y-%m-%d") {
-                let key = (d.year(), d.month());
-                if current_key == Some(key) {
-                    if let Some(last) = result.last_mut() {
-                        *last = p.clone();
-                    }
-                } else {
-                    current_key = Some(key);
-                    result.push(p.clone());
-                }
-            }
+        if let Some(balance) = last {
+            out.push((i, balance));
         }
     }
-
-    result
+    out
 }
 
 async fn data(
@@ -362,6 +244,17 @@ async fn data(
     axum::extract::Query(params): axum::extract::Query<DataQuery>,
 ) -> Html<String> {
     let t = super::i18n::t(lang);
+
+    let window = Window::parse(params.window.as_deref());
+    let include_current = match params.current.as_deref() {
+        Some(v) => v == "1" || v == "true",
+        None => period::DEFAULT_INCLUDE_CURRENT,
+    };
+    let today = chrono::Utc::now().date_naive();
+    let periods = period::periods(window, include_current, today);
+    // The series query counts back from today, so the window start becomes a
+    // number of days. Buckets that reach past today simply take today's value.
+    let days = (today - periods.start()).num_days().max(0);
 
     let series = if let Some(account_id) = params.account_id {
         // Verify account belongs to user
@@ -375,20 +268,17 @@ async fn data(
         .unwrap_or(false);
 
         if !owns {
-            return Html(format!(
-                "<script>window.showBalanceEmpty({:?});</script>",
-                t.bal_account_not_found
-            ));
+            return Html(empty_script(t.bal_account_not_found));
         }
 
-        balance::get_balance_series(&state.pool, account_id, params.days)
+        balance::get_balance_series(&state.pool, account_id, days)
             .await
             .unwrap_or_else(|e| {
                 tracing::error!("DB query failed: {e:#}");
                 Default::default()
             })
     } else {
-        balance::get_aggregated_balance_series(&state.pool, user_id.0, params.days)
+        balance::get_aggregated_balance_series(&state.pool, user_id.0, days)
             .await
             .unwrap_or_else(|e| {
                 tracing::error!("DB query failed: {e:#}");
@@ -396,28 +286,48 @@ async fn data(
             })
     };
 
-    // Captured before downsampling: the first plotted point is the END of its
-    // bucket, so the period it covers starts here.
-    let window_start = series.first().map(|p| p.date.clone()).unwrap_or_default();
+    let ends: Vec<NaiveDate> = periods.periods.iter().map(|p| p.end).collect();
+    let plotted = downsample_balance(&series, &ends);
 
-    let series = downsample_balance(&series, params.days);
-
-    if series.is_empty() {
-        return Html(format!(
-            "<script>window.showBalanceEmpty({:?});</script>",
-            t.bal_no_data
-        ));
+    if plotted.is_empty() {
+        return Html(empty_script(t.bal_no_data));
     }
 
-    // Build JSON arrays for Chart.js
-    let labels: Vec<String> = series.iter().map(|p| format!("\"{}\"", p.date)).collect();
-    let values: Vec<String> = series.iter().map(|p| format!("{:.2}", p.balance)).collect();
-    let labels_json = format!("[{}]", labels.join(","));
-    let values_json = format!("[{}]", values.join(","));
-
-    let account_id_str = params.account_id.map_or(String::new(), |id| id.to_string());
+    let payload = serde_json::json!({
+        "accountId": params.account_id.map_or(String::new(), |id| id.to_string()),
+        "dates": plotted
+            .iter()
+            .map(|(i, _)| period::iso(periods.periods[*i].end))
+            .collect::<Vec<_>>(),
+        "starts": plotted
+            .iter()
+            .map(|(i, _)| period::iso(periods.periods[*i].start))
+            .collect::<Vec<_>>(),
+        "values": plotted
+            .iter()
+            .map(|(_, b)| (b * 100.0).round() / 100.0)
+            .collect::<Vec<_>>(),
+    });
 
     Html(format!(
-        r#"<script>window.updateBalanceChart({labels_json},{values_json},'{account_id_str}','{window_start}');</script>"#,
+        "<script>window.updateBalanceChart({});</script>",
+        json_for_script(&payload)
     ))
+}
+
+fn empty_script(message: &str) -> String {
+    format!(
+        "<script>window.showBalanceEmpty({});</script>",
+        json_for_script(&serde_json::Value::from(message))
+    )
+}
+
+/// Serialize for embedding in a `<script>` body — see the note on the twin in
+/// `breakdown.rs`.
+fn json_for_script(value: &serde_json::Value) -> String {
+    value
+        .to_string()
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
 }

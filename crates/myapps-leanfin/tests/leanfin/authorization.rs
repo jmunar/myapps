@@ -416,7 +416,7 @@ async fn balance_deep_link_to_another_users_account_falls_back_to_all_accounts()
         "another user's account appeared in the picker"
     );
     assert!(
-        body.contains("account_id=&days=90"),
+        body.contains("account_id=&window=10w&current=1"),
         "the initial data request must carry no account filter"
     );
 }

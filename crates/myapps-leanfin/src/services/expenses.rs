@@ -1,9 +1,11 @@
 use anyhow::Result;
-use chrono::{Duration, Utc};
 use sqlx::SqlitePool;
 
 /// A single data point: one label on one date. Labels have no colour of their
 /// own — the Breakdown charts paint with the group's.
+///
+/// `total` keeps the sign of the money: spending is negative, income positive,
+/// the same way the transaction reads on the statement.
 #[derive(sqlx::FromRow, Clone)]
 pub struct ExpensePoint {
     pub date: String,
@@ -12,25 +14,25 @@ pub struct ExpensePoint {
     pub total: f64,
 }
 
-/// Get daily expense totals grouped by label for the given label IDs and period.
+/// Daily totals per label for the given labels, over `from`..=`to` inclusive.
+///
+/// Allocations are stored unsigned, so the sign comes from the transaction
+/// they hang off: a spend counts negative and a refund or salary positive.
 pub async fn get_expense_series(
     pool: &SqlitePool,
     user_id: i64,
     label_ids: &[i64],
-    days: i64,
+    from: &str,
+    to: &str,
 ) -> Result<Vec<ExpensePoint>> {
     if label_ids.is_empty() {
         return Ok(vec![]);
     }
 
-    let cutoff = (Utc::now() - Duration::days(days))
-        .format("%Y-%m-%d")
-        .to_string();
-
     let placeholders = label_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
         r#"SELECT t.date, l.id as label_id, l.name as label_name,
-                  SUM(al.amount * CASE WHEN t.amount < 0 THEN 1 ELSE -1 END) as total
+                  SUM(al.amount * CASE WHEN t.amount < 0 THEN -1 ELSE 1 END) as total
            FROM leanfin_allocations al
            JOIN leanfin_transactions t ON al.transaction_id = t.id
            JOIN leanfin_labels l ON al.label_id = l.id
@@ -38,6 +40,7 @@ pub async fn get_expense_series(
            WHERE a.user_id = ?
              AND l.id IN ({placeholders})
              AND t.date >= ?
+             AND t.date <= ?
            GROUP BY t.date, l.id
            ORDER BY t.date ASC, l.name ASC"#
     );
@@ -46,7 +49,7 @@ pub async fn get_expense_series(
     for lid in label_ids {
         query = query.bind(lid);
     }
-    query = query.bind(&cutoff);
+    query = query.bind(from).bind(to);
 
     let rows = query.fetch_all(pool).await?;
     Ok(rows)

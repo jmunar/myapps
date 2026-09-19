@@ -1,3 +1,5 @@
+use chrono::Datelike;
+
 #[tokio::test]
 async fn balance_evolution_page_renders_with_nav_and_controls() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
@@ -7,7 +9,7 @@ async fn balance_evolution_page_renders_with_nav_and_controls() {
     let body = response.text();
     assert!(body.contains("Balance Evolution"));
     assert!(body.contains("balance-controls"));
-    assert!(body.contains("period-selector"));
+    assert!(body.contains("lf-window"));
 }
 
 #[tokio::test]
@@ -45,16 +47,20 @@ async fn balance_evolution_page_has_individual_account_options() {
 }
 
 #[tokio::test]
-async fn balance_evolution_page_has_period_buttons() {
+async fn balance_evolution_page_has_a_window_selector() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
 
     let response = app.server.get("/leanfin/balance-evolution").await;
     let body = response.text();
-    assert!(body.contains(">30d</button>"));
-    assert!(body.contains(">90d</button>"));
-    assert!(body.contains(">180d</button>"));
-    assert!(body.contains(">365d</button>"));
+    // One box, stepped through — not one button per window.
+    assert!(body.contains(r#"data-window="10w""#));
+    assert!(body.contains(r#"<span class="lf-window-value">10w</span>"#));
+    assert!(body.contains(r#"data-step="longer""#));
+    assert!(body.contains(r#"data-step="shorter""#));
+    // The running period is charted until the `+` is switched off.
+    assert!(body.contains(r#"class="lf-window-now lf-window-now-active" aria-pressed="true""#));
+    assert!(!body.contains(">90d</button>"));
 }
 
 #[tokio::test]
@@ -72,7 +78,7 @@ async fn data_endpoint_returns_script_calling_update_balance_chart() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
     // Data endpoint returns a script tag calling updateBalanceChart with JSON arrays
@@ -89,7 +95,7 @@ async fn data_endpoint_returns_script_when_account_id_empty() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", "")
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
     // Aggregated balance also returns updateBalanceChart script
@@ -117,7 +123,7 @@ async fn data_endpoint_returns_empty_state_when_no_balance_data() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
     // Empty state is now shown via showBalanceEmpty script call
@@ -135,7 +141,7 @@ async fn data_endpoint_returns_not_found_for_other_users_account() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", "99999")
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
     // Not-found is shown via showBalanceEmpty script call
@@ -158,13 +164,18 @@ async fn data_endpoint_contains_balance_data_as_json_arrays() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
-    // Data is passed as JSON arrays to updateBalanceChart(dates, values, accountId)
-    assert!(body.contains("updateBalanceChart(["));
-    // Contains date strings in the first array
-    assert!(body.contains("\"20"));
+    let p = chart_payload(&body);
+    let dates = p["dates"].as_array().expect("dates array");
+    assert!(!dates.is_empty());
+    assert_eq!(p["values"].as_array().unwrap().len(), dates.len());
+    assert_eq!(p["starts"].as_array().unwrap().len(), dates.len());
+    assert!(
+        chrono::NaiveDate::parse_from_str(dates[0].as_str().unwrap(), "%Y-%m-%d").is_ok(),
+        "dates should be ISO days: {dates:?}"
+    );
 }
 
 #[tokio::test]
@@ -182,11 +193,11 @@ async fn data_endpoint_passes_account_id_to_chart_function() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
-    // The account ID is passed as the third argument to updateBalanceChart
-    assert!(body.contains(&format!("'{account_id}'")));
+    // The payload carries the account, so a click-through keeps the filter.
+    assert_eq!(chart_payload(&body)["accountId"], account_id.to_string());
 }
 
 #[tokio::test]
@@ -272,7 +283,7 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "30")
+        .add_query_param("window", "30d")
         .await;
     let body = response.text();
 
@@ -394,11 +405,11 @@ async fn data_endpoint_returns_empty_account_id_for_aggregated() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", "")
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
-    // When aggregated (no account_id), the third param should be empty string
-    assert!(body.contains("''"));
+    // Aggregated: no account to carry through to the transaction list.
+    assert_eq!(chart_payload(&body)["accountId"], "");
 }
 
 /// Insert a manual account with a single balance entry `days_ago` days in the past.
@@ -460,7 +471,7 @@ async fn manual_account_without_recent_entries_still_shows_balance() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
 
@@ -469,7 +480,11 @@ async fn manual_account_without_recent_entries_still_shows_balance() {
         "stale manual account should still render a series, got: {body}"
     );
     assert!(
-        body.contains("5000.00"),
+        chart_payload(&body)["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|v| v.as_f64().unwrap() == 5000.0),
         "series should carry the last known balance forward, got: {body}"
     );
 }
@@ -492,12 +507,16 @@ async fn aggregated_series_includes_manual_account_without_recent_entries() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", "")
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
 
     assert!(
-        body.contains("6000.00"),
+        chart_payload(&body)["values"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v.as_f64().unwrap() == 6000.0),
         "total should include the account with no recent entries, got: {body}"
     );
 }
@@ -519,16 +538,17 @@ async fn aggregated_series_excludes_archived_accounts() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", "")
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await;
     let body = response.text();
 
+    let values = chart_payload(&body)["values"].as_array().unwrap().clone();
     assert!(
-        body.contains("1000.00"),
+        values.iter().any(|v| v.as_f64().unwrap() == 1000.0),
         "total should include the active account, got: {body}"
     );
     assert!(
-        !body.contains("8000.00"),
+        values.iter().all(|v| v.as_f64().unwrap() != 8000.0),
         "archived account should not contribute to the total, got: {body}"
     );
 }
@@ -569,7 +589,7 @@ async fn deep_link_preselects_the_requested_account() {
     );
     // The first data request must already be filtered, or the page would flash
     // the aggregate series before anyone touched the picker.
-    assert!(body.contains(&format!("account_id={account_id}&days=90")));
+    assert!(body.contains(&format!("account_id={account_id}&window=10w&current=1")));
 }
 
 #[tokio::test]
@@ -621,46 +641,58 @@ async fn deep_link_to_an_archived_account_falls_back_to_all_accounts() {
         !body.contains(&format!(r#"<option value="{archived}""#)),
         "an archived account must not appear in the picker"
     );
-    assert!(body.contains("account_id=&days=90"));
+    assert!(body.contains("account_id=&window=10w&current=1"));
 }
 
-// ── Window start (4th argument) ──────────────────────────────
+// ── Bucket boundaries in the payload ─────────────────────────
 
-/// The arguments of the single `updateBalanceChart(...)` call in a response.
-fn chart_args(body: &str) -> Vec<String> {
+/// The single `updateBalanceChart({...})` payload in a response.
+fn chart_payload(body: &str) -> serde_json::Value {
     let call = body
         .split_once("updateBalanceChart(")
         .unwrap_or_else(|| panic!("no chart call in: {body}"))
         .1;
-    let call = call
+    let json = call
         .rsplit_once(");</script>")
         .expect("unterminated call")
         .0;
+    serde_json::from_str(json).expect("payload is not valid JSON")
+}
 
-    // Split on top-level commas only — the first argument is a JSON array.
-    let mut args = Vec::new();
-    let mut depth = 0;
-    let mut current = String::new();
-    for c in call.chars() {
-        match c {
-            '[' => {
-                depth += 1;
-                current.push(c);
-            }
-            ']' => {
-                depth -= 1;
-                current.push(c);
-            }
-            ',' if depth == 0 => args.push(std::mem::take(&mut current)),
-            _ => current.push(c),
-        }
+#[tokio::test]
+async fn every_point_carries_the_start_of_the_period_it_closes() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let account_id = santander_id(&app).await;
+
+    let body = app
+        .server
+        .get("/leanfin/balance-evolution/data")
+        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("window", "10w")
+        .await
+        .text();
+
+    let p = chart_payload(&body);
+    let starts: Vec<String> = serde_json::from_value(p["starts"].clone()).unwrap();
+    let dates: Vec<String> = serde_json::from_value(p["dates"].clone()).unwrap();
+    assert_eq!(starts.len(), dates.len());
+
+    // A point is the END of a period, and clicking it lists the transactions
+    // from its start — so a start after its own end would list nothing.
+    for (start, end) in starts.iter().zip(&dates) {
+        assert!(start <= end, "period {start}..{end} runs backwards");
     }
-    args.push(current);
-    args
+    // Weekly buckets: each period starts the day after the one before ends.
+    for pair in dates.windows(2) {
+        let prev = chrono::NaiveDate::parse_from_str(&pair[0], "%Y-%m-%d").unwrap();
+        let next = chrono::NaiveDate::parse_from_str(&pair[1], "%Y-%m-%d").unwrap();
+        assert_eq!(next, prev + chrono::Duration::days(7));
+    }
 }
 
 #[tokio::test]
-async fn data_endpoint_passes_the_window_start_as_the_fourth_argument() {
+async fn a_twelve_month_window_is_bucketed_by_month() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
     app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
     let account_id = santander_id(&app).await;
@@ -669,68 +701,72 @@ async fn data_endpoint_passes_the_window_start_as_the_fourth_argument() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "12m")
         .await
         .text();
 
-    let args = chart_args(&body);
-    assert_eq!(
-        args.len(),
-        4,
-        "a chart point covers a period, so it needs a window start: {body}"
-    );
-
-    let window_start = args[3].trim().trim_matches('\'');
-    assert!(
-        chrono::NaiveDate::parse_from_str(window_start, "%Y-%m-%d").is_ok(),
-        "the 4th argument should be a date, got {window_start:?}"
-    );
-
-    // Whatever the bucketing, the window must open no later than the first
-    // plotted point — the JS uses it as the start of that point's period.
-    let first_point: String = serde_json::from_str::<Vec<String>>(args[0].trim())
-        .expect("first argument should be a JSON array of dates")
-        .first()
-        .expect("series should not be empty")
-        .clone();
-    assert!(
-        window_start <= first_point.as_str(),
-        "windowStart {window_start} is after the first point {first_point}"
-    );
-}
-
-#[tokio::test]
-async fn window_start_predates_the_first_point_when_buckets_are_monthly() {
-    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
-    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
-    let account_id = santander_id(&app).await;
-
-    // At 365d the series is bucketed by month and each point is that month's
-    // last reading, so the raw first day is genuinely earlier than point one.
-    let body = app
-        .server
-        .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
-        .add_query_param("days", "365")
-        .await
-        .text();
-
-    let args = chart_args(&body);
-    let window_start = args[3].trim().trim_matches('\'').to_string();
-    let points: Vec<String> = serde_json::from_str(args[0].trim()).unwrap();
+    let p = chart_payload(&body);
+    let dates: Vec<String> = serde_json::from_value(p["dates"].clone()).unwrap();
+    let starts: Vec<String> = serde_json::from_value(p["starts"].clone()).unwrap();
 
     assert!(
-        !window_start.is_empty(),
-        "monthly buckets still need a start"
-    );
-    assert!(
-        window_start <= points[0],
-        "windowStart {window_start} is after the first monthly point {}",
-        points[0]
-    );
-    assert!(
-        points.len() > 1,
+        dates.len() > 1,
         "a year of seeded history should produce several monthly points"
+    );
+    for (start, end) in starts.iter().zip(&dates) {
+        let start = chrono::NaiveDate::parse_from_str(start, "%Y-%m-%d").unwrap();
+        let end = chrono::NaiveDate::parse_from_str(end, "%Y-%m-%d").unwrap();
+        assert_eq!(start.day(), 1, "a monthly bucket starts on the 1st");
+        assert_ne!(
+            (end + chrono::Duration::days(1)).month(),
+            end.month(),
+            "a monthly bucket ends on a month end"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_running_period_is_dropped_when_the_plus_is_off() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let account_id = santander_id(&app).await;
+
+    let with: Vec<String> = serde_json::from_value(
+        chart_payload(
+            &app.server
+                .get("/leanfin/balance-evolution/data")
+                .add_query_param("account_id", &account_id.to_string())
+                .add_query_param("window", "12m")
+                .add_query_param("current", "1")
+                .await
+                .text(),
+        )["dates"]
+            .clone(),
+    )
+    .unwrap();
+    let without: Vec<String> = serde_json::from_value(
+        chart_payload(
+            &app.server
+                .get("/leanfin/balance-evolution/data")
+                .add_query_param("account_id", &account_id.to_string())
+                .add_query_param("window", "12m")
+                .add_query_param("current", "0")
+                .await
+                .text(),
+        )["dates"]
+            .clone(),
+    )
+    .unwrap();
+
+    // The running month is the only difference, and it is the newest bucket.
+    assert_eq!(with.len(), without.len() + 1);
+    assert_eq!(&with[..without.len()], &without[..]);
+    let today = chrono::Utc::now().date_naive();
+    let last_complete =
+        chrono::NaiveDate::parse_from_str(without.last().unwrap(), "%Y-%m-%d").unwrap();
+    assert!(
+        last_complete < today.with_day(1).unwrap(),
+        "the last complete month must end before the running one begins"
     );
 }
 
@@ -748,7 +784,7 @@ async fn window_start_is_blank_when_there_is_no_series() {
         .server
         .get("/leanfin/balance-evolution/data")
         .add_query_param("account_id", &santander_id(&app).await.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await
         .text();
 

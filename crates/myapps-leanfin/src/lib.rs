@@ -8,6 +8,7 @@ mod icons;
 mod labels;
 pub mod models;
 pub mod ops;
+pub mod period;
 pub mod services;
 pub mod settings;
 mod sync_handler;

@@ -35,6 +35,7 @@ pub fn routes() -> Router<AppState> {
             get(indexa_link_form).post(indexa_link_submit),
         )
         .route("/accounts/{id}/color", post(update_color))
+        .route("/accounts/{id}/name", get(name_form).post(name_submit))
         .route(
             "/accounts/manual/{id}/edit",
             get(manual_edit_form).post(manual_edit_submit),
@@ -170,11 +171,12 @@ async fn list_accounts(
             };
 
             let color_val = a.color.as_deref().unwrap_or("#6B6B6B");
+            let name_field = name_field(base, a.id, &account_display_name(a), lang);
             bank_items.push_str(&format!(
                 r##"<div class="account-item" style="--account-color:{color_val}">
                     <div class="account-color-stripe"></div>
                     <div style="flex:1">
-                        <div class="account-bank">{bank}</div>
+                        {name_field}
                         <div class="account-iban">{iban}</div>
                         {balance_html}
                     </div>
@@ -192,7 +194,6 @@ async fn list_accounts(
                         </form>
                     </div>
                 </div>"##,
-                bank = html_escape(&a.bank_name),
                 id = a.id,
                 archive = t.acc_archive,
                 archive_icon = super::icons::ARCHIVE,
@@ -251,11 +252,12 @@ async fn list_accounts(
             ));
         } else {
             let color_val = a.color.as_deref().unwrap_or("#6B6B6B");
+            let name_field = name_field(base, a.id, &account_display_name(a), lang);
             manual_items.push_str(&format!(
                 r##"<div class="account-item" style="--account-color:{color_val}">
                     <div class="account-color-stripe"></div>
                     <div style="flex:1">
-                        <div class="account-bank">{name}</div>
+                        {name_field}
                         {category_badge}
                         {balance_html}
                     </div>
@@ -337,11 +339,18 @@ async fn list_accounts(
                 archive_icon = super::icons::ARCHIVE,
             )
         };
+        let name_field = if a.archived {
+            format!(
+                r#"<div class="account-name"><span class="account-bank">{name}</span>{archived_badge}</div>"#
+            )
+        } else {
+            name_field(base, a.id, &account_display_name(a), lang)
+        };
         indexa_items.push_str(&format!(
             r##"<div class="account-item" style="--account-color:{color_val}">
                 <div class="account-color-stripe"></div>
                 <div style="flex:1">
-                    <div class="account-bank">{name}{archived_badge}</div>
+                    {name_field}
                     <span class="category-badge">{category}</span>
                     {balance_html}
                 </div>
@@ -504,6 +513,133 @@ struct AccountRow {
     asset_category: Option<String>,
     color: Option<String>,
     archived: bool,
+}
+
+// ── Account name, editable in place ──────────────────────────────
+//
+// Two accounts at the same bank arrive with the same `bank_name` and are told
+// apart only by an IBAN nobody reads. The name the user types lives in
+// `account_name` for every account type, and falls back to the bank's own when
+// it is cleared. Provider syncs never write this column, so a rename survives
+// them.
+
+/// What the account is called: the user's name for it, else the bank's.
+/// Returns RAW text — HTML callers must escape it.
+fn account_display_name(a: &AccountRow) -> String {
+    a.account_name
+        .clone()
+        .unwrap_or_else(|| a.bank_name.clone())
+}
+
+/// The name, plus the pencil that swaps it for `name_editor`.
+fn name_field(base: &str, id: i64, name: &str, lang: Lang) -> String {
+    let t = super::i18n::t(lang);
+    format!(
+        r##"<div class="account-name" id="account-name-{id}">
+            <span class="account-bank">{name}</span>
+            <button type="button" class="btn-icon account-rename"
+                    aria-label="{rename}" title="{rename}"
+                    hx-get="{base}/leanfin/accounts/{id}/name"
+                    hx-target="#account-name-{id}"
+                    hx-swap="outerHTML">{pencil}</button>
+        </div>"##,
+        name = html_escape(name),
+        rename = t.acc_rename,
+        pencil = super::icons::PENCIL,
+    )
+}
+
+/// The same slot in edit mode. Saving swaps it back for `name_field`.
+fn name_editor(base: &str, id: i64, name: &str, lang: Lang) -> String {
+    let t = super::i18n::t(lang);
+    format!(
+        r##"<form class="account-name account-name-editing" id="account-name-{id}"
+              hx-post="{base}/leanfin/accounts/{id}/name"
+              hx-target="this" hx-swap="outerHTML">
+            <input type="text" name="name" value="{name}" maxlength="60"
+                   aria-label="{label}" autofocus>
+            <button type="submit" class="btn btn-primary btn-sm">{save}</button>
+        </form>"##,
+        name = html_escape(name),
+        label = t.acc_name_label,
+        save = t.acc_name_save,
+    )
+}
+
+#[derive(Deserialize)]
+struct NameForm {
+    name: String,
+}
+
+async fn name_form(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    Path(account_id): Path<i64>,
+) -> Html<String> {
+    let base = &state.config.base_path;
+    let row: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT bank_name, account_name FROM leanfin_accounts WHERE id = ? AND user_id = ?",
+    )
+    .bind(account_id)
+    .bind(user_id.0)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    // Someone else's account swaps in nothing rather than an editor.
+    let Some((bank_name, account_name)) = row else {
+        return Html(String::new());
+    };
+    Html(name_editor(
+        base,
+        account_id,
+        account_name.as_deref().unwrap_or(&bank_name),
+        lang,
+    ))
+}
+
+async fn name_submit(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Extension(lang): Extension<Lang>,
+    Path(account_id): Path<i64>,
+    Form(form): Form<NameForm>,
+) -> Html<String> {
+    let base = &state.config.base_path;
+    let trimmed = form.name.trim();
+    // An empty box is not a name: clearing it restores the bank's own.
+    let stored: Option<&str> = (!trimmed.is_empty()).then_some(trimmed);
+
+    let updated =
+        sqlx::query("UPDATE leanfin_accounts SET account_name = ? WHERE id = ? AND user_id = ?")
+            .bind(stored)
+            .bind(account_id)
+            .bind(user_id.0)
+            .execute(&state.pool)
+            .await;
+
+    if let Err(e) = updated {
+        tracing::error!("Failed to rename account {account_id}: {e:#}");
+    }
+
+    let bank_name: Option<String> =
+        sqlx::query_scalar("SELECT bank_name FROM leanfin_accounts WHERE id = ? AND user_id = ?")
+            .bind(account_id)
+            .bind(user_id.0)
+            .fetch_optional(&state.pool)
+            .await
+            .unwrap_or(None);
+
+    let Some(bank_name) = bank_name else {
+        return Html(String::new());
+    };
+    Html(name_field(
+        base,
+        account_id,
+        stored.unwrap_or(&bank_name),
+        lang,
+    ))
 }
 
 // ── Update account color ─────────────────────────────────────────

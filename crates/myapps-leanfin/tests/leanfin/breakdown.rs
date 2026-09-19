@@ -36,7 +36,7 @@ async fn expenses_url_redirects_to_breakdown() {
 }
 
 #[tokio::test]
-async fn breakdown_page_renders_group_pills_and_period_selector() {
+async fn breakdown_page_renders_group_pills_and_window_selector() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
     app.seed_and_login(&LeanFinApp).await;
 
@@ -53,11 +53,13 @@ async fn breakdown_page_renders_group_pills_and_period_selector() {
     // Individual labels are no longer selectable on this page.
     assert!(!body.contains("data-label-id="));
 
-    assert!(body.contains("period-selector"));
-    for d in ["30d", "90d", "180d", "365d"] {
-        assert!(body.contains(d));
-    }
-    assert!(body.contains(r#"class="period-btn period-btn-active" data-days="90""#));
+    // One stepped box rather than one button per window, plus the `+` that
+    // adds the period we are currently in.
+    assert!(body.contains(r#"data-window="10w""#));
+    assert!(body.contains(r#"<span class="lf-window-value">10w</span>"#));
+    assert!(body.contains(r#"data-step="longer""#));
+    assert!(body.contains(r#"class="lf-window-now lf-window-now-active" aria-pressed="true""#));
+    assert!(!body.contains("period-btn"));
 }
 
 #[tokio::test]
@@ -96,7 +98,7 @@ async fn chart_endpoint_requires_authentication() {
         .server
         .get("/leanfin/breakdown/chart")
         .add_query_param("group_id", "1")
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .expect_failure()
         .await;
     assert_eq!(response.status_code(), 303);
@@ -111,7 +113,7 @@ async fn chart_endpoint_rejects_a_group_the_user_does_not_own() {
         .server
         .get("/leanfin/breakdown/chart")
         .add_query_param("group_id", "99999")
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await
         .text();
 
@@ -130,7 +132,7 @@ async fn chart_endpoint_reports_an_empty_group() {
         .server
         .get("/leanfin/breakdown/chart")
         .add_query_param("group_id", &other.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await
         .text();
 
@@ -148,7 +150,7 @@ async fn chart_endpoint_returns_one_payload_covering_both_charts() {
         .server
         .get("/leanfin/breakdown/chart")
         .add_query_param("group_id", &essentials.to_string())
-        .add_query_param("days", "365")
+        .add_query_param("window", "12m")
         .await
         .text();
 
@@ -170,7 +172,7 @@ async fn chart_endpoint_returns_one_payload_covering_both_charts() {
 }
 
 #[tokio::test]
-async fn chart_endpoint_defaults_to_90_days() {
+async fn chart_endpoint_defaults_to_the_default_window() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
     app.seed_and_login(&LeanFinApp).await;
 
@@ -198,7 +200,7 @@ async fn chart_payload_matrix_matches_the_category_count() {
         .server
         .get("/leanfin/breakdown/chart")
         .add_query_param("group_id", &essentials.to_string())
-        .add_query_param("days", "30")
+        .add_query_param("window", "30d")
         .await
         .text();
 
@@ -306,18 +308,32 @@ async fn spend_on(app: &myapps_test_harness::TestApp, f: &Fixture, date: NaiveDa
     .unwrap();
 }
 
-async fn payload(app: &myapps_test_harness::TestApp, group: i64, days: i64) -> serde_json::Value {
+async fn payload(
+    app: &myapps_test_harness::TestApp,
+    group: i64,
+    window: &str,
+) -> serde_json::Value {
+    payload_with(app, group, window, "1").await
+}
+
+async fn payload_with(
+    app: &myapps_test_harness::TestApp,
+    group: i64,
+    window: &str,
+    current: &str,
+) -> serde_json::Value {
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
         .add_query_param("group_id", &group.to_string())
-        .add_query_param("days", &days.to_string())
+        .add_query_param("window", window)
+        .add_query_param("current", current)
         .await
         .text();
 
     assert!(
         body.contains("updateBreakdown("),
-        "expected a payload for {days}d, got: {body}"
+        "expected a payload for {window}, got: {body}"
     );
     let json = body
         .trim_start_matches("<script>window.updateBreakdown(")
@@ -335,13 +351,23 @@ fn matrix_total(payload: &serde_json::Value) -> f64 {
         .sum()
 }
 
-fn dates(payload: &serde_json::Value) -> Vec<NaiveDate> {
-    payload["dates"]
+fn iso_dates(value: &serde_json::Value) -> Vec<NaiveDate> {
+    value
         .as_array()
         .unwrap()
         .iter()
         .map(|d| NaiveDate::parse_from_str(d.as_str().unwrap(), "%Y-%m-%d").unwrap())
         .collect()
+}
+
+/// The start of each bucket — the day after the previous bucket ended.
+fn starts(payload: &serde_json::Value) -> Vec<NaiveDate> {
+    iso_dates(&payload["starts"])
+}
+
+/// The end of each bucket, which is what the chart plots a bar against.
+fn dates(payload: &serde_json::Value) -> Vec<NaiveDate> {
+    iso_dates(&payload["dates"])
 }
 
 #[tokio::test]
@@ -350,11 +376,12 @@ async fn daily_buckets_cover_every_day_of_the_window() {
     let f = fresh_fixture(&app).await;
     spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
 
-    let p = payload(&app, f.group, 30).await;
+    let p = payload(&app, f.group, "30d").await;
     let d = dates(&p);
 
     let today = Utc::now().date_naive();
-    assert_eq!(d.len(), 31, "30d is inclusive at both ends");
+    // 30 whole days that have run their course, plus the one we are in.
+    assert_eq!(d.len(), 31);
     assert_eq!(d[0], today - Duration::days(30));
     assert_eq!(*d.last().unwrap(), today);
     for pair in d.windows(2) {
@@ -368,25 +395,23 @@ async fn weekly_buckets_all_land_on_a_sunday() {
     let f = fresh_fixture(&app).await;
     spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
 
-    // 31 is the first day past the daily threshold, 90 the last weekly one.
-    for days in [31, 90] {
-        let p = payload(&app, f.group, days).await;
-        let d = dates(&p);
-        for date in &d {
-            assert_eq!(
-                date.weekday(),
-                chrono::Weekday::Sun,
-                "{days}d bucket {date} is not a week end"
-            );
-        }
-        for pair in d.windows(2) {
-            assert_eq!(pair[1], pair[0] + Duration::days(7));
-        }
-        assert!(
-            *d.last().unwrap() >= Utc::now().date_naive(),
-            "the current, incomplete week must still have a bucket"
+    let p = payload(&app, f.group, "10w").await;
+    let d = dates(&p);
+    assert_eq!(d.len(), 11, "ten whole weeks, plus the one we are in");
+    for date in &d {
+        assert_eq!(
+            date.weekday(),
+            chrono::Weekday::Sun,
+            "bucket {date} is not a week end"
         );
     }
+    for pair in d.windows(2) {
+        assert_eq!(pair[1], pair[0] + Duration::days(7));
+    }
+    assert!(
+        *d.last().unwrap() >= Utc::now().date_naive(),
+        "the current, incomplete week must still have a bucket"
+    );
 }
 
 #[tokio::test]
@@ -395,15 +420,15 @@ async fn monthly_buckets_all_land_on_a_month_end() {
     let f = fresh_fixture(&app).await;
     spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
 
-    // 91 is the first day past the weekly threshold.
-    for days in [91, 365] {
-        let p = payload(&app, f.group, days).await;
+    for (window, months) in [("6m", 7), ("12m", 13)] {
+        let p = payload(&app, f.group, window).await;
         let d = dates(&p);
+        assert_eq!(d.len(), months, "{window} should chart {months} buckets");
         for date in &d {
             assert_ne!(
                 (*date + Duration::days(1)).month(),
                 date.month(),
-                "{days}d bucket {date} is not a month end"
+                "{window} bucket {date} is not a month end"
             );
         }
         assert_eq!(
@@ -415,27 +440,34 @@ async fn monthly_buckets_all_land_on_a_month_end() {
 }
 
 #[tokio::test]
-async fn a_spend_on_the_first_day_of_the_window_is_not_dropped() {
+async fn the_window_opens_on_a_whole_period() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
     let f = fresh_fixture(&app).await;
+    spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
 
-    let today = Utc::now().date_naive();
-    for days in [30i64, 90, 365] {
-        // Fresh label per window so the totals never mix.
-        spend_on(&app, &f, today - Duration::days(days), 100.0 + days as f64).await;
-    }
+    // A month window starts on the 1st and a week window on a Monday: that is
+    // what makes one bar comparable with the next.
+    let p = payload(&app, f.group, "12m").await;
+    assert_eq!(starts(&p)[0].day(), 1);
+    let p = payload(&app, f.group, "10w").await;
+    assert_eq!(starts(&p)[0].weekday(), chrono::Weekday::Mon);
+}
 
-    // Each window must contain its own boundary spend and every later one.
-    for days in [30i64, 90, 365] {
-        let expected: f64 = [30i64, 90, 365]
-            .iter()
-            .filter(|d| **d <= days)
-            .map(|d| 100.0 + *d as f64)
-            .sum();
-        let total = matrix_total(&payload(&app, f.group, days).await);
+#[tokio::test]
+async fn a_spend_on_the_first_day_of_the_window_is_not_dropped() {
+    for window in ["30d", "10w", "6m", "12m"] {
+        let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+        let f = fresh_fixture(&app).await;
+        // Something recent, so the group has data and a payload to read the
+        // window's own first day off.
+        spend_on(&app, &f, Utc::now().date_naive(), 1.0).await;
+        let start = starts(&payload(&app, f.group, window).await)[0];
+
+        spend_on(&app, &f, start, 100.0).await;
+        let total = matrix_total(&payload(&app, f.group, window).await);
         assert!(
-            (total - expected).abs() < 0.01,
-            "{days}d window lost money at its edge: expected {expected}, charted {total}"
+            (total + 101.0).abs() < 0.01,
+            "{window} lost money at its edge: charted {total}"
         );
     }
 }
@@ -446,13 +478,34 @@ async fn a_spend_from_today_is_not_dropped() {
     let f = fresh_fixture(&app).await;
     spend_on(&app, &f, Utc::now().date_naive(), 42.50).await;
 
-    for days in [30, 90, 365] {
-        let total = matrix_total(&payload(&app, f.group, days).await);
+    for window in ["30d", "10w", "6m", "12m"] {
+        let total = matrix_total(&payload(&app, f.group, window).await);
         assert!(
-            (total - 42.50).abs() < 0.01,
-            "{days}d window lost today's spend: charted {total}"
+            (total + 42.50).abs() < 0.01,
+            "{window} lost today's spend: charted {total}"
         );
     }
+}
+
+#[tokio::test]
+async fn switching_the_plus_off_drops_the_period_we_are_in() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    let f = fresh_fixture(&app).await;
+
+    let today = Utc::now().date_naive();
+    spend_on(&app, &f, today, 42.50).await;
+    // Something in a period that has closed, so the payload is never empty.
+    spend_on(&app, &f, today - Duration::days(40), 10.0).await;
+
+    let with = payload_with(&app, f.group, "12m", "1").await;
+    let without = payload_with(&app, f.group, "12m", "0").await;
+
+    assert_eq!(dates(&with).len(), dates(&without).len() + 1);
+    assert!((matrix_total(&with) + 52.50).abs() < 0.01);
+    assert!(
+        (matrix_total(&without) + 10.0).abs() < 0.01,
+        "the running month must not be charted when the `+` is off"
+    );
 }
 
 #[tokio::test]
@@ -462,44 +515,102 @@ async fn a_spend_before_the_window_is_excluded() {
 
     let today = Utc::now().date_naive();
     spend_on(&app, &f, today, 20.0).await;
-    spend_on(&app, &f, today - Duration::days(31), 999.0).await;
+    let start = starts(&payload(&app, f.group, "30d").await)[0];
+    spend_on(&app, &f, start - Duration::days(1), 999.0).await;
 
-    let total = matrix_total(&payload(&app, f.group, 30).await);
+    let total = matrix_total(&payload(&app, f.group, "30d").await);
     assert!(
-        (total - 20.0).abs() < 0.01,
+        (total + 20.0).abs() < 0.01,
         "a spend older than the window was charted: {total}"
     );
 }
 
 #[tokio::test]
-async fn window_start_precedes_the_first_bucket() {
+async fn every_bucket_carries_the_period_it_covers() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
     let f = fresh_fixture(&app).await;
     spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
 
-    // The JS reads the first bucket's period as windowStart..dates[0], so a
-    // windowStart after dates[0] would make that period empty.
-    for days in [30i64, 90, 365] {
-        let p = payload(&app, f.group, days).await;
-        let start =
-            NaiveDate::parse_from_str(p["windowStart"].as_str().unwrap(), "%Y-%m-%d").unwrap();
-        assert_eq!(start, Utc::now().date_naive() - Duration::days(days));
-        assert!(
-            start <= dates(&p)[0],
-            "{days}d: windowStart {start} is after the first bucket"
+    for window in ["30d", "10w", "6m", "12m"] {
+        let p = payload(&app, f.group, window).await;
+        let ends = dates(&p);
+        let starts = starts(&p);
+        assert_eq!(starts.len(), ends.len());
+        assert_eq!(
+            NaiveDate::parse_from_str(p["windowStart"].as_str().unwrap(), "%Y-%m-%d").unwrap(),
+            starts[0],
+            "{window}: windowStart must be the first bucket's own start"
         );
+        // Periods tile the window: each starts the day after the last ended.
+        for i in 0..ends.len() {
+            assert!(starts[i] <= ends[i], "{window}: period {i} runs backwards");
+            if i > 0 {
+                assert_eq!(starts[i], ends[i - 1] + Duration::days(1));
+            }
+        }
     }
 }
 
 #[tokio::test]
-async fn income_and_spending_keep_opposite_signs_in_the_matrix() {
+async fn only_the_period_we_are_in_weighs_less_than_a_whole_one() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    let f = fresh_fixture(&app).await;
+    spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
+    // Also in a month that has closed, so the `+`-off payload is not empty.
+    spend_on(&app, &f, Utc::now().date_naive() - Duration::days(40), 5.0).await;
+
+    // The weights are what the charts divide by for a per-period average, so
+    // a closed period must count as exactly one.
+    let p = payload(&app, f.group, "12m").await;
+    let w: Vec<f64> = serde_json::from_value(p["weights"].clone()).unwrap();
+    assert_eq!(w.len(), dates(&p).len());
+    assert!(w[..12].iter().all(|x| *x == 1.0), "closed months weigh 1");
+
+    let today = Utc::now().date_naive();
+    let days_in_month = today
+        .with_day(1)
+        .unwrap()
+        .checked_add_months(chrono::Months::new(1))
+        .unwrap()
+        .signed_duration_since(today.with_day(1).unwrap())
+        .num_days() as f64;
+    assert!(
+        (w[12] - today.day() as f64 / days_in_month).abs() < 1e-9,
+        "the running month should weigh the days gone by: {}",
+        w[12]
+    );
+
+    let off = payload_with(&app, f.group, "12m", "0").await;
+    let w: Vec<f64> = serde_json::from_value(off["weights"].clone()).unwrap();
+    assert!(w.iter().all(|x| *x == 1.0));
+}
+
+#[tokio::test]
+async fn the_payload_names_the_average_for_its_bucket() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    let f = fresh_fixture(&app).await;
+    spend_on(&app, &f, Utc::now().date_naive(), 5.0).await;
+
+    for (window, label) in [
+        ("30d", "Daily average"),
+        ("10w", "Weekly average"),
+        ("6m", "Monthly average"),
+        ("12m", "Monthly average"),
+    ] {
+        let p = payload(&app, f.group, window).await;
+        assert_eq!(p["avgLabel"], label, "{window} named its average wrong");
+    }
+}
+
+#[tokio::test]
+async fn spending_is_negative_and_income_positive() {
     let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
     let f = fresh_fixture(&app).await;
 
     let today = Utc::now().date_naive();
     spend_on(&app, &f, today, 30.0).await;
 
-    // A credit allocated to the same label: the series counts it negatively.
+    // A credit allocated to the same label: it is income, so it counts up.
     let txn: i64 = sqlx::query_scalar(
         "INSERT INTO leanfin_transactions (account_id, external_id, date, amount, currency,
              description, counterparty)
@@ -519,11 +630,19 @@ async fn income_and_spending_keep_opposite_signs_in_the_matrix() {
     .await
     .unwrap();
 
-    let total = matrix_total(&payload(&app, f.group, 30).await);
+    // Spending reads the way it reads on a statement: 30 out, 10 in, 20 down.
+    let total = matrix_total(&payload(&app, f.group, "30d").await);
     assert!(
-        (total - 20.0).abs() < 0.01,
-        "a refund must net off against the spend: charted {total}"
+        (total + 20.0).abs() < 0.01,
+        "the net of a 30 spend and a 10 refund should be -20, charted {total}"
     );
+
+    // And on its own, a spend is never charted as a positive bar.
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    let f = fresh_fixture(&app).await;
+    spend_on(&app, &f, today, 30.0).await;
+    let total = matrix_total(&payload(&app, f.group, "30d").await);
+    assert!((total + 30.0).abs() < 0.01, "a spend charted as {total}");
 }
 
 #[tokio::test]
@@ -536,7 +655,7 @@ async fn chart_endpoint_reports_a_group_whose_labels_have_no_data() {
         .server
         .get("/leanfin/breakdown/chart")
         .add_query_param("group_id", &f.group.to_string())
-        .add_query_param("days", "90")
+        .add_query_param("window", "10w")
         .await
         .text();
 

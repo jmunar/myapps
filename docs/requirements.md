@@ -132,6 +132,9 @@ visibility into spending patterns.
 ### User interface
 
 - Web application (responsive, mobile-friendly).
+- Swipe between tabs — on a phone, a horizontal swipe across an area with no
+  widget of its own moves to the neighbouring nav tab. Swipes that start on a
+  control, a chart or anything that scrolls sideways are left alone.
 - Progressive Web App (PWA) — installable on mobile and desktop via web app
   manifest, service worker for offline static asset caching and network-first
   HTML page loading.
@@ -263,8 +266,10 @@ visibility into spending patterns.
   real-time status feedback: spinning icon during sync, success/error pill badge
   on completion. The transaction list auto-refreshes after sync.
 - **Balance evolution tracking** — a dedicated Balance page shows an interactive
-  Chart.js line chart with period selectors (30d/90d/180d/365d) and an
-  account dropdown including an "All accounts" aggregated view. Each sync
+  Chart.js line chart with the shared time-window selector (see below) and an
+  account dropdown including an "All accounts" aggregated view. The dropdown
+  lists each account by name only — no IBAN — so two accounts at the same bank
+  are told apart by renaming one. Each sync
   fetches balances first, records a snapshot, then fetches transactions and
   links them to that snapshot via `snapshot_id`. Bank account balances between
   snapshots are interpolated using only the transactions linked to the next
@@ -293,13 +298,34 @@ visibility into spending patterns.
 - **Spending breakdown** — a dedicated Breakdown page (formerly Expenses;
   `/leanfin/expenses` still redirects) where the user picks exactly one label
   group. It shows a Chart.js time series of that group's total per interval
-  (daily for 30d, weekly for 90d, monthly for 180d/365d, using canonical end
-  dates) and, below it, a horizontal bar per label in the group, sorted
-  largest first. One JSON payload drives both charts, so selecting a time
-  bucket re-cuts the bar chart to that range without another request; clicking
-  a bar lists the transactions behind it. The transaction list reuses the same
-  endpoint as the Transactions page with label_ids and date range filters.
+  (daily, weekly or monthly, using canonical end dates) with a dashed
+  horizontal line at the average per period, and, below it, a horizontal bar
+  per label in the group, sorted by magnitude. Money keeps its statement sign
+  throughout: spending is negative, income positive. Over the whole window the
+  bars show the per-period average rather than the total; selecting a single
+  bucket switches them to that bucket's totals. One JSON payload drives both
+  charts, so selecting a time bucket re-cuts the bar chart to that range
+  without another request; clicking a bar lists the transactions behind it.
+  The transaction list reuses the same endpoint as the Transactions page with
+  label_ids and date range filters.
 
+- **Time window selector** — the Balance and Breakdown tabs share one control:
+  a single box showing the current window (30d / 10w / 6m / 12m), stepped by
+  swiping up for a longer window and down for a shorter one (also arrow keys,
+  the scroll wheel, and the two chevrons), plus a `+` button that includes the
+  period currently in progress. A window is a whole number of *complete*
+  calendar periods, so every bucket is comparable: on 4 Sep 2026 a 12m window
+  runs from 1 Sep 2025 to 31 Aug 2026, with September 2026 as the extra bucket
+  the `+` adds. Each bucket carries a weight — 1 for a closed period, the
+  fraction elapsed for the running one — which is what the per-period averages
+  divide by, so a three-day-old month cannot drag an average down.
+
+- **Account naming** — every account (bank, Indexa or manual) can be renamed in
+  place from the accounts list: the pencil beside the name swaps it for an
+  input, and saving swaps it back. The name is stored in `account_name` and
+  falls back to the bank's own when cleared; provider syncs never overwrite it.
+  This is how two accounts at the same bank are told apart, so the pickers show
+  the name rather than an IBAN.
 - **Account coloring** — each account (bank or manual) can be assigned a custom
   color via an inline color picker on the accounts page. The color appears as a
   left-side stripe on account cards and as a left border on transaction rows,
