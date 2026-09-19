@@ -102,15 +102,13 @@ async fn index(
 
     let mut account_options = format!(r#"<option value="">{}</option>"#, t.txn_all_accounts);
     for a in &accounts {
-        let display = if a.account_type != "bank" {
-            a.account_name
-                .clone()
-                .unwrap_or_else(|| a.bank_name.clone())
-        } else {
-            match &a.iban {
-                Some(iban) => format!("{} ({})", a.bank_name, iban),
-                None => a.bank_name.clone(),
-            }
+        // A name the user typed stands on its own. Only an unnamed bank
+        // account still needs its IBAN, to tell two at the same bank apart —
+        // and renaming one is the way out of that.
+        let display = match (&a.account_name, a.account_type.as_str(), &a.iban) {
+            (Some(name), _, _) => name.clone(),
+            (None, "bank", Some(iban)) => format!("{} ({})", a.bank_name, iban),
+            _ => a.bank_name.clone(),
         };
         account_options.push_str(&format!(
             r#"<option value="{}">{}</option>"#,

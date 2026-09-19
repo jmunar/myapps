@@ -69,9 +69,9 @@ myapps/
 │   │       └── services/    # Shared services (Web Push, Whisper transcription)
 │   ├── myapps-leanfin/      # LeanFin expense tracker
 │   │   ├── migrations/      # LeanFin database migrations
-│   │   ├── static/style.css # LeanFin CSS (embedded via App::css())
+│   │   ├── static/          # style.css (App::css()) + chart and selector JS
 │   │   ├── tests/           # LeanFin integration tests
-│   │   └── src/             # Handlers, services, models, i18n, ops
+│   │   └── src/             # Handlers, services, models, i18n, ops, period
 │   ├── myapps-mindflow/     # MindFlow thought capture + mind map
 │   │   ├── migrations/
 │   │   ├── static/style.css
@@ -102,7 +102,7 @@ myapps/
 │   ├── harness/mod.rs       # Root test harness (uses all apps)
 │   └── auth_tests.rs        # Platform auth, launcher, settings, invite tests
 ├── models/                  # Whisper GGML model files (gitignored)
-├── static/                  # core.css, JS (htmx, chart.js, d3, notes-vendor bundle), PWA assets
+├── static/                  # core.css, JS (htmx, chart.js, d3, nav-swipe, notes-vendor bundle), PWA assets
 ├── tools/
 │   └── notes-vendor/        # npm + esbuild setup that produces static/notes-vendor.bundle.js
 ├── .claude/agents/          # Claude Code agent prompts
@@ -141,6 +141,7 @@ After login, the top-level router serves:
   - `POST /leanfin/accounts/{id}/delete` — Delete account and its data
   - `POST /leanfin/accounts/{id}/archive` — Archive account (blocked if unallocated transactions)
   - `POST /leanfin/accounts/{id}/unarchive` — Unarchive account
+  - `/leanfin/accounts/{id}/name` — Rename an account in place (GET swaps in the editor, POST saves and swaps back; HTMX)
   - `/leanfin/accounts/indexa/link` — Link Indexa Capital accounts (GET selection form, POST submit)
   - `/leanfin/accounts/manual/new` — Create a manual account (GET form, POST submit)
   - `/leanfin/accounts/manual/{id}/edit` — Edit manual account metadata (GET form, POST submit)
@@ -148,9 +149,9 @@ After login, the top-level router serves:
   - `/leanfin/accounts/manual/{id}/import-csv` — Bulk-import balance history from CSV (GET form, POST multipart upload)
   - `POST /leanfin/sync` — Trigger transaction sync for the user (HTMX partial)
   - `/leanfin/balance-evolution?account_id=` — Balance evolution page (Chart.js line chart; `account_id` preselects one account)
-  - `/leanfin/balance-evolution/data?account_id=&days=90` — Balance chart data (HTMX)
+  - `/leanfin/balance-evolution/data?account_id=&window=10w&current=1` — Balance chart data (HTMX)
   - `/leanfin/breakdown` — Breakdown page (single-group selector + time series + per-label bar chart + transaction list)
-  - `/leanfin/breakdown/chart?group_id=1&days=90` — Breakdown chart payload (HTMX; one JSON payload drives both charts)
+  - `/leanfin/breakdown/chart?group_id=1&window=10w&current=1` — Breakdown chart payload (HTMX; one JSON payload drives both charts)
   - `/leanfin/expenses` — Permanent redirect to `/leanfin/breakdown` (the tab's former name)
   - `/leanfin/labels` — Create label, create group, then the groups list (labels as chips)
   - `/leanfin/labels/{id}/panel` — Label detail frame: rename, move, rules, delete (HTMX)

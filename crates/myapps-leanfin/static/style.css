@@ -859,48 +859,129 @@ tr.txn-misallocated:hover {
     flex: 1 1 auto;
 }
 
-.balance-controls .period-selector {
+.balance-controls .lf-window {
     flex-shrink: 0;
 }
 
-.period-selector {
-    display: flex;
-    gap: 0;
+/* ── Time window selector ───────────────────────────────────
+   One box you step through — swipe up for a longer window, down for a
+   shorter one — welded to the `+` that adds the period we are currently in.
+   `button` in core.css sets a 1.25rem padding and a pill radius, so every
+   part here restates its own box. */
+.lf-window {
+    display: inline-flex;
+    align-items: stretch;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
-}
-
-.period-btn {
-    font-family: var(--font-body);
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 0.35rem 0.65rem;
+    flex-shrink: 0;
     background: var(--bg-card);
-    color: var(--text-secondary);
+}
+
+.lf-window-box {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.5rem;
+    cursor: ns-resize;
+    user-select: none;
+    /* The box owns vertical drags; without this the page scrolls instead. */
+    touch-action: none;
+}
+
+.lf-window-box:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.lf-window-value {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 2.2rem;
+    text-align: center;
+}
+
+.lf-window-steps {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+}
+
+.lf-window-step {
+    font-size: 0.6rem;
+    line-height: 1;
+    padding: 0.15rem 0.35rem;
     border: none;
-    border-right: 1px solid var(--border);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--text-secondary);
     cursor: pointer;
-    transition: all 0.15s var(--ease);
 }
 
-.period-btn:last-child {
-    border-right: none;
-}
-
-.period-btn:hover {
+.lf-window-step:hover {
     background: var(--bg-hover);
     color: var(--text);
 }
 
-.period-btn-active {
+.lf-window-now {
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0 0.7rem;
+    border: none;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.lf-window-now:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.lf-window-now-active,
+.lf-window-now-active:hover {
     background: var(--accent);
     color: #FFFFFF;
 }
 
-.period-btn-active:hover {
-    background: var(--accent-hover);
-    color: #FFFFFF;
+/* ── Account name, editable in place ────────────────────────── */
+.account-name {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* Always visible, just quiet: a pencil that only appears on hover is a
+   pencil nobody finds on a phone. */
+.account-rename {
+    opacity: 0.45;
+    transition: opacity 0.15s var(--ease);
+}
+
+.account-item:hover .account-rename,
+.account-rename:hover,
+.account-rename:focus-visible {
+    opacity: 1;
+}
+
+/* `form { flex-direction: column }` in core.css would stack these. */
+.account-name-editing {
+    flex-direction: row;
+    gap: 0.4rem;
+}
+
+.account-name-editing input[type="text"] {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.45rem;
+    min-width: 0;
+    flex: 1 1 8rem;
 }
 
 /* ── Chart container ───────────────────────────────────────── */

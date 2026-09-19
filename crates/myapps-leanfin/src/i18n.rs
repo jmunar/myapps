@@ -85,6 +85,9 @@ pub struct Translations {
     pub acc_edit: &'static str,
     pub acc_archive_error: &'static str,
     pub acc_balance_link: &'static str,
+    pub acc_rename: &'static str,
+    pub acc_name_label: &'static str,
+    pub acc_name_save: &'static str,
 
     // ── Add Manual Account ───────────────────────────────────
     pub acc_manual_new_title: &'static str,
@@ -179,6 +182,9 @@ pub struct Translations {
     pub exp_group_empty: &'static str,
     pub exp_group_not_found: &'static str,
     pub exp_transactions: &'static str,
+    pub exp_avg_day: &'static str,
+    pub exp_avg_week: &'static str,
+    pub exp_avg_month: &'static str,
 
     // ── Balance Evolution ────────────────────────────────────
     pub bal_title: &'static str,
@@ -187,6 +193,12 @@ pub struct Translations {
     pub bal_loading: &'static str,
     pub bal_no_data: &'static str,
     pub bal_account_not_found: &'static str,
+
+    // ── Time window selector ─────────────────────────────────
+    pub win_label: &'static str,
+    pub win_longer: &'static str,
+    pub win_shorter: &'static str,
+    pub win_current: &'static str,
 
     // ── Settings ─────────────────────────────────────────────
     pub set_title: &'static str,
@@ -288,6 +300,9 @@ pub const EN: Translations = Translations {
     acc_edit: "Edit",
     acc_archive_error: "Cannot archive: this account has unallocated transactions. Allocate all transactions first.",
     acc_balance_link: "View this account's balance history",
+    acc_rename: "Rename",
+    acc_name_label: "Account name",
+    acc_name_save: "Save",
 
     // ── Add Manual Account ───────────────────────────────────
     acc_manual_new_title: "Add Manual Account",
@@ -382,6 +397,9 @@ pub const EN: Translations = Translations {
     exp_group_empty: "This group has no labels yet.",
     exp_group_not_found: "Group not found.",
     exp_transactions: "Transactions",
+    exp_avg_day: "Daily average",
+    exp_avg_week: "Weekly average",
+    exp_avg_month: "Monthly average",
 
     // ── Balance Evolution ────────────────────────────────────
     bal_title: "Balance Evolution",
@@ -390,6 +408,11 @@ pub const EN: Translations = Translations {
     bal_loading: "Loading balance data",
     bal_no_data: "No balance data yet. Run a sync to populate balance history.",
     bal_account_not_found: "Account not found.",
+
+    win_label: "Time window",
+    win_longer: "Longer window",
+    win_shorter: "Shorter window",
+    win_current: "Include the current period",
 
     // ── Settings ─────────────────────────────────────────────
     set_title: "Settings",
@@ -491,6 +514,9 @@ pub const ES: Translations = Translations {
     acc_edit: "Editar",
     acc_archive_error: "No se puede archivar: esta cuenta tiene movimientos sin asignar. Asigna todos los movimientos primero.",
     acc_balance_link: "Ver el historial de saldo de esta cuenta",
+    acc_rename: "Renombrar",
+    acc_name_label: "Nombre de la cuenta",
+    acc_name_save: "Guardar",
 
     // ── Add Manual Account ───────────────────────────────────
     acc_manual_new_title: "Añadir Cuenta Manual",
@@ -585,6 +611,9 @@ pub const ES: Translations = Translations {
     exp_group_empty: "Este grupo aún no tiene etiquetas.",
     exp_group_not_found: "Grupo no encontrado.",
     exp_transactions: "Movimientos",
+    exp_avg_day: "Media diaria",
+    exp_avg_week: "Media semanal",
+    exp_avg_month: "Media mensual",
 
     // ── Balance Evolution ────────────────────────────────────
     bal_title: "Evolución del Balance",
@@ -593,6 +622,11 @@ pub const ES: Translations = Translations {
     bal_loading: "Cargando datos de balance",
     bal_no_data: "Sin datos de balance aún. Sincroniza para obtener el historial.",
     bal_account_not_found: "Cuenta no encontrada.",
+
+    win_label: "Ventana temporal",
+    win_longer: "Ventana más larga",
+    win_shorter: "Ventana más corta",
+    win_current: "Incluir el período actual",
 
     // ── Settings ─────────────────────────────────────────────
     set_title: "Ajustes",

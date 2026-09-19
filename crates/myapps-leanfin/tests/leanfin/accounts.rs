@@ -717,3 +717,217 @@ async fn manual_account_balance_deep_links_too() {
         "the link needs a title explaining where it goes"
     );
 }
+
+// ── Renaming an account in place ─────────────────────────────────
+//
+// Two accounts at the same bank arrive with the same `bank_name`, so the name
+// has to be the user's to set — and settable from the list itself, not from a
+// form on another page.
+
+async fn santander(app: &myapps_test_harness::TestApp) -> i64 {
+    sqlx::query_scalar("SELECT id FROM leanfin_accounts WHERE bank_name = 'Santander'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn the_accounts_list_offers_a_rename_control_per_account() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let id = santander(&app).await;
+
+    let body = app.server.get("/leanfin/accounts").await.text();
+
+    assert!(body.contains(&format!(r#"id="account-name-{id}""#)));
+    assert!(body.contains(&format!(r#"hx-get="/leanfin/accounts/{id}/name""#)));
+    assert!(body.contains(r#"class="btn-icon account-rename""#));
+}
+
+#[tokio::test]
+async fn the_rename_endpoint_swaps_in_an_editor_and_back_again() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let id = santander(&app).await;
+
+    let editor = app
+        .server
+        .get(&format!("/leanfin/accounts/{id}/name"))
+        .await
+        .text();
+    // It replaces itself, so it must keep the id its target names.
+    assert!(editor.contains(&format!(r#"id="account-name-{id}""#)));
+    assert!(editor.contains(r#"<input type="text" name="name" value="Santander""#));
+    assert!(editor.contains(&format!(r#"hx-post="/leanfin/accounts/{id}/name""#)));
+
+    let saved = app
+        .server
+        .post(&format!("/leanfin/accounts/{id}/name"))
+        .form(&serde_json::json!({ "name": "Joint current" }))
+        .await
+        .text();
+    assert!(saved.contains("Joint current"));
+    assert!(saved.contains(r#"class="btn-icon account-rename""#));
+
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT account_name FROM leanfin_accounts WHERE id = ?")
+            .bind(id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.as_deref(), Some("Joint current"));
+}
+
+#[tokio::test]
+async fn two_accounts_at_the_same_bank_can_be_told_apart() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let user_id: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'seeduser'")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    let first = santander(&app).await;
+    let second: i64 = sqlx::query_scalar(
+        "INSERT INTO leanfin_accounts (user_id, bank_name, bank_country, iban, session_id,
+             account_uid, session_expires_at, account_type, balance_amount, balance_currency)
+         VALUES (?, 'Santander', 'ES', 'ES9999', '', 'santander-2', '9999-12-31T00:00:00Z',
+                 'bank', 10.0, 'EUR') RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    for (id, name) in [(first, "Everyday"), (second, "Savings")] {
+        app.server
+            .post(&format!("/leanfin/accounts/{id}/name"))
+            .form(&serde_json::json!({ "name": name }))
+            .await;
+    }
+
+    let body = app.server.get("/leanfin/accounts").await.text();
+    assert!(body.contains("Everyday"));
+    assert!(body.contains("Savings"));
+
+    // The pickers that used to read "Santander (ES…)" twice now read the names.
+    let balance = app.server.get("/leanfin/balance-evolution").await.text();
+    assert!(balance.contains(&format!(r#"<option value="{first}">Everyday</option>"#)));
+    assert!(balance.contains(&format!(r#"<option value="{second}">Savings</option>"#)));
+}
+
+#[tokio::test]
+async fn clearing_the_name_falls_back_to_the_bank() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let id = santander(&app).await;
+
+    app.server
+        .post(&format!("/leanfin/accounts/{id}/name"))
+        .form(&serde_json::json!({ "name": "Temporary" }))
+        .await;
+    let restored = app
+        .server
+        .post(&format!("/leanfin/accounts/{id}/name"))
+        .form(&serde_json::json!({ "name": "   " }))
+        .await
+        .text();
+
+    assert!(restored.contains("Santander"));
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT account_name FROM leanfin_accounts WHERE id = ?")
+            .bind(id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, None, "a blank name should clear the column");
+}
+
+#[tokio::test]
+async fn renaming_another_users_account_does_nothing() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let victim = santander(&app).await;
+
+    app.login_as("mallory", "pass").await;
+    let body = app
+        .server
+        .post(&format!("/leanfin/accounts/{victim}/name"))
+        .form(&serde_json::json!({ "name": "Owned" }))
+        .await
+        .text();
+
+    assert_eq!(body, "", "a foreign account swaps in nothing");
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT account_name FROM leanfin_accounts WHERE id = ?")
+            .bind(victim)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, None, "another user's account was renamed");
+}
+
+#[tokio::test]
+async fn a_renamed_account_survives_markup_in_its_name() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+    let id = santander(&app).await;
+
+    let payload = r#"<img src=x onerror="window.__xss=1">"#;
+    let saved = app
+        .server
+        .post(&format!("/leanfin/accounts/{id}/name"))
+        .form(&serde_json::json!({ "name": payload }))
+        .await
+        .text();
+    assert!(
+        !saved.contains("<img src=x"),
+        "unescaped in the swap: {saved}"
+    );
+
+    // And on the way back out, both in the list and in the editor's value=""
+    // attribute, where the quotes matter as much as the angle brackets.
+    for route in [
+        "/leanfin/accounts".to_string(),
+        format!("/leanfin/accounts/{id}/name"),
+        "/leanfin/balance-evolution".to_string(),
+        "/leanfin".to_string(),
+    ] {
+        let body = app.server.get(&route).await.text();
+        assert!(!body.contains("<img src=x"), "unescaped on {route}");
+        assert!(
+            !body.contains(r#"onerror="window.__xss"#),
+            "unescaped on {route}"
+        );
+    }
+}
+
+// ── The balance picker drops the IBAN ────────────────────────────
+
+#[tokio::test]
+async fn the_balance_account_picker_shows_no_iban() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let iban: String = sqlx::query_scalar(
+        "SELECT iban FROM leanfin_accounts WHERE bank_name = 'Santander' AND iban IS NOT NULL",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app.server.get("/leanfin/balance-evolution").await.text();
+    assert!(body.contains("Santander"));
+    assert!(
+        !body.contains(&iban),
+        "the balance picker should not spell out {iban}"
+    );
+    // The accounts list still shows it — that is where an IBAN belongs.
+    assert!(
+        app.server
+            .get("/leanfin/accounts")
+            .await
+            .text()
+            .contains(&iban)
+    );
+}

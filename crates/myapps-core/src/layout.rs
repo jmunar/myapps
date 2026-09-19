@@ -1,6 +1,11 @@
 use crate::config::Config;
 use crate::i18n::{self, Lang};
 
+/// Swipe between neighbouring nav tabs on a phone. Inlined into every page so
+/// it needs no round trip, and kept in its own file so the braces need no
+/// escaping.
+const NAV_SWIPE_JS: &str = include_str!("../../../static/nav-swipe.js");
+
 /// A single nav item for the shared layout.
 pub struct NavItem {
     pub href: String,
@@ -354,6 +359,7 @@ pub fn render_page(
         {body_html}
     </main>
     {command_bar}
+    <script>{NAV_SWIPE_JS}</script>
 </body>
 </html>"##
     )
