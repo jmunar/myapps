@@ -50,6 +50,15 @@ before styling it, and use `:has()` or a second class when you need to outrank
 it. App class names are not reserved either — `.btn-icon` is defined by both
 LeanFin and VoiceToText, and the later one in the concatenation wins.
 
+**A horizontal swipe anywhere empty changes tab.** `static/nav-swipe.js` is
+inlined into every page by `layout.rs`, and on a phone it navigates to the
+neighbouring nav item. It bows out when the gesture starts on a control, a
+chart or anything that scrolls sideways — but that list is a CSS selector
+(`SKIP`) plus an overflow check, not an inference. A new widget that handles
+its own horizontal drag has to be named there, or `[data-no-swipe]` put on it;
+otherwise the page vanishes mid-gesture. A widget that handles *vertical* drags
+needs `touch-action: none` for the same reason the window selector has it.
+
 **Handlers build HTML with `format!`, which escapes nothing.** Any user- or
 provider-supplied string (account names, labels, transaction descriptions,
 counterparties, filenames) must pass through

@@ -25,8 +25,15 @@ balance evolution charts, and spending breakdowns.
   press Done — a sync never allocates behind your back
 - Labels belong to groups, and a group's colour is derived from its id, so it
   never drifts and is never picked by hand
+- Accounts are renamed in place from the list, so two at the same bank are
+  told apart by name rather than by IBAN
 - Balance evolution charts over time; clicking a point lists the transactions
   for the period it covers
-- Spending breakdown for one group: a time series plus a per-label bar chart
+- Spending breakdown for one group: a time series plus a per-label bar chart,
+  both against a per-period average. Spending is negative and income positive,
+  the way they read on a statement
+- One time window for both charts — 30d / 10w / 6m / 12m, stepped by swiping
+  the box up or down, with a `+` that adds the period in progress. A window is
+  whole calendar periods, so every bar is comparable with the next
 - CSV import for bank statements
 - Per-user encrypted API credentials
