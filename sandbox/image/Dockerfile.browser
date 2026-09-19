@@ -1,0 +1,16 @@
+# The walkthrough image: the dev image plus a browser, for /frontend-walkthrough.
+# Kept separate because Chromium and its dependencies roughly double the image,
+# and most branches never need them.
+ARG BASE=myapps-dev:latest
+FROM ${BASE}
+
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+
+RUN mkdir -p /opt/playwright && chown dev:dev /opt/playwright
+
+USER dev
+RUN npx --yes playwright@latest install --with-deps chromium 2>/dev/null \
+    || npx --yes playwright@latest install chromium
+
+CMD ["/bin/bash"]

@@ -12,3 +12,7 @@ package-lock.json
 !tools/notes-vendor/package.json
 !tools/notes-vendor/package-lock.json
 test-results/
+
+# Sandboxed development (devbox.sh)
+/.devbox/
+/sandbox/brokers/anthropic/target/

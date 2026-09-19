@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#
+# git asks for credentials through this. It answers with the msb *placeholder*,
+# never a token: the real value is substituted outside the VM, and only for the
+# hosts the github capability allows.
+case "$1" in
+    *[Uu]sername*) echo "x-access-token" ;;
+    *) echo "${MSB_GITHUB_TOKEN:-\$MSB_GITHUB_TOKEN}" ;;
+esac

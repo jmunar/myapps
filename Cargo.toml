@@ -1,5 +1,8 @@
 [workspace]
 members = ["crates/*", "."]
+# The sandbox brokers run on the host, never on the Odroid, and `make check`
+# must stay exactly what CI runs. They carry their own `[workspace]`.
+exclude = ["sandbox"]
 resolver = "3"
 
 [workspace.package]
