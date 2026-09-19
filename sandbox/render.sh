@@ -20,7 +20,8 @@
 #   profile NAME              an msb network profile (public, private, host);
 #                             the allow-list model does not use one
 #   env NAME VALUE            later fragments win
-#   mount SPEC                SOURCE:DEST[:OPTIONS]
+#   mount SPEC                SOURCE:DEST[:OPTIONS]; OPTIONS may include `ro`
+#                             and `quota=<MiB>` (msb's default is 4096)
 #   allow HOST...             any allow rule makes egress deny-by-default
 #   deny TARGET...            emitted before the allows: first match wins
 #   port SPEC                 HOST:GUEST or BIND_ADDR:HOST:GUEST
@@ -169,7 +170,18 @@ for name in "${ENV_ORDER[@]-}"; do
     add --env "$name=${ENV_MAP[$name]}"
 done
 
-while read -r item; do [ -n "$item" ] && add --volume "$item"; done < <(dedup "${MOUNTS[@]-}")
+# msb puts a quota on every directory-backed mount, and defaults it to
+# 4096 MiB when none is given — enough to fail a debug build of this workspace
+# partway through. `--volume` has no way to set it; only `--mount-dir` takes
+# `quota=`. So a mount that declares a quota has to go out as --mount-dir.
+# Both accept `ro`, and a mount with no quota keeps msb's 4 GiB default.
+while read -r item; do
+    [ -n "$item" ] || continue
+    case "$item" in
+        *quota=*) add --mount-dir "$item" ;;
+        *)        add --volume "$item" ;;
+    esac
+done < <(dedup "${MOUNTS[@]-}")
 while read -r item; do [ -n "$item" ] && add --port "$item"; done < <(dedup "${PORTS[@]-}")
 
 # Network. msb's egress default is already deny once any --net-rule is present

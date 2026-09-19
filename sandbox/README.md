@@ -134,21 +134,29 @@ granted capabilities asked for, and a set that asks for nothing reaches nothing.
 
 A standalone clone of the repository, bind-mounted at `/workspace`, plus:
 
-| Guest path | Source | Mode | |
-|---|---|---|---|
-| `/workspace` | `../myapps-<branch>` | rw | the clone; the only host directory the guest writes |
-| `/workspace/target` | `~/.cache/msb-devbox/target/<branch>` | rw | per branch, reclaimed by `remove` |
-| `/home/dev/.cargo/{registry,git}` | `~/.cache/msb-devbox/cargo` | rw | only with `cargo-cache-shared` |
-| `/home/dev/.claude` | `~/.cache/msb-devbox/claude/<branch>` | rw | agent state, per branch |
-| `/workspace/models` | `models/` | ro | whisper models: large and immutable |
-| `/workspace/data` | sandbox disk | rw | dev DB; never reaches the host |
+| Guest path | Source | Mode | Quota | |
+|---|---|---|---|---|
+| `/workspace` | `../myapps-<branch>` | rw | 16G | the clone; the only host directory the guest writes |
+| `/workspace/target` | `~/.cache/msb-devbox/target/<branch>` | rw | 32G | per branch, reclaimed by `remove` |
+| `/home/dev/.cargo/{registry,git}` | `~/.cache/msb-devbox/cargo` | rw | 16G / 8G | only with `cargo-cache-shared` |
+| `/home/dev/.claude` | `~/.cache/msb-devbox/claude/<branch>` | rw | 4G | agent state, per branch |
+| `/workspace/models` | `models/` | ro | 4G | whisper models: large and immutable |
+
+Each mount is capped: msb quotas every one of them and defaults to 4 GiB, which
+is too small for a build. A guest that reports `No space left on device` while
+the host has room has hit its mount's quota, and because the accounting never
+releases on delete, `cargo clean` will not clear it — `./devbox.sh up <branch>`
+recreates the sandbox and does.
 
 `.env`, `deploy/*.env` and the real `data/*.db` are never mounted. `first-boot`
 writes a throwaway `.env` — a fresh `ENCRYPTION_KEY`, `BIND_ADDR=0.0.0.0:3000` —
 and `seed` adds VAPID keys, a `dev` user and seed data after the first build.
 Every secret inside the guest is generated there and worthless outside it.
-FileClipboard uploads land on the sandbox disk, so test files never reach host
-storage.
+
+`data/` is not a mount of its own — it sits inside the clone, so the dev
+database and anything FileClipboard stores during testing live on the host, in
+`../myapps-<branch>/data/`. Gitignored, and removed with the clone, but a 5 GiB
+test upload does land in your Projects directory.
 
 The host keeps its own checkout as the place you review, and fetches the branch
 from GitHub like any other, because the guest pushed it there.
@@ -191,6 +199,7 @@ Run end to end on msb 0.7.2:
 | `--secret ENV@HOST[,HOST...]` reads `$ENV` on the host | `git ls-remote origin` authenticated with only the placeholder |
 | Egress is deny-by-default once any `--net-rule` exists | `example.com` refused, allowed hosts fine |
 | `-v SOURCE:DEST[:OPTIONS]`, including `:ro` | the mounts are there |
+| `--mount-dir ...:quota=<MiB>` raises the 4 GiB default | 32G on `/workspace/target`, `ro` still honoured, writes reach the host |
 | Claude Code reaches the model through the broker | `claude -p` answered, audit line written |
 | `cargo fetch` works through the allow-list | full dependency tree fetched |
 | `devbox.sh bridge` alongside normal use | other execs, `claude`, `cargo`, `git` unaffected |
