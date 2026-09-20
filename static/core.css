@@ -357,6 +357,35 @@ button:active, .btn:active {
     color: var(--text);
 }
 
+/* Borderless icon button. Used by MindFlow, FormInput, FileClipboard and
+   VoiceToText, so it lives here rather than in any one app's stylesheet:
+   `apps.css` only concatenates the *deployed* apps, and a DEPLOY_APPS without
+   the owning app would strip the styling from all the others. */
+.btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    padding: 0.1rem 0.3rem;
+    border-radius: var(--radius);
+    line-height: 1;
+}
+
+.btn-icon:hover {
+    color: var(--negative);
+    background: #fde8e8;
+}
+
+/* Paired with .btn-icon on destructive actions (MindFlow, FormInput). The
+   border-color is a no-op on the borderless .btn-icon above; it matters for
+   any app that gives its icon buttons a border. */
+.btn-icon-danger:hover {
+    background: var(--negative-bg);
+    color: var(--negative);
+    border-color: color-mix(in srgb, var(--negative) 30%, transparent);
+}
+
 /* ── Login ──────────────────────────────────────────────────── */
 .login-page {
     min-height: 100vh;
