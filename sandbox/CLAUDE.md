@@ -7,8 +7,8 @@ is only what will bite you while changing it.
 
 The pieces: `render.sh` turns a profile plus capability fragments into an `msb`
 command line, `devbox.sh` runs it and owns the host side, `brokers/anthropic` is
-the only process that ever sees the Anthropic credential, `image/` builds the
-guest.
+the only process that ever sees the Anthropic credential, `brokers/prod` the
+only one that sees the Odroid SSH key, `image/` builds the guest.
 
 ## Gotchas
 
@@ -125,13 +125,53 @@ editing `cd.yml`, so a branch that does routine work fails at the very end of
 `/finish-development` with an error that reads like a git problem.
 
 **`deploy.sh` stays host-only, permanently.** No capability may grant deploy;
-the Odroid SSH key does not enter a VM. Same for `make deploy-*`. If prod access
-is ever needed from a sandbox it goes through a broker with a verb-limited API,
-never a tunnel and never a key.
+the Odroid SSH key does not enter a VM. Same for `make deploy-*`. Prod access
+from a sandbox goes through `brokers/prod` — a verb-limited API, never a tunnel
+and never a key — and that broker's vocabulary is three read verbs. Adding a
+fourth is a decision about what a compromised sandbox can do to production, not
+a convenience; anything that takes a command, a path or a query from the guest
+has stopped being this shape.
 
-**The brokers are outside the cargo workspace.** `brokers/anthropic` carries its
-own `[workspace]` and the root manifest excludes `sandbox/`, so `make check`
-stays exactly what CI runs. Keep it that way.
+**The scrub list fails closed, and that is the point.** Every table in a
+snapshot must appear in `DELETE`, `REWRITE` or `KEEP` in
+`brokers/prod/src/scrub.rs`, checked against the snapshot's own `sqlite_master`
+rather than this repository's migrations. Add a table to any app and the next
+`devbox-prod snapshot` refuses by name until someone classifies it. That is
+deliberate: the failure being guarded against is not a wrong rule, it is a
+table added next year quietly carrying its contents into a VM. Classifying it
+takes one line; working around the check hands away the only thing that makes
+a snapshot safe to hold.
+
+**Both `--no-hostname` and `-n 0` are there to keep the same promise.** The
+guest is not supposed to learn where prod is — the capability hands it a URL on
+`host.microsandbox.internal` and nothing else — and journal output undoes that
+by default: `-o short-iso` prints the machine's hostname on every line, so
+`logs` passes `--no-hostname`. `systemctl status` appends a journal tail of its
+own in the *default* format, which `--no-hostname` does not reach from there,
+so `status` passes `-n 0` and drops it. Both were verified by grepping the real
+Odroid's answers for its hostname. Anything new the broker forwards wants the
+same look: the check is to run it against prod and grep.
+
+**The prod broker's health check must not touch the LAN.** `cmd_up` calls
+`/_broker/health` on every start, so that endpoint answers from configuration
+alone and never SSHes. Making it "more useful" by probing the Odroid would make
+starting a sandbox fail on a train.
+
+**A snapshot lands under a possibly-running dev server.** `devbox-prod
+snapshot` removes `-wal` and `-shm` beside the file it replaces, because SQLite
+would otherwise apply the old write-ahead log to the new database — stale WAL
+files next to a replaced database are not an empty database, they are a corrupt
+one. Stop the server first; the helper says so, it cannot enforce it.
+
+**The brokers are outside the cargo workspace.** `brokers/anthropic` and
+`brokers/prod` each carry their own `[workspace]` and the root manifest
+excludes `sandbox/`, so `make check` stays exactly what CI runs. Keep it that
+way — and run their own `cargo test` when you change one, because nothing else
+will.
+
+**`devbox-prod` lives in the image.** It is baked into `/usr/local/bin` like
+`devbox-git-askpass`, so changing it means `./devbox.sh build-image` *and* a
+sandbox recreated: a running one keeps the image it was created with.
 
 ## Writing a capability
 
@@ -180,6 +220,7 @@ capabilities/        one fragment per capability
 image/               guest image; image/guest/ is baked into /usr/local/bin
 bootstrap/           scripts run inside the guest (first-boot, seed)
 brokers/anthropic/   host daemon; holds the OAuth token
+brokers/prod/        host daemon; holds the Odroid SSH key, three read verbs
 brokers/github/      GitHub App token minting
 .devbox/<branch>/    generated args and state (gitignored)
 ```

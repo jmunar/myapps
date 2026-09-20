@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+#
+# Read-only prod, from inside the sandbox.
+#
+# Everything here is one HTTP call to the host's prod broker, which holds the
+# Odroid SSH key and answers a fixed vocabulary. There is no verb that runs a
+# command on prod and no way to add one from this side: an argument that is not
+# understood is refused by the broker, not passed along.
+#
+# The capability supplies MYAPPS_PROD_URL and MYAPPS_PROD_TOKEN. Without
+# `prod-readonly` granted, neither exists and nothing here works — which is the
+# intended failure.
+set -euo pipefail
+
+: "${MYAPPS_PROD_URL:=}" "${MYAPPS_PROD_TOKEN:=}"
+
+die() { echo "devbox-prod: $*" >&2; exit 1; }
+
+[ -n "$MYAPPS_PROD_URL" ] && [ -n "$MYAPPS_PROD_TOKEN" ] || die \
+    "no prod broker in this sandbox — grant it on the host with
+    ./devbox.sh grant <branch> prod-readonly"
+
+auth=(-H "Authorization: Bearer $MYAPPS_PROD_TOKEN")
+
+usage() {
+    cat <<'USAGE'
+Usage: devbox-prod <command>
+
+  snapshot [--output PATH]     the prod database, scrubbed, into data/myapps.db
+  logs [--unit U] [--since W] [--lines N]
+                               journalctl for a unit (W: 30s 15m 2h 7d, or a date)
+  status [--unit U]            systemctl status for a unit
+  health                       what this broker will answer, and for which units
+
+Every call is a read. The snapshot keeps your real data — transactions,
+notes, thoughts, form inputs — and drops the credentials: sessions, invites,
+push subscriptions, bank consents and the raw provider payloads. Every account
+in it shares one password, printed when the snapshot lands.
+USAGE
+    exit 1
+}
+
+cmd_snapshot() {
+    local output="data/myapps.db"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --output|-o) output="$2"; shift 2 ;;
+            *) die "unknown argument $1" ;;
+        esac
+    done
+
+    mkdir -p "$(dirname "$output")"
+    local tmp="$output.downloading" headers
+    headers="$(mktemp)"
+    # Downloaded beside the target and moved into place, so a snapshot that
+    # fails halfway does not leave a truncated database looking like a real one.
+    trap 'rm -f "$tmp" "$headers"' EXIT
+
+    echo "devbox-prod: asking the broker for a snapshot (dump, rebuild, scrub — this takes a while)" >&2
+    curl -sS --fail-with-body "${auth[@]}" -D "$headers" -o "$tmp" \
+        "$MYAPPS_PROD_URL/snapshot/db" || die "the broker refused: $(cat "$tmp" 2>/dev/null)"
+
+    # A stale -wal/-shm beside a replaced database is not an empty database,
+    # it is a corrupt one: SQLite would apply the old write-ahead log to the
+    # new file. The dev server has to be stopped for this to be safe at all.
+    if [ -e "$output" ]; then
+        mv "$output" "$output.pre-snapshot"
+        echo "devbox-prod: kept the previous database as $output.pre-snapshot" >&2
+    fi
+    rm -f "$output-wal" "$output-shm"
+    mv "$tmp" "$output"
+
+    local password
+    password="$(sed -n 's/^[Xx]-[Ss]napshot-[Pp]assword: *//p' "$headers" | tr -d '\r')"
+    echo "devbox-prod: wrote $output ($(du -h "$output" | cut -f1))"
+    echo "devbox-prod: every account's password is now '${password:-dev}'"
+    echo "devbox-prod: stop the dev server before using it — a running one holds the old WAL"
+}
+
+cmd_logs() {
+    local unit="" since="1h" lines="200"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --unit|-u) unit="$2"; shift 2 ;;
+            --since|-s) since="$2"; shift 2 ;;
+            --lines|-n) lines="$2"; shift 2 ;;
+            *) die "unknown argument $1" ;;
+        esac
+    done
+    local query=(--data-urlencode "since=$since" --data-urlencode "lines=$lines")
+    [ -n "$unit" ] && query+=(--data-urlencode "unit=$unit")
+    curl -sS --fail-with-body "${auth[@]}" --get "${query[@]}" "$MYAPPS_PROD_URL/logs"
+}
+
+cmd_status() {
+    local unit=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --unit|-u) unit="$2"; shift 2 ;;
+            *) die "unknown argument $1" ;;
+        esac
+    done
+    local query=()
+    [ -n "$unit" ] && query+=(--data-urlencode "unit=$unit")
+    curl -sS --fail-with-body "${auth[@]}" --get "${query[@]}" "$MYAPPS_PROD_URL/status"
+}
+
+cmd_health() {
+    curl -sS --fail-with-body "${auth[@]}" "$MYAPPS_PROD_URL/_broker/health"
+    echo
+}
+
+[ $# -ge 1 ] || usage
+command="$1"; shift
+case "$command" in
+    snapshot) cmd_snapshot "$@" ;;
+    logs)     cmd_logs "$@" ;;
+    status)   cmd_status "$@" ;;
+    health)   cmd_health ;;
+    *)        usage ;;
+esac

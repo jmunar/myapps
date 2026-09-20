@@ -1,0 +1,30 @@
+# Deliberately its own workspace, like `brokers/anthropic`: the broker runs on
+# the host, never on the Odroid, and `make check` must stay exactly what CI runs.
+[workspace]
+
+[package]
+name = "msb-broker-prod"
+version = "0.1.0"
+edition = "2024"
+description = "Host-side prod broker: read-only snapshots and logs from the Odroid, behind a verb-limited API"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "process", "fs", "time", "io-util", "sync"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+chrono = "0.4"
+# Streams the finished snapshot out of a file rather than holding a whole
+# database in the response body.
+tokio-util = { version = "0.7", features = ["io"] }
+# The same hasher the app uses, so a scrubbed snapshot has a password you can
+# actually log in with. argon2 0.5 wants rand_core 0.6's OsRng — mirror what
+# crates/myapps-core does rather than inventing a second combination.
+argon2 = "0.5"
+rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+
+[profile.release]
+opt-level = "s"
+strip = true
