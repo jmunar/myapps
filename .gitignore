@@ -15,4 +15,5 @@ test-results/
 
 # Sandboxed development (devbox.sh)
 /.devbox/
-/sandbox/brokers/anthropic/target/
+# Every broker carries its own workspace, so each has its own target/.
+/sandbox/brokers/*/target/

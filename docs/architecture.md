@@ -113,7 +113,7 @@ myapps/
 ├── Makefile                 # Dev shortcuts (workspace-wide: fmt, lint, test, check)
 ├── deploy.sh                # Deploy script (release-deploy for CI, build/install for local)
 ├── devbox.sh                # Sandboxed development: one microVM per branch
-├── sandbox/                 # Guest image, capability fragments, host-side credential brokers
+├── sandbox/                 # Guest image, capability fragments, host-side brokers (model access, prod reads)
 └── scripts/                 # Screenshot automation
 ```
 

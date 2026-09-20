@@ -161,6 +161,10 @@ release job if the version is not higher than the latest tag.
 - `./devbox.sh create <branch>` — develop in a microVM with no credentials in
   it: a clone, the toolchain and Claude Code inside, every secret brokered from
   the host. `sandbox/README.md`; `./devbox.sh doctor` first.
+  `./devbox.sh grant <branch> prod-readonly` then gives the sandbox
+  `devbox-prod snapshot|logs|status` — the real database, scrubbed of every
+  credential, and prod's journal, through a host broker that holds the SSH key
+  and answers three read verbs.
 - `/add-app <AppName>` — scaffold a new app crate and wire it into the workspace.
 - `/finish-development` — version bump, docs, PR.
 - **frontend-tester** agent (`.claude/agents/frontend-tester.md`) — write or

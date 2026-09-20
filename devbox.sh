@@ -17,6 +17,10 @@ CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/msb-devbox"
 CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/msb-devbox"
 LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/msb-devbox"
 BROKER_BIN="$SANDBOX_DIR/brokers/anthropic/target/release/msb-broker-anthropic"
+PROD_BROKER_BIN="$SANDBOX_DIR/brokers/prod/target/release/msb-broker-prod"
+# Which deployment the prod broker reads, as a path relative to the repository.
+# The same file deploy.sh reads, so prod is described in exactly one place.
+PROD_ENV_FILE="${DEVBOX_PROD_ENV:-deploy/prod.env}"
 # One broker per sandbox means one host loopback port per sandbox, picked once
 # and kept: the guest gets it baked into ANTHROPIC_BASE_URL, so a port that
 # moved on restart would need the sandbox recreated to notice.
@@ -189,7 +193,7 @@ ensure_brokers() {
         [ -n "$broker" ] || continue
         case "$broker" in
             anthropic) start_anthropic_broker "$branch" ;;
-            prod) info "the prod broker is not implemented yet — skipping" ;;
+            prod) start_prod_broker "$branch" ;;
             *) die "unknown broker '$broker'" ;;
         esac
     done < "$state/brokers"
@@ -226,11 +230,51 @@ start_anthropic_broker() {
     info "broker running on 127.0.0.1:$port (pid $pid)"
 }
 
-stop_broker() {
-    local state="$1"
-    [ -f "$state/broker.pid" ] || return 0
-    kill "$(cat "$state/broker.pid")" 2>/dev/null || true
-    rm -f "$state/broker.pid"
+# The prod broker holds the Odroid SSH key and answers a fixed vocabulary —
+# snapshot, logs, status — never a command the guest supplies. It shares the
+# sandbox's token with the Anthropic broker but claims its own port, so a
+# capability set that grants one does not reach the other.
+start_prod_broker() {
+    local branch="$1" state pid port env_file
+    state="$(state_dir "$branch")"
+    port="$(claim_port "$branch" prod.port "$PROD_PORT_BASE")"
+
+    if [ -f "$state/prod.pid" ] && kill -0 "$(cat "$state/prod.pid")" 2>/dev/null; then
+        return 0
+    fi
+    [ -x "$PROD_BROKER_BIN" ] || die "prod broker not built — run ./devbox.sh build-broker"
+
+    env_file="$PROD_ENV_FILE"
+    case "$env_file" in /*) ;; *) env_file="$REPO_DIR/$env_file" ;; esac
+    [ -f "$env_file" ] || die "prod-readonly needs $env_file — see docs/deployment.md"
+
+    mkdir -p "$LOG_ROOT"
+    # Same shape as the Anthropic broker: loopback only, the token passed as a
+    # path rather than a value, and setsid so closing the terminal does not
+    # take it down mid-snapshot.
+    setsid "$PROD_BROKER_BIN" \
+        --listen "127.0.0.1:$port" \
+        --token-file "$state/broker.token" \
+        --sandbox "$branch" \
+        --deploy-env "$env_file" \
+        --work-dir "$CACHE_ROOT/prod/$branch" \
+        --audit-log "$LOG_ROOT/audit.jsonl" \
+        ${DEVBOX_PROD_BROKER_ARGS:-} \
+        >>"$LOG_ROOT/$branch-prod-broker.log" 2>&1 &
+    pid=$!
+    echo "$pid" > "$state/prod.pid"
+    sleep 0.3
+    kill -0 "$pid" 2>/dev/null || die "prod broker died on start — see $LOG_ROOT/$branch-prod-broker.log"
+    info "prod broker running on 127.0.0.1:$port (pid $pid), reading $(basename "$env_file")"
+}
+
+stop_brokers() {
+    local state="$1" pid_file
+    for pid_file in "$state/broker.pid" "$state/prod.pid"; do
+        [ -f "$pid_file" ] || continue
+        kill "$(cat "$pid_file")" 2>/dev/null || true
+        rm -f "$pid_file"
+    done
 }
 
 # Guest scripts run from the mounted clone rather than over `msb exec` stdin:
@@ -354,14 +398,24 @@ cmd_up() {
     # for exactly the reasons the real thing would.
     # One attempt, never retried: each aborted exec costs the sandbox its exec
     # channel, so a failed check must not turn into four more.
-    if grep -qx anthropic "$state/brokers" 2>/dev/null; then
-        local port token
-        port="$(cat "$state/broker.port")"
-        token="$(cat "$state/broker.token")"
-        msb_exec_quiet "$name" curl -sf --max-time 5 -o /dev/null \
-            -H "Authorization: Bearer $token" \
-            "http://$HOST_ALIAS:$port/_broker/health" >/dev/null 2>&1 \
-            || info "warning: broker not reachable from the sandbox"
+    local broker port_file port token
+    token="$(cat "$state/broker.token" 2>/dev/null || true)"
+    if [ -n "$token" ]; then
+        # Both brokers answer /_broker/health cheaply — the prod one
+        # deliberately does not touch the Odroid to do it, so `up` still works
+        # off the LAN.
+        while read -r broker port_file; do
+            grep -qx "$broker" "$state/brokers" 2>/dev/null || continue
+            port="$(cat "$state/$port_file" 2>/dev/null || true)"
+            [ -n "$port" ] || continue
+            msb_exec_quiet "$name" curl -sf --max-time 5 -o /dev/null \
+                -H "Authorization: Bearer $token" \
+                "http://$HOST_ALIAS:$port/_broker/health" >/dev/null 2>&1 \
+                || info "warning: the $broker broker is not reachable from the sandbox"
+        done <<'BROKERS'
+anthropic broker.port
+prod prod.port
+BROKERS
     fi
 }
 
@@ -369,7 +423,7 @@ cmd_stop() {
     local branch="$1"
     known_branch "$branch"
     msb_stop "$(sandbox_name "$branch")" || true
-    stop_broker "$(state_dir "$branch")"
+    stop_brokers "$(state_dir "$branch")"
     info "stopped $branch"
 }
 
@@ -490,10 +544,11 @@ cmd_remove() {
     fi
 
     msb_rm "$(sandbox_name "$branch")" 2>/dev/null || true
-    stop_broker "$state"
+    stop_brokers "$state"
     # The state directory holds the broker token and the claimed ports; removing
     # it is what frees them for the next sandbox.
-    rm -rf "$clone" "$state" "$CACHE_ROOT/target/$branch" "$CACHE_ROOT/claude/$branch"
+    rm -rf "$clone" "$state" "$CACHE_ROOT/target/$branch" "$CACHE_ROOT/claude/$branch" \
+        "$CACHE_ROOT/prod/$branch"
 
     git -C "$REPO_DIR" fetch --prune origin >/dev/null 2>&1 || true
     if git -C "$REPO_DIR" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
@@ -509,6 +564,8 @@ cmd_build_broker() {
     require cargo
     (cd "$SANDBOX_DIR/brokers/anthropic" && cargo build --release)
     info "built $BROKER_BIN"
+    (cd "$SANDBOX_DIR/brokers/prod" && cargo build --release)
+    info "built $PROD_BROKER_BIN"
 }
 
 cmd_build_image() {
@@ -551,24 +608,40 @@ cmd_doctor() {
     check "git"            "command -v git"            "install git"
     check "jq"             "command -v jq"             "install jq"
     check "docker"         "command -v docker"         "needed only to build the guest image"
+    # The prod broker rebuilds and scrubs a snapshot with the host's sqlite3
+    # rather than linking a second copy of SQLite into itself.
+    check "sqlite3"        "command -v sqlite3"        "needed by the prod broker to scrub a snapshot"
     echo "artifacts:"
     check "broker binary"  "test -x '$BROKER_BIN'"     "./devbox.sh build-broker"
+    check "prod broker"    "test -x '$PROD_BROKER_BIN'" "./devbox.sh build-broker"
     check "guest image"    "msb image list | grep -q myapps-dev" "./devbox.sh build-image"
     echo "credentials (host-side, never in a sandbox):"
     check "claude login"   "test -f '$HOME/.claude/.credentials.json'" "run 'claude' on the host once"
     check "github token"   "test -f '$CONFIG_ROOT/github-token' -o -f '$CONFIG_ROOT/github-app.json'" \
                            "put a fine-grained PAT in $CONFIG_ROOT/github-token (chmod 600)"
-    local dir branch port
+    check "prod deploy env" "test -f '$REPO_DIR/$PROD_ENV_FILE' -o -f '$PROD_ENV_FILE'" \
+                           "prod-readonly reads $PROD_ENV_FILE (see docs/deployment.md)"
+    local dir branch broker port_file port
     if [ -d "$STATE_ROOT" ] && command -v curl >/dev/null; then
         echo "brokers:"
         for dir in "$STATE_ROOT"/*/; do
             [ -d "$dir" ] || continue
             branch="$(basename "$dir")"
-            port="$(cat "$dir/broker.port" 2>/dev/null || true)"
-            [ -n "$port" ] && [ -s "$dir/broker.token" ] || continue
-            printf '  %-20s %s\n' "$branch:$port" \
-                "$(curl -s --max-time 5 -H "Authorization: Bearer $(cat "$dir/broker.token")" \
-                    "http://127.0.0.1:$port/_broker/health" || echo unreachable)"
+            [ -s "$dir/broker.token" ] || continue
+            # A port is claimed at render whether or not the capability that
+            # uses it was granted, so report only the brokers this sandbox
+            # actually asked for.
+            while read -r broker port_file; do
+                grep -qx "$broker" "$dir/brokers" 2>/dev/null || continue
+                port="$(cat "$dir/$port_file" 2>/dev/null || true)"
+                [ -n "$port" ] || continue
+                printf '  %-30s %s\n' "$branch $broker:$port" \
+                    "$(curl -s --max-time 5 -H "Authorization: Bearer $(cat "$dir/broker.token")" \
+                        "http://127.0.0.1:$port/_broker/health" || echo unreachable)"
+            done <<'BROKERS'
+anthropic broker.port
+prod prod.port
+BROKERS
         done
     fi
     return $ok
@@ -590,7 +663,7 @@ Usage: ./devbox.sh <command>
   list                    sandboxes, state, disk, capabilities
   capabilities            what each capability grants
   remove <branch> [--force]
-  build-broker            build the host-side Anthropic broker
+  build-broker            build the host-side brokers (anthropic, prod)
   build-image [--browser] build the guest image(s) and load them into msb
   config <branch>         print the exact msb command line for a sandbox
   doctor                  check the host is ready
