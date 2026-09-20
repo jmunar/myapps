@@ -568,3 +568,60 @@ async fn the_launcher_gives_its_push_script_the_labels() {
         assert!(body.contains(attr), "launcher push status missing {attr}");
     }
 }
+
+// The point of moving the labels onto the element is that the script itself
+// stops varying: it is one static file, identical for every user and every
+// language, and only the attributes change. If a label leaked back into the
+// script body, this is where it shows up.
+#[tokio::test]
+async fn the_launcher_push_script_is_the_same_bytes_in_both_languages() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let english = app.server.get("/").await.text();
+    app.server
+        .post("/settings/language")
+        .form(&serde_json::json!({"language": "es", "redirect": "/"}))
+        .expect_failure()
+        .await;
+    let spanish = app.server.get("/").await.text();
+
+    // The page really did change language…
+    assert!(english.contains(r#"data-enable="Enable notifications""#));
+    assert!(spanish.contains(r#"data-enable="Activar notificaciones""#));
+
+    // …but the script it carries did not. Comparing against the file on disk
+    // also pins that the page inlines it verbatim rather than a copy that has
+    // drifted.
+    let script = include_str!("../static/launcher-push.js");
+    for (lang, body) in [("en", &english), ("es", &spanish)] {
+        assert!(
+            body.contains(script),
+            "the {lang} launcher does not inline static/launcher-push.js verbatim"
+        );
+    }
+}
+
+/// `sw-register.js` registers `<base>/sw.js`, which is generated rather than
+/// served off disk — so the path it computes has to be a route that answers.
+#[tokio::test]
+async fn the_service_worker_is_served_where_the_register_script_looks_for_it() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let response = app.server.get("/sw.js").await;
+    assert!(response.status_code().is_success());
+    let body = response.text();
+    // The worker is handed its base path and cache version by the handler.
+    assert!(body.contains("const BASE_PATH ="));
+    assert!(body.contains("const STATIC_VERSION ="));
+
+    // And the registration script that asks for it is on the page.
+    assert!(
+        app.server
+            .get("/")
+            .await
+            .text()
+            .contains("navigator.serviceWorker")
+    );
+}
