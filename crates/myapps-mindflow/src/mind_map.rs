@@ -7,6 +7,7 @@ const MIND_MAP_JS: &str = include_str!("../static/mind-map.js");
 
 use super::mindflow_nav;
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -47,7 +48,11 @@ async fn page(
 
     let mut cat_options = format!(r#"<option value="">{}</option>"#, t.map_inbox_uncategorized);
     for c in &categories {
-        cat_options.push_str(&format!(r#"<option value="{}">{}</option>"#, c.id, c.name,));
+        cat_options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            c.id,
+            html_escape(&c.name),
+        ));
     }
 
     let inbox_count: i64 = sqlx::query_scalar(
