@@ -63,7 +63,10 @@ for f in static/core.css crates/*/static/style.css; do
 done | sort | uniq -d
 ```
 
-Prefix a new shared-sounding class with the app key.
+A class only your app uses gets the app key as a prefix. A class several apps
+use belongs in `core.css`, not in whichever app's stylesheet happened to define
+it first: `apps.css` carries only the *deployed* apps, so an app-owned class
+that another app relies on breaks whenever `DEPLOY_APPS` drops the owner.
 
 **A horizontal swipe anywhere empty changes tab.** `static/nav-swipe.js` is
 inlined into every page by `layout.rs`, and on a phone it drags `<main>` with
