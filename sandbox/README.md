@@ -28,7 +28,7 @@ not a hole in it.
 
 ```bash
 ./devbox.sh doctor           # says what is missing
-./devbox.sh build-broker     # the host-side Anthropic broker
+./devbox.sh build-broker     # the host-side brokers (Anthropic, prod)
 ./devbox.sh build-image      # the guest image (add --browser for Playwright)
 ```
 
@@ -114,7 +114,7 @@ profile and the granted fragments into the `msb` command line in
 ```
 
 Default set: `anthropic, github, rust-deps, node-deps, cargo-cache-shared,
-preview`. Two deserve a second thought before granting:
+preview`. Three deserve a second thought before granting:
 
 - **`cargo-cache-shared`** is the one writable surface shared between sandboxes.
   It exists so each branch does not recompile the dependency tree, and it is
@@ -122,6 +122,9 @@ preview`. Two deserve a second thought before granting:
   compiles. Revoke it for a branch whose dependencies you have not read.
 - **`preview-lan`** publishes the dev server beyond loopback. Grant it for a
   phone pass, revoke it after.
+- **`prod-readonly`** points the sandbox at the real deployment. Every verb is
+  a read and the snapshot is scrubbed, but it is still a line to the machine
+  that holds your money and your notes. Grant it for the session that needs it.
 
 Egress is deny-by-default: the allow-list is exactly the union of what the
 granted capabilities asked for, and a set that asks for nothing reaches nothing.
@@ -157,7 +160,7 @@ test upload does land in your Projects directory.
 The host keeps its own checkout as the place you review, and fetches the branch
 from GitHub like any other, because the guest pushed it there.
 
-## The broker
+## The Anthropic broker
 
 `brokers/anthropic` is the only process that sees the Anthropic credential. One
 per sandbox, listening on a host loopback port — `127.0.0.1:18800` upwards, one
@@ -204,6 +207,89 @@ curl -s -H "Authorization: Bearer $(cat .devbox/FEAT-101/broker.token)" \
 
 `./devbox.sh doctor` prints the same line for every sandbox it knows about.
 
+## The prod broker
+
+`brokers/prod` is the answer to "I cannot reproduce this on seed data". It
+holds the Odroid SSH key — which [CLAUDE.md](CLAUDE.md) says permanently never
+enters a VM — and answers three verbs on a second host loopback port, claimed
+and tokened exactly like the Anthropic one.
+
+```bash
+./devbox.sh grant FEAT-101 prod-readonly
+./devbox.sh shell FEAT-101
+
+devbox-prod snapshot              # the prod database, scrubbed, into data/myapps.db
+devbox-prod logs --since 2h       # journalctl for the service
+devbox-prod logs --unit nginx --lines 500
+devbox-prod status
+devbox-prod health                # what this broker will answer, and for which units
+```
+
+What makes it read-only is its shape, not a filter. There is no endpoint that
+takes a command, a path or a query: the guest picks a verb and fills parameters
+into templates the broker owns, each validated against a closed set first —
+`--since` accepts `30s`, `15m`, `2h`, `7d` or a date and nothing else, `--unit`
+one of two names, `--lines` a number under a ceiling. The three command strings
+in `remote.rs` are the entire vocabulary, and none of them writes: `journalctl`,
+`systemctl status`, and `sqlite3 -readonly … .dump`, which streams the database
+out in a read transaction without even leaving a temporary file behind on the
+Odroid.
+
+### What a snapshot contains
+
+The point is debugging against real data, so the data stays: transactions,
+descriptions, counterparties, balances, notes, thoughts, form inputs. What the
+host strips on the way past is anything that is a credential or a capability.
+
+| | |
+|---|---|
+| Dropped | `sessions`, `invites`, `push_subscriptions`, `leanfin_pending_links`, `leanfin_api_payloads` |
+| Blanked | `leanfin_user_settings.enable_banking_key` and `.enable_banking_app_id`, `leanfin_accounts.iban` and `.session_id` |
+| Rewritten | every `users.password_hash`, to a real Argon2 hash of one known password — the snapshot is a database you can log into, and `devbox-prod` prints the password |
+
+`leanfin_api_payloads` is dropped whole rather than scrubbed column-wise
+because it holds verbatim provider requests and responses: bearer tokens and
+account data in text columns no schema describes.
+
+The database never crosses the boundary as it is. `.dump` streams it to the
+host, the host rebuilds it, scrubs it and `VACUUM`s — so the pages the deleted
+rows occupied are gone rather than merely unreferenced — and only that copy is
+served. A `grep` over a finished snapshot finds none of the strings it removed.
+
+**A table that nobody has classified stops the snapshot.** `scrub.rs` holds
+every table in one of three lists, checked against the snapshot's own
+`sqlite_master` rather than against this repository's migrations, and a table
+in none of them fails the request by name. This app gains tables regularly;
+without that check the failure would not be a wrong rule, it would be a table
+added next year quietly carrying its contents into a VM.
+
+**FileClipboard and VoiceToText keep their metadata and lose their bytes.**
+Those live outside SQLite, so a snapshot has rows whose files are not there and
+whose downloads 404. Restoring the rows is still the right call — it is what
+makes the list pages render — but `services::retention` will reconcile them
+away if you leave it running.
+
+### Costs and limits
+
+A snapshot is a full database dump over the LAN and a rebuild on the host, so
+the broker refuses a second one within `--min-snapshot-interval-secs`
+(60 by default), serialises concurrent requests, and abandons a dump past
+`--max-dump-mb`. Working files live under
+`~/.cache/msb-devbox/prod/<branch>`, which `remove` reclaims.
+
+`DEVBOX_PROD_ENV` picks the deployment; it defaults to `deploy/prod.env`, the
+same file `deploy.sh` reads, so prod is described in exactly one place.
+
+```bash
+DEVBOX_PROD_ENV=deploy/stage.env ./devbox.sh up FEAT-101
+DEVBOX_PROD_BROKER_ARGS="--min-snapshot-interval-secs 600" ./devbox.sh up FEAT-101
+```
+
+The snapshot needs the deploy user to be able to run `sqlite3` as the service
+user on the Odroid — the same thing the manual backup procedure in
+[deployment docs](../docs/deployment.md#backups-and-rollback) needs. If its
+sudoers is the restricted list, that is one entry to add.
+
 ## Where it stands
 
 Run end to end on msb 0.7.2:
@@ -220,6 +306,12 @@ Run end to end on msb 0.7.2:
 | Claude Code reaches the model through the broker | `claude -p` answered, audit line written |
 | `cargo fetch` works through the allow-list | full dependency tree fetched |
 | One host port per sandbox, kept across restarts | a second branch rendered `:18801` while the first held `:18800` |
+| The prod broker's vocabulary is closed | unknown verbs 404; `?unit=sshd` refused; `?since=` rejected `yesterday`, `2h; id`, `$(id)`, `` `id` `` and `1h --output=json` |
+| A snapshot carries no credentials | dump, rebuild and scrub over the real merged schema: the five credential tables emptied, IBAN and consent blanked, and `grep` over the finished file found none of the removed strings |
+| An unclassified table stops a snapshot | `scrub.rs` refuses by name when `sqlite_master` holds a table in none of its three lists |
+| Two brokers on one sandbox stay separate | `prod-readonly` renders a second `allow@host:tcp:` rule and a second `brokers` entry, each on its own port |
+| `logs` and `status` against the real Odroid | `health`, `systemctl status myapps` and `journalctl` for both allowed units answered over the real SSH config |
+| Neither leaks where prod is | grep for the Odroid's hostname over the real answers: 0 in `logs` (`--no-hostname`) and 0 in `status` (`-n 0`, which drops the journal tail `--no-hostname` cannot reach) |
 
 ## Effect on existing workflows
 
@@ -244,18 +336,14 @@ Run end to end on msb 0.7.2:
   and the `walkthrough` profile.
 - **Try `--net-strict`** (require inspectable request authority for hostname
   allows), then **`--security restricted`**, in that order. Both are off.
-- **The prod broker**, for debugging against real data. `prod-readonly.sh`
-  already claims a second host port and the sandbox's token; the broker would
-  hold the Odroid SSH key behind a verb-limited API rather than a tunnel —
-
-  ```
-  GET /snapshot/leanfin.sqlite    -> ssh odroid 'sqlite3 … .dump' | scrub | gzip
-  GET /logs?unit=myapps&since=1h  -> ssh odroid 'journalctl -u myapps …'
-  ```
-
-  read-only by construction, because the broker never forwards a guest-supplied
-  command, only fills parameters into templates it owns. The same shape covers a
-  `llama` capability for the command bar later.
+- **One real `devbox-prod snapshot`.** `logs` and `status` are proven against
+  the real Odroid, and the scrub is proven end to end on the real schema — but
+  the two have never met: no snapshot has been taken from the live database.
+  That run is also what proves the deploy user may read it, which needs a
+  sudoers entry the sample rules in
+  [deployment docs](../docs/deployment.md#deploy-user-setup) did not have.
+- **A `llama` capability** for the command bar, in the shape the prod broker now
+  establishes: a host daemon with a vocabulary, not a tunnel with a filter.
 - **Swap the PAT for the GitHub App** once the MVP has carried a few branches;
   `mint-token.sh` is already written.
 
