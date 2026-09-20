@@ -2,7 +2,7 @@
 //!
 //! Account and label rows used to spell their actions out in words, which on a
 //! phone pushed the row past the viewport. These are drawn at the current text
-//! colour so `.btn-icon` styling still applies; every call site pairs one with
+//! colour so `.leanfin-btn-icon` styling still applies; every call site pairs one with
 //! an `aria-label` and a `title`, so the action keeps its name for screen
 //! readers and on hover.
 

@@ -6,6 +6,10 @@ use axum::{
 };
 use serde::Deserialize;
 
+/// Expanding detail panel behaviour. Kept in its own file so the Rust side
+/// never has to brace-escape JavaScript.
+const LABEL_PANEL_JS: &str = include_str!("../static/label-panel.js");
+
 use super::colors::group_color;
 use super::dashboard::leanfin_nav;
 use myapps_core::auth::UserId;
@@ -172,7 +176,7 @@ async fn list_labels(
         for l in &members {
             chips.push_str(&format!(
                 r#"<button type="button" class="lf-chip" data-url="{base}/leanfin/labels/{id}/panel"
-                        onclick="lfPanel(this)"><span class="label-badge">{name}</span></button>"#,
+                        data-lf-panel><span class="label-badge">{name}</span></button>"#,
                 id = l.id,
                 name = html_escape(&l.name),
             ));
@@ -187,7 +191,7 @@ async fn list_labels(
         sections.push_str(&format!(
             r#"<div class="lf-group" style="--label-color:{color}">
                 <button type="button" class="lf-group-head" data-url="{base}/leanfin/label-groups/{id}/panel"
-                        onclick="lfPanel(this)">
+                        data-lf-panel>
                     <span class="label-badge">{name}</span>
                     <span class="lf-count text-secondary text-sm">{count}</span>
                 </button>
@@ -262,19 +266,7 @@ async fn list_labels(
             </div>
         </div>
 
-        <script>
-        // Only one frame is ever open: opening any panel clears every other
-        // slot first, and clicking the open trigger again closes it.
-        window.lfPanel = function(btn) {{
-            var slot = btn.closest('.lf-group').querySelector('.lf-detail');
-            var wasOpen = btn.classList.contains('lf-open');
-            document.querySelectorAll('.lf-detail').forEach(function(d) {{ d.innerHTML = ''; }});
-            document.querySelectorAll('.lf-open').forEach(function(b) {{ b.classList.remove('lf-open'); }});
-            if (wasOpen) return;
-            btn.classList.add('lf-open');
-            htmx.ajax('GET', btn.dataset.url, slot);
-        }};
-        </script>"##,
+        <script>{LABEL_PANEL_JS}</script>"##,
         title = t.lbl_title,
         subtitle = t.lbl_subtitle,
         create = t.lbl_create,
@@ -672,7 +664,7 @@ fn render_rules_panel(base: &str, label_id: i64, rules: &[RuleRow], lang: Lang) 
                 r##"hx-swap="innerHTML" "##,
                 r##"hx-confirm="{lbl_delete_rule_confirm}" "##,
                 r##"style="display:inline">"##,
-                r##"<button class="btn-icon btn-icon-danger btn-sm">{lbl_delete}</button>"##,
+                r##"<button class="leanfin-btn-icon leanfin-btn-icon-danger btn-sm">{lbl_delete}</button>"##,
                 r##"</form>"##,
                 r##"</div>"##,
             ),

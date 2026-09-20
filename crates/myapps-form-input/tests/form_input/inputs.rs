@@ -855,7 +855,12 @@ async fn new_input_page_escapes_script_close_in_embedded_json() {
         !body.contains("</script><b>x"),
         "embedded JSON must escape '</' so the surrounding <script> tag stays open"
     );
-    assert!(body.contains("<\\/script>"));
+    // `json_for_script` escapes the markup characters rather than just the
+    // `</` sequence, so the closing tag cannot be reassembled at all.
+    assert!(
+        body.contains("\\u003c/script\\u003e"),
+        "the embedded JSON must carry the row in escaped form"
+    );
 }
 
 #[tokio::test]
@@ -1386,12 +1391,14 @@ async fn view_page_wires_the_row_endpoints_into_the_script() {
     let id = input_id(&app, "March expenses").await;
 
     let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    // The endpoints now reach input-view.js through the #view-config JSON tag
+    // rather than being interpolated into the script body.
     assert!(
-        body.contains(&format!("'/forms/inputs/{id}/rows'")),
+        body.contains(&format!(r#""addRow":"/forms/inputs/{id}/rows""#)),
         "the add-row handler needs its endpoint"
     );
     assert!(
-        body.contains(&format!("'/forms/inputs/{id}/rows/delete'")),
+        body.contains(&format!(r#""delRow":"/forms/inputs/{id}/rows/delete""#)),
         "the delete-row handler needs its endpoint"
     );
     // The two new i18n strings reach the page.
@@ -1631,4 +1638,219 @@ async fn single_column_form_keeps_several_blank_rows() {
     let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
     assert_eq!(body.matches(r#"class="ci-row-del""#).count(), 3);
     assert!(body.contains(r#"data-row="2" data-col="0" data-type="text">Bread<"#));
+}
+
+// input-new.js and input-view.js take everything through a JSON config tag.
+// If the blob stops being valid JSON, JSON.parse throws and the whole page
+// script dies — so assert it parses, not merely that it is present.
+#[tokio::test]
+async fn the_entry_config_blob_is_valid_json() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let body = app.server.get("/forms/new").await.text();
+    let open = r#"<script type="application/json" id="entry-config">"#;
+    let start = body.find(open).expect("entry-config tag missing") + open.len();
+    let end = start + body[start..].find("</script>").expect("unterminated tag");
+
+    let cfg: serde_json::Value =
+        serde_json::from_str(&body[start..end]).expect("entry-config must be valid JSON");
+    assert!(cfg["rowSets"].is_array(), "entry grid needs its row sets");
+    assert!(
+        cfg["formTypes"].is_array(),
+        "entry grid needs its form types"
+    );
+    for key in [
+        "row",
+        "selectHint",
+        "bool",
+        "removeRow",
+        "noRowsYet",
+        "linkDefault",
+        "linkAdd",
+        "csvFormatDynamic",
+        "csvFormatFixed",
+    ] {
+        assert!(!cfg["labels"][key].is_null(), "missing label {key}");
+    }
+}
+
+#[tokio::test]
+async fn the_view_config_blob_is_valid_json() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    let open = r#"<script type="application/json" id="view-config">"#;
+    let start = body.find(open).expect("view-config tag missing") + open.len();
+    let end = start + body[start..].find("</script>").expect("unterminated tag");
+
+    let cfg: serde_json::Value =
+        serde_json::from_str(&body[start..end]).expect("view-config must be valid JSON");
+    for key in ["bool", "linkDefault", "deleteRow", "rowOpFailed"] {
+        assert!(!cfg["labels"][key].is_null(), "missing label {key}");
+    }
+    for key in ["save", "addRow", "delRow"] {
+        assert!(cfg["urls"][key].is_string(), "missing url {key}");
+    }
+}
+
+/// Read and parse one of the two `<script type="application/json">` configs.
+fn config_blob(body: &str, id: &str) -> serde_json::Value {
+    let open = format!(r#"<script type="application/json" id="{id}">"#);
+    let start = body
+        .find(&open)
+        .unwrap_or_else(|| panic!("{id} tag missing"))
+        + open.len();
+    let end = start + body[start..].find("</script>").expect("unterminated tag");
+    serde_json::from_str(&body[start..end]).unwrap_or_else(|e| panic!("{id} is not JSON: {e}"))
+}
+
+// Valid JSON is not the same as *populated* JSON. The row sets and form types
+// come out of two `SELECT`s that build `FromRow` structs, and a column dropped
+// from either one is swallowed into `Default::default()` — the page would
+// still render, still parse, and the grid would simply have nothing to draw.
+#[tokio::test]
+async fn the_entry_config_carries_the_seeded_row_sets_and_form_types() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let cfg = config_blob(&app.server.get("/forms/new").await.text(), "entry-config");
+
+    let row_sets = cfg["rowSets"].as_array().expect("rowSets must be an array");
+    assert_eq!(row_sets.len(), 3, "the seed has three row sets");
+    let class_1a = row_sets
+        .iter()
+        .find(|rs| rs["label"] == "1-A")
+        .expect("row set 1-A missing from the entry config");
+    let rows = class_1a["rows"].as_array().expect("1-A has no rows");
+    assert_eq!(rows.len(), 15, "1-A should carry all its seeded rows");
+    assert_eq!(rows[0], "Alba García");
+    assert!(
+        class_1a["id"].is_i64(),
+        "a row set needs its id to be picked"
+    );
+
+    let form_types = cfg["formTypes"]
+        .as_array()
+        .expect("formTypes must be an array");
+    let quiz = form_types
+        .iter()
+        .find(|f| f["name"] == "Weekly quiz")
+        .expect("form type 'Weekly quiz' missing from the entry config");
+    assert_eq!(
+        quiz["fixed_rows"], true,
+        "the grid picks fixed vs dynamic mode off this flag"
+    );
+    // `ColumnDef` serializes `col_type` as `type` — input-new.js reads
+    // `col.type`, so the serde rename is part of the page contract.
+    assert_eq!(quiz["columns"][0]["name"], "Score");
+    assert_eq!(quiz["columns"][0]["type"], "number");
+    assert_eq!(quiz["columns"][1]["type"], "text");
+
+    let expenses = form_types
+        .iter()
+        .find(|f| f["name"] == "Expense log")
+        .expect("form type 'Expense log' missing from the entry config");
+    assert_eq!(expenses["fixed_rows"], false);
+    assert_eq!(expenses["columns"][2]["type"], "bool");
+}
+
+// Every id input-new.js looks up. The script bails silently (or throws on a
+// null) when one goes missing, and nothing in CI parses it.
+#[tokio::test]
+async fn the_new_input_page_renders_every_element_the_entry_script_drives() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let body = app.server.get("/forms/new").await.text();
+
+    for id in [
+        // manual tab
+        "row_set_id",
+        "form_type_id",
+        "row-set-group",
+        "row-set-warning",
+        "grid-container",
+        "add-row-btn",
+        "submit-btn",
+        "csv_data",
+        "input-form",
+        // tab switcher
+        "tab-btn-manual",
+        "tab-btn-csv",
+        "tab-pane-manual",
+        "tab-pane-csv",
+        // CSV tab
+        "csv_row_set_id",
+        "csv_form_type_id",
+        "csv-row-set-group",
+        "csv-row-set-warning",
+        "csv-submit-btn",
+        "csv-format-hint",
+        // link editor
+        "link-modal",
+        "link-modal-form",
+        "link-modal-url",
+        "link-modal-text",
+        "link-modal-cancel",
+    ] {
+        assert!(
+            body.contains(&format!(r#"id="{id}""#)),
+            "input-new.js looks up #{id} and would find nothing"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_view_page_renders_every_element_the_view_script_drives() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+
+    for element_id in [
+        "ci-global-search",
+        "ci-add-row-btn",
+        "link-modal",
+        "link-modal-form",
+        "link-modal-url",
+        "link-modal-text",
+        "link-modal-cancel",
+    ] {
+        assert!(
+            body.contains(&format!(r#"id="{element_id}""#)),
+            "input-view.js looks up #{element_id} and would find nothing"
+        );
+    }
+    // Sorting and searching walk `.ci-input-table tbody > tr.ci-main-row`, and
+    // each row is addressed by its original CSV index.
+    assert!(body.contains(r#"<table class="ci-input-table""#));
+    assert!(body.contains(r#"class="ci-main-row""#));
+    assert!(body.contains(r#"data-original-index="0""#));
+}
+
+// One page, one script: the two files share element names (`link-modal`,
+// `ci-main-row`), so shipping both on the same page would wire the handlers
+// twice.
+#[tokio::test]
+async fn each_page_ships_only_its_own_script() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    // A line only the given file contains, so this cannot match the JSON tag
+    // of the same name.
+    let entry_marker = "document.getElementById('entry-config')";
+    let view_marker = "document.getElementById('view-config')";
+
+    let new_page = app.server.get("/forms/new").await.text();
+    assert_eq!(new_page.matches(entry_marker).count(), 1);
+    assert!(!new_page.contains(view_marker));
+
+    let view_page = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert_eq!(view_page.matches(view_marker).count(), 1);
+    assert!(!view_page.contains(entry_marker));
 }

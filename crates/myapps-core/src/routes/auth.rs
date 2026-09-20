@@ -7,6 +7,10 @@ use axum::{
 use serde::Deserialize;
 use tower_cookies::{Cookie, Cookies};
 
+/// Same service-worker registration as every other page. It bows out of the
+/// push subscription here, because `push.js` is not inlined on the login page.
+const SW_REGISTER_JS: &str = include_str!("../../../../static/sw-register.js");
+
 use super::AppState;
 use crate::i18n::{self, Lang};
 
@@ -70,7 +74,7 @@ fn login_page_html(
 
     Html(format!(
         r##"<!DOCTYPE html>
-<html lang="{lang_code}">
+<html lang="{lang_code}" data-base="{base}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -84,11 +88,7 @@ fn login_page_html(
     <link rel="apple-touch-icon" href="{base}/static/icon.svg">
 </head>
 <body class="login-page">
-    <script>
-    if ("serviceWorker" in navigator) {{
-        navigator.serviceWorker.register("{base}/sw.js", {{ scope: "{base}/" }});
-    }}
-    </script>
+    <script>{SW_REGISTER_JS}</script>
     <div class="login-card">
         <div class="login-brand">
             <h1>MyApps</h1>

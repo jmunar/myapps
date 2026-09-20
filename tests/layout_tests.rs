@@ -502,3 +502,126 @@ fn active_href(html: &str) -> Option<String> {
         .find(|(_, class)| class.split_whitespace().any(|c| c == "active"))
         .map(|(href, _)| href)
 }
+
+// ── Contracts the extracted JavaScript depends on ────────────
+//
+// The page scripts moved out of Rust `format!` strings into `static/*.js`.
+// They no longer have values interpolated into them; they read what they need
+// off the DOM instead. Nothing in CI parses those files, so a renamed or
+// dropped attribute is a ReferenceError in a browser and a green build here.
+// These tests pin the handful of attributes that carry the contract.
+
+#[tokio::test]
+async fn every_page_exposes_the_base_path_to_scripts() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    for path in EVERY_PAGE {
+        let body = app.server.get(path).await.text();
+        assert!(
+            body.contains(r#"data-base="#),
+            "{path} must expose data-base on <html>: push.js, sw-register.js, \
+             command-bar.js, mind-map.js and recorder.js all read it"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_login_page_exposes_the_base_path_too() {
+    // The login page does not go through `render_page`, so it carries its own
+    // <html> tag — and the same sw-register.js that reads data-base off it.
+    let app = harness::spawn_app().await;
+    let body = app.server.get("/login").expect_success().await.text();
+    assert!(body.contains(r#"data-base="#));
+    assert!(body.contains("serviceWorker"));
+}
+
+#[tokio::test]
+async fn every_page_inlines_the_push_helper_once() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    for path in EVERY_PAGE {
+        let body = app.server.get(path).await.text();
+        assert_eq!(
+            body.matches("window.MyAppsPush =").count(),
+            1,
+            "{path} must inline push.js exactly once — launcher-push.js and \
+             sw-register.js both depend on window.MyAppsPush"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_launcher_gives_its_push_script_the_labels() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains(r#"id="push-status""#));
+    for attr in [
+        "data-enabled=",
+        "data-blocked=",
+        "data-blocked-settings=",
+        "data-enable=",
+    ] {
+        assert!(body.contains(attr), "launcher push status missing {attr}");
+    }
+}
+
+// The point of moving the labels onto the element is that the script itself
+// stops varying: it is one static file, identical for every user and every
+// language, and only the attributes change. If a label leaked back into the
+// script body, this is where it shows up.
+#[tokio::test]
+async fn the_launcher_push_script_is_the_same_bytes_in_both_languages() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let english = app.server.get("/").await.text();
+    app.server
+        .post("/settings/language")
+        .form(&serde_json::json!({"language": "es", "redirect": "/"}))
+        .expect_failure()
+        .await;
+    let spanish = app.server.get("/").await.text();
+
+    // The page really did change language…
+    assert!(english.contains(r#"data-enable="Enable notifications""#));
+    assert!(spanish.contains(r#"data-enable="Activar notificaciones""#));
+
+    // …but the script it carries did not. Comparing against the file on disk
+    // also pins that the page inlines it verbatim rather than a copy that has
+    // drifted.
+    let script = include_str!("../static/launcher-push.js");
+    for (lang, body) in [("en", &english), ("es", &spanish)] {
+        assert!(
+            body.contains(script),
+            "the {lang} launcher does not inline static/launcher-push.js verbatim"
+        );
+    }
+}
+
+/// `sw-register.js` registers `<base>/sw.js`, which is generated rather than
+/// served off disk — so the path it computes has to be a route that answers.
+#[tokio::test]
+async fn the_service_worker_is_served_where_the_register_script_looks_for_it() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let response = app.server.get("/sw.js").await;
+    assert!(response.status_code().is_success());
+    let body = response.text();
+    // The worker is handed its base path and cache version by the handler.
+    assert!(body.contains("const BASE_PATH ="));
+    assert!(body.contains("const STATIC_VERSION ="));
+
+    // And the registration script that asks for it is on the page.
+    assert!(
+        app.server
+            .get("/")
+            .await
+            .text()
+            .contains("navigator.serviceWorker")
+    );
+}

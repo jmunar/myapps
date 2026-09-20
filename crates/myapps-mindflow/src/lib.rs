@@ -26,45 +26,19 @@ pub fn router() -> Router<AppState> {
 
 pub fn mindflow_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
-    let ct = myapps_core::i18n::t(lang);
-    vec![
-        NavItem {
-            href: format!("{base}/mindflow"),
-            label: "MindFlow".to_string(),
-            active: false,
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/mindflow"),
-            label: t.mind_map.to_string(),
-            active: active == "map",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/mindflow/inbox"),
-            label: t.inbox.to_string(),
-            active: active == "inbox",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/mindflow/actions"),
-            label: t.actions.to_string(),
-            active: active == "actions",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/mindflow/categories"),
-            label: t.categories.to_string(),
-            active: active == "categories",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/logout"),
-            label: ct.log_out.to_string(),
-            active: false,
-            right: true,
-        },
-    ]
+    myapps_core::layout::app_nav(
+        base,
+        "/mindflow",
+        "MindFlow",
+        active,
+        lang,
+        &[
+            ("", t.mind_map, "map"),
+            ("/inbox", t.inbox, "inbox"),
+            ("/actions", t.actions, "actions"),
+            ("/categories", t.categories, "categories"),
+        ],
+    )
 }
 
 pub struct MindFlowApp;
@@ -74,7 +48,6 @@ impl App for MindFlowApp {
         AppInfo {
             key: "mindflow",
             name: "MindFlow",
-            description: "Thought capture &amp; mind map",
             icon: "\u{1F9E0}",
             path: "/mindflow",
         }
@@ -110,13 +83,8 @@ impl App for MindFlowApp {
         action: &'a str,
         params: &'a std::collections::HashMap<String, serde_json::Value>,
         base_path: &'a str,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<myapps_core::command::CommandResult, String>>
-                + Send
-                + 'a,
-        >,
-    > {
+    ) -> myapps_core::registry::BoxFuture<'a, Result<myapps_core::command::CommandResult, String>>
+    {
         Box::pin(ops::dispatch(pool, user_id, action, params, base_path))
     }
 
@@ -124,8 +92,7 @@ impl App for MindFlowApp {
         &'a self,
         pool: &'a sqlx::SqlitePool,
         user_id: i64,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
-    {
+    ) -> Option<myapps_core::registry::BoxFuture<'a, anyhow::Result<()>>> {
         Some(Box::pin(services::seed::run(pool, user_id, self)))
     }
 }

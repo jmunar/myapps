@@ -8,14 +8,12 @@ pub struct Translations {
     pub delete_confirm: &'static str,
     pub back: &'static str,
     pub untitled: &'static str,
-    pub updated: &'static str,
     pub pinned: &'static str,
     pub pin: &'static str,
     pub unpin: &'static str,
     pub dictate: &'static str,
     pub dictating: &'static str,
     pub transcribing: &'static str,
-    pub search_placeholder: &'static str,
 }
 
 pub const EN: Translations = Translations {
@@ -28,14 +26,12 @@ pub const EN: Translations = Translations {
     delete_confirm: "Delete this note?",
     back: "Back to notes",
     untitled: "Untitled",
-    updated: "Updated",
     pinned: "Pinned",
     pin: "Pin",
     unpin: "Unpin",
     dictate: "Dictate",
     dictating: "Recording…",
     transcribing: "Transcribing…",
-    search_placeholder: "Search notes…",
 };
 
 pub const ES: Translations = Translations {
@@ -48,14 +44,12 @@ pub const ES: Translations = Translations {
     delete_confirm: "¿Eliminar esta nota?",
     back: "Volver a notas",
     untitled: "Sin título",
-    updated: "Actualizada",
     pinned: "Fijada",
     pin: "Fijar",
     unpin: "Desfijar",
     dictate: "Dictar",
     dictating: "Grabando…",
     transcribing: "Transcribiendo…",
-    search_placeholder: "Buscar notas…",
 };
 
 pub fn t(lang: myapps_core::i18n::Lang) -> &'static Translations {

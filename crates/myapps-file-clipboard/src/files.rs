@@ -36,27 +36,14 @@ pub fn routes() -> Router<AppState> {
 
 pub fn clipboard_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
-    let ct = myapps_core::i18n::t(lang);
-    vec![
-        NavItem {
-            href: format!("{base}/file_clipboard"),
-            label: "FileClipboard".to_string(),
-            active: false,
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/file_clipboard"),
-            label: t.files.to_string(),
-            active: active == "files",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/logout"),
-            label: ct.log_out.to_string(),
-            active: false,
-            right: true,
-        },
-    ]
+    myapps_core::layout::app_nav(
+        base,
+        "/file_clipboard",
+        "FileClipboard",
+        active,
+        lang,
+        &[("", t.files, "files")],
+    )
 }
 
 // ── Pages ───────────────────────────────────────────────────

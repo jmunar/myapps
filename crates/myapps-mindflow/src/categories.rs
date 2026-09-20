@@ -23,13 +23,11 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct CategoryRow {
     id: i64,
     name: String,
     color: String,
     icon: Option<String>,
-    parent_id: Option<i64>,
     archived: i32,
     thought_count: i32,
 }
@@ -43,7 +41,7 @@ async fn list(
     let t = super::i18n::t(lang);
 
     let categories: Vec<CategoryRow> = sqlx::query_as(
-        r#"SELECT c.id, c.name, c.color, c.icon, c.parent_id, c.archived,
+        r#"SELECT c.id, c.name, c.color, c.icon, c.archived,
                   (SELECT COUNT(*) FROM mindflow_thoughts
                    WHERE category_id = c.id AND status = 'active') AS thought_count
            FROM mindflow_categories c

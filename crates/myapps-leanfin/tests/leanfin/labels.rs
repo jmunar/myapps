@@ -660,3 +660,113 @@ async fn breakdown_pills_use_the_group_colour() {
         );
     }
 }
+
+// label-panel.js is delegated from the document and keys off [data-lf-panel];
+// the inline `lfPanel(this)` handlers it replaced are gone.
+#[tokio::test]
+async fn labels_page_marks_its_panel_triggers() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let body = app.server.get("/leanfin/labels").await.text();
+    assert!(
+        body.contains("data-lf-panel"),
+        "label-panel.js only fires for triggers carrying data-lf-panel"
+    );
+    assert!(!body.contains("lfPanel(this)"));
+}
+
+/// Drop every `<script>` element, so an assertion about the page's markup
+/// cannot be satisfied by the source of the script inlined into it.
+fn without_scripts(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(open) = rest.find("<script") {
+        out.push_str(&rest[..open]);
+        rest = match rest[open..].find("</script>") {
+            Some(close) => &rest[open + close + "</script>".len()..],
+            None => "",
+        };
+    }
+    out.push_str(rest);
+    out
+}
+
+// The marker alone is not the contract: for each trigger the script walks up
+// to the enclosing `.lf-group`, takes its `.lf-detail` slot and loads
+// `data-url` into it. A trigger missing any of those three is a click that
+// does nothing.
+#[tokio::test]
+async fn every_panel_trigger_sits_in_a_group_with_a_slot_and_a_url() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    // label-panel.js is inlined into the page and spells `data-lf-panel` in
+    // its own selector, so the markup has to be looked at without it.
+    let body = without_scripts(&app.server.get("/leanfin/labels").await.text());
+
+    // One section per group; the seed always has at least the default group.
+    let groups: Vec<&str> = body.split(r#"<div class="lf-group""#).skip(1).collect();
+    assert!(!groups.is_empty(), "the labels page rendered no groups");
+
+    let mut triggers = 0;
+    for section in &groups {
+        assert!(
+            section.contains(r#"<div class="lf-detail">"#),
+            "a group has no .lf-detail slot for htmx.ajax to fill"
+        );
+        // Every trigger inside the section must carry the URL the script
+        // fetches. The attribute is written just before `data-lf-panel`.
+        for (i, _) in section.match_indices("data-lf-panel") {
+            triggers += 1;
+            let tag_start = section[..i].rfind('<').expect("attribute outside a tag");
+            assert!(
+                section[tag_start..i].contains(r#"data-url="/leanfin/"#),
+                "a panel trigger has no data-url for htmx.ajax to load"
+            );
+        }
+    }
+
+    // The group heads plus one chip per seeded label.
+    let labels: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM leanfin_labels")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        triggers as i64,
+        groups.len() as i64 + labels,
+        "expected a trigger for every group head and every label chip"
+    );
+}
+
+// `.btn-icon` was renamed to `.leanfin-btn-icon` so it stops colliding with
+// the identically named class in VoiceToText — apps.css is one concatenated
+// sheet with no scoping. A fragment left on the old name loses its styling
+// silently, so check the panels too, not just the pages.
+#[tokio::test]
+async fn the_rules_panel_uses_the_prefixed_icon_class() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let (label_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM leanfin_labels WHERE name = 'Groceries'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let body = app
+        .server
+        .get(&format!("/leanfin/labels/{label_id}/rules"))
+        .await
+        .text();
+
+    // The seeded Groceries rules each get a delete button.
+    assert!(
+        body.contains(r#"class="leanfin-btn-icon leanfin-btn-icon-danger btn-sm""#),
+        "the rules panel should render its delete buttons with the prefixed class"
+    );
+    assert!(
+        !body.contains(r#"class="btn-icon"#),
+        "no fragment may keep the old unprefixed class"
+    );
+}

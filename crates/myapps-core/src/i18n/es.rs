@@ -46,7 +46,6 @@ pub const ES: Translations = Translations {
     language_label: "Idioma",
 
     // ── Command Bar ─────────────────────────────────────────
-    cmd_placeholder: "Escribe un comando\u{2026}",
     cmd_busy: "Modelo ocupado, int\u{e9}ntalo en un momento.",
     cmd_error: "Error de comando",
     cmd_not_configured: "Barra de comandos no configurada.",
@@ -59,7 +58,6 @@ pub const ES: Translations = Translations {
     // ── Command Bar (voice) ──────────────────────────────────
     cmd_record: "Grabar comando",
     cmd_voice_command: "Comando de voz",
-    cmd_recording: "Grabando\u{2026}",
     cmd_transcribing: "Transcribiendo\u{2026}",
     cmd_interpreting: "Interpretando\u{2026}",
     cmd_edit: "Editar",

@@ -131,7 +131,7 @@ async fn chart_endpoint_reports_an_empty_group() {
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &other.to_string())
+        .add_query_param("group_id", other.to_string())
         .add_query_param("window", "10w")
         .await
         .text();
@@ -149,7 +149,7 @@ async fn chart_endpoint_returns_one_payload_covering_both_charts() {
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &essentials.to_string())
+        .add_query_param("group_id", essentials.to_string())
         .add_query_param("window", "12m")
         .await
         .text();
@@ -180,7 +180,7 @@ async fn chart_endpoint_defaults_to_the_default_window() {
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &essentials.to_string())
+        .add_query_param("group_id", essentials.to_string())
         .await
         .text();
 
@@ -199,7 +199,7 @@ async fn chart_payload_matrix_matches_the_category_count() {
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &essentials.to_string())
+        .add_query_param("group_id", essentials.to_string())
         .add_query_param("window", "30d")
         .await
         .text();
@@ -325,7 +325,7 @@ async fn payload_with(
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &group.to_string())
+        .add_query_param("group_id", group.to_string())
         .add_query_param("window", window)
         .add_query_param("current", current)
         .await
@@ -654,7 +654,7 @@ async fn chart_endpoint_reports_a_group_whose_labels_have_no_data() {
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &f.group.to_string())
+        .add_query_param("group_id", f.group.to_string())
         .add_query_param("window", "10w")
         .await
         .text();
@@ -778,7 +778,7 @@ async fn an_unnamed_current_flag_keeps_the_running_period() {
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &f.group.to_string())
+        .add_query_param("group_id", f.group.to_string())
         .add_query_param("window", "10w")
         .await
         .text();
@@ -836,4 +836,46 @@ async fn the_series_query_counts_both_of_its_own_end_days() {
     // Spending keeps its statement sign, so both come back negative.
     let total: f64 = points.iter().map(|p| p.total).sum();
     assert!((total + 30.0).abs() < 0.01, "totalled {total}");
+}
+
+// Chart.js used to be loaded by the shared layout on every page of every app.
+// It is ~200 KB and only these two LeanFin pages use it, so it now ships from
+// the pages themselves. These lock that in: present where a chart is drawn,
+// absent everywhere else.
+#[tokio::test]
+async fn breakdown_page_loads_chart_js() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let body = app.server.get("/leanfin/breakdown").await.text();
+    assert!(
+        body.contains("/static/chart.min.js"),
+        "breakdown draws a chart, so it must load Chart.js itself"
+    );
+}
+
+#[tokio::test]
+async fn balance_evolution_page_loads_chart_js() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let body = app.server.get("/leanfin/balance-evolution").await.text();
+    assert!(
+        body.contains("/static/chart.min.js"),
+        "balance evolution draws a chart, so it must load Chart.js itself"
+    );
+}
+
+#[tokio::test]
+async fn chartless_pages_do_not_load_chart_js() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    for path in ["/leanfin/", "/leanfin/accounts", "/leanfin/labels"] {
+        let body = app.server.get(path).await.text();
+        assert!(
+            !body.contains("/static/chart.min.js"),
+            "{path} draws no chart, so it must not pay for Chart.js"
+        );
+    }
 }

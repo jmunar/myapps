@@ -58,13 +58,13 @@ myapps/
 │   │       ├── auth/        # Authentication & session management
 │   │       ├── cli.rs       # CLI parsing + command dispatch (clap)
 │   │       ├── command/     # Natural-language command bar (LLM-powered)
-│   │       ├── components.rs # Reusable UI components (JSON viewer)
+│   │       ├── components.rs # Shared rendering helpers (HTML/script escaping, JSON viewer)
 │   │       ├── config.rs    # Configuration (env vars)
 │   │       ├── db.rs        # Database pool and migrations
 │   │       ├── i18n/        # Shared translations (auth, launcher, command bar)
-│   │       ├── layout.rs    # Shared HTML layout helper
+│   │       ├── layout.rs    # Page shell + nav builder; inlines the shared page scripts
 │   │       ├── models/      # Shared domain types (User, Session, Invite, settings)
-│   │       ├── registry.rs  # App trait + registry (AppInfo, deployed_app_instances)
+│   │       ├── registry.rs  # App trait + registry (AppInfo, BoxFuture, deployed_app_instances)
 │   │       ├── routes/      # Top-level router, auth routes, launcher, PWA, settings
 │   │       └── services/    # Shared services (Web Push, Whisper transcription)
 │   ├── myapps-leanfin/      # LeanFin expense tracker
@@ -74,17 +74,17 @@ myapps/
 │   │   └── src/             # Handlers, services, models, i18n, ops, period
 │   ├── myapps-mindflow/     # MindFlow thought capture + mind map
 │   │   ├── migrations/
-│   │   ├── static/style.css
+│   │   ├── static/          # style.css + mind-map.js (d3 force graph)
 │   │   ├── tests/
 │   │   └── src/
 │   ├── myapps-voice-to-text/ # VoiceToText audio transcription
 │   │   ├── migrations/
-│   │   ├── static/style.css
+│   │   ├── static/          # style.css + recorder.js (in-browser mic capture)
 │   │   ├── tests/
 │   │   └── src/
 │   ├── myapps-form-input/      # FormInput custom forms with row sets
 │   │   ├── migrations/
-│   │   ├── static/style.css
+│   │   ├── static/          # style.css + column editor and entry/view grid JS
 │   │   ├── tests/
 │   │   └── src/
 │   ├── myapps-notes/          # Notes markdown note-taking
@@ -97,12 +97,13 @@ myapps/
 │   │   ├── static/            # style.css + upload.js (drag-and-drop uploader)
 │   │   ├── tests/
 │   │   └── src/
-│   └── myapps-test-harness/ # Shared test utilities (spawn_app, TestApp)
+│   └── myapps-test-harness/ # Shared test utilities (spawn_app, spawn_app_with, Options, TestApp)
 ├── tests/                   # Root integration tests
-│   ├── harness/mod.rs       # Root test harness (uses all apps)
+│   ├── harness/mod.rs       # Platform spawners over myapps-test-harness (all apps registered)
 │   └── auth_tests.rs        # Platform auth, launcher, settings, invite tests
 ├── models/                  # Whisper GGML model files (gitignored)
-├── static/                  # core.css, JS (htmx, chart.js, d3, nav-swipe, notes-vendor bundle), PWA assets
+├── static/                  # core.css, vendor JS (htmx, chart.js, d3, notes bundle),
+│                            # shared page scripts (nav-swipe, command-bar, push, sw-register), PWA assets
 ├── tools/
 │   └── notes-vendor/        # npm + esbuild setup that produces static/notes-vendor.bundle.js
 ├── .claude/agents/          # Claude Code agent prompts

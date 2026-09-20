@@ -35,6 +35,23 @@ pub struct CommandAction {
     pub params: &'static [CommandParam],
 }
 
+/// Read a string parameter out of a dispatched intent's params.
+///
+/// The LLM hands back untyped JSON, so a parameter the app expects as text can
+/// arrive as a number, a bool or not at all; all of those read as `None` here
+/// rather than panicking in the app's dispatcher.
+pub fn text_param<'a>(
+    params: &'a HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Option<&'a str> {
+    params.get(key).and_then(|v| v.as_str())
+}
+
+/// Render a database error as the string `dispatch` returns on failure.
+pub fn db_err(e: sqlx::Error) -> String {
+    format!("Database error: {e}")
+}
+
 /// The intent parsed from the LLM's JSON output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandIntent {

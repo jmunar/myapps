@@ -23,7 +23,6 @@ impl App for VoiceToTextApp {
         AppInfo {
             key: "voice_to_text",
             name: "VoiceToText",
-            description: "Audio transcription with Whisper",
             icon: "\u{1F3A4}",
             path: "/voice",
         }
@@ -59,13 +58,8 @@ impl App for VoiceToTextApp {
         action: &'a str,
         params: &'a std::collections::HashMap<String, serde_json::Value>,
         base_path: &'a str,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<myapps_core::command::CommandResult, String>>
-                + Send
-                + 'a,
-        >,
-    > {
+    ) -> myapps_core::registry::BoxFuture<'a, Result<myapps_core::command::CommandResult, String>>
+    {
         Box::pin(ops::dispatch(pool, user_id, action, params, base_path))
     }
 

@@ -82,7 +82,6 @@ pub struct Translations {
     pub language_label: &'static str,
 
     // ── Command Bar ─────────────────────────────────────────
-    pub cmd_placeholder: &'static str,
     pub cmd_busy: &'static str,
     pub cmd_error: &'static str,
     pub cmd_not_configured: &'static str,
@@ -95,7 +94,6 @@ pub struct Translations {
     // ── Command Bar (voice) ──────────────────────────────────
     pub cmd_record: &'static str,
     pub cmd_voice_command: &'static str,
-    pub cmd_recording: &'static str,
     pub cmd_transcribing: &'static str,
     pub cmd_interpreting: &'static str,
     pub cmd_edit: &'static str,

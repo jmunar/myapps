@@ -408,3 +408,149 @@ async fn form_type_edit_page_escapes_attribute_values() {
     );
     assert!(body.contains("&quot;"));
 }
+
+// The column editor moved out of two near-identical inline <script> blocks
+// into `static/columns-editor.js`, which is the same file on both pages and
+// reads everything that used to be interpolated into it off `#columns-editor`.
+// Nothing in CI parses that JS, so these pin the contract it depends on: if an
+// attribute is dropped or renamed, the editor goes dead in the browser without
+// any build failing.
+#[tokio::test]
+async fn create_page_gives_the_column_editor_its_config() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let body = app.server.get("/forms/form-types").await.text();
+
+    assert!(body.contains(r#"id="columns-editor""#));
+    assert!(body.contains(r#"data-form="ft-create-form""#));
+    assert!(body.contains(r#"data-target="ft-create-columns""#));
+    assert!(body.contains(r#"id="ft-create-form""#));
+    assert!(body.contains(r#"id="ft-create-columns""#));
+    assert!(body.contains("data-add-column"));
+    assert!(body.contains("data-col-remove"));
+    for attr in [
+        "data-ph-name",
+        "data-t-text",
+        "data-t-number",
+        "data-t-bool",
+        "data-t-link",
+        "data-t-multiline",
+    ] {
+        assert!(body.contains(attr), "missing {attr} on the column editor");
+    }
+}
+
+#[tokio::test]
+async fn edit_page_gives_the_column_editor_its_config() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_form_types WHERE name = 'Weekly quiz' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let body = app
+        .server
+        .get(&format!("/forms/form-types/{id}/edit"))
+        .await
+        .text();
+
+    assert!(body.contains(r#"id="columns-editor""#));
+    assert!(body.contains(r#"data-form="ft-edit-form""#));
+    assert!(body.contains(r#"data-target="ft-edit-columns""#));
+    assert!(body.contains(r#"id="ft-edit-form""#));
+    assert!(body.contains(r#"id="ft-edit-columns""#));
+    assert!(body.contains("data-add-column"));
+}
+
+// Both pages must ship the one shared file, not a per-page copy.
+#[tokio::test]
+async fn both_pages_ship_the_same_column_editor_script() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_form_types WHERE name = 'Weekly quiz' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let create = app.server.get("/forms/form-types").await.text();
+    let edit = app
+        .server
+        .get(&format!("/forms/form-types/{id}/edit"))
+        .await
+        .text();
+
+    let marker = "function serializeColumns()";
+    assert!(
+        create.contains(marker),
+        "create page lost the editor script"
+    );
+    assert!(edit.contains(marker), "edit page lost the editor script");
+    // The old inline copies defined this global; the shared file does not.
+    assert!(!create.contains("function addColumnRow"));
+    assert!(!edit.contains("function addColumnRow"));
+}
+
+// `serializeColumns()` rebuilds the whole `columns_json` from the rows on
+// submit, reading each row's `[data-col-name]` value and whichever option its
+// `[data-col-type]` select has picked. So the edit page has to render the
+// stored column back into those two controls: a missing `value` or `selected`
+// does not fail to render, it quietly rewrites every column to an empty name
+// or to "text" the next time the form is saved.
+#[tokio::test]
+async fn edit_page_puts_each_stored_column_back_into_the_editor() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (uid,): (i64,) = sqlx::query_as("SELECT id FROM users WHERE username = 'seeduser' LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let columns = r#"[{"name":"Title","type":"text"},{"name":"Score","type":"number"},{"name":"Done","type":"bool"},{"name":"Source","type":"link"}]"#;
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO form_input_form_types (user_id, name, columns_json, fixed_rows) VALUES (?, ?, ?, 0) RETURNING id",
+    )
+    .bind(uid)
+    .bind("Every type")
+    .bind(columns)
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app
+        .server
+        .get(&format!("/forms/form-types/{id}/edit"))
+        .await
+        .text();
+
+    let rows: Vec<&str> = body
+        .split(r#"<div class="ci-column-row">"#)
+        .skip(1)
+        .collect();
+    assert_eq!(rows.len(), 4, "one editor row per stored column");
+
+    for (row, (name, col_type)) in rows.iter().zip([
+        ("Title", "text"),
+        ("Score", "number"),
+        ("Done", "bool"),
+        ("Source", "link"),
+    ]) {
+        assert!(
+            row.contains(&format!(r#"data-col-name value="{name}""#)),
+            "column {name} lost its name input value"
+        );
+        assert!(
+            row.contains(&format!(r#"<option value="{col_type}" selected>"#)),
+            "column {name} should have {col_type} pre-selected"
+        );
+        // Exactly one option per row may be selected, or the browser keeps the
+        // last one and the save silently changes the type.
+        assert_eq!(row.matches(" selected>").count(), 1);
+    }
+}

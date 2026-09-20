@@ -2,6 +2,10 @@ use axum::extract::{Multipart, Path};
 use axum::{Extension, Router, response::Html, routing::get, routing::post};
 use std::path::PathBuf;
 
+/// Browser-side recorder for the new-job page. Kept in its own file so the
+/// Rust side never has to brace-escape JavaScript.
+const RECORDER_JS: &str = include_str!("../static/recorder.js");
+
 use super::dashboard::voice_nav;
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
@@ -80,40 +84,13 @@ async fn new_form(
         <div class="card" style="margin-top:1rem;">
             <h2>{record}</h2>
             <div id="recorder">
-                <button id="rec-start" class="btn btn-primary" onclick="startRecording()">{start}</button>
-                <button id="rec-stop" class="btn" onclick="stopRecording()" disabled>{stop}</button>
-                <span id="rec-status"></span>
+                <button id="rec-start" class="btn btn-primary">{start}</button>
+                <button id="rec-stop" class="btn" disabled>{stop}</button>
+                <span id="rec-status" data-recording="{recording}" data-processing="{processing}"></span>
             </div>
             <div id="rec-result"></div>
         </div>
-        <script>
-        let mediaRecorder, audioChunks = [];
-        async function startRecording() {{
-            const stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
-            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-            mediaRecorder.onstop = async () => {{
-                stream.getTracks().forEach(t => t.stop());
-                const blob = new Blob(audioChunks, {{ type: 'audio/webm' }});
-                const form = new FormData();
-                form.append('audio', blob, 'recording.webm');
-                form.append('model', document.getElementById('model').value);
-                const resp = await fetch('{base}/voice/upload', {{ method: 'POST', body: form }});
-                document.getElementById('rec-result').innerHTML = await resp.text();
-            }};
-            mediaRecorder.start();
-            document.getElementById('rec-start').disabled = true;
-            document.getElementById('rec-stop').disabled = false;
-            document.getElementById('rec-status').textContent = '{recording}';
-        }}
-        function stopRecording() {{
-            mediaRecorder.stop();
-            document.getElementById('rec-start').disabled = false;
-            document.getElementById('rec-stop').disabled = true;
-            document.getElementById('rec-status').textContent = '{processing}';
-        }}
-        </script>"##,
+        <script>{RECORDER_JS}</script>"##,
         new_title = t.new_title,
         new_subtitle = t.new_subtitle,
         audio_file = t.new_audio_file,
