@@ -8,7 +8,7 @@ fmt:
 	cargo fmt
 
 lint:
-	cargo clippy --workspace -- -D warnings
+	cargo clippy --workspace --all-targets -- -D warnings
 
 test:
 	cargo test --workspace

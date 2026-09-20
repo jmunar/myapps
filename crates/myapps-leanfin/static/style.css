@@ -389,47 +389,6 @@
     color: var(--accent);
 }
 
-/* Label picker (inline dropdown) */
-.label-picker {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    padding: 0.25rem 0;
-    align-items: center;
-}
-
-.label-badge-toggle {
-    cursor: pointer;
-    transition: all 0.15s var(--ease);
-    opacity: 0.5;
-    font-family: var(--font-body);
-}
-
-.label-badge-toggle:hover {
-    opacity: 0.8;
-}
-
-.label-badge-toggle.active {
-    opacity: 1;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--label-color) 40%, transparent);
-}
-
-.label-picker-close {
-    font-family: var(--font-body);
-    font-size: 0.65rem;
-    font-weight: 600;
-    padding: 0.15rem 0.5rem;
-    border-radius: 100px;
-    background: var(--bg-input);
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
-    cursor: pointer;
-}
-
-.label-picker-close:hover {
-    background: var(--bg-hover);
-}
-
 /* Label list (management page) */
 .label-list {
     display: flex;
@@ -462,7 +421,7 @@
     gap: 0.4rem;
 }
 
-.btn-icon {
+.leanfin-btn-icon {
     font-family: var(--font-body);
     font-size: 0.75rem;
     font-weight: 500;
@@ -475,12 +434,12 @@
     transition: all 0.15s var(--ease);
 }
 
-.btn-icon:hover {
+.leanfin-btn-icon:hover {
     background: var(--bg-hover);
     color: var(--text);
 }
 
-.btn-icon-danger:hover {
+.leanfin-btn-icon-danger:hover {
     background: var(--negative-bg);
     color: var(--negative);
     border-color: color-mix(in srgb, var(--negative) 30%, transparent);
@@ -516,10 +475,6 @@
 }
 
 /* ── Label rules ────────────────────────────────────────────── */
-.rules-panel-container:empty {
-    display: none;
-}
-
 .rules-panel {
     width: 100%;
     background: var(--bg);
@@ -1025,29 +980,6 @@ tr.txn-misallocated:hover {
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--label-color) 40%, transparent);
 }
 
-.source-badge {
-    font-size: 0.65rem;
-    font-weight: 600;
-    padding: 0.1rem 0.4rem;
-    border-radius: 100px;
-    white-space: nowrap;
-}
-
-.source-reported {
-    background: var(--positive-bg);
-    color: var(--positive);
-}
-
-.source-computed {
-    background: var(--bg-input);
-    color: var(--text-secondary);
-}
-
-.source-aggregated {
-    background: var(--accent-light);
-    color: var(--accent);
-}
-
 .reconciliation-alert {
     font-size: 0.8rem;
     font-weight: 500;
@@ -1084,8 +1016,6 @@ nav a.brand:hover {
 }
 
 /* ── Action icons ───────────────────────────────────────────── */
-/* `.btn-icon` is also defined by VoiceToText in the same concatenated sheet,
-   so the icon itself carries an app-prefixed class. */
 .leanfin-icon {
     width: 1rem;
     height: 1rem;
@@ -1094,8 +1024,11 @@ nav a.brand:hover {
 }
 
 /* These are submit buttons, so core.css's `button[type="submit"]` rule would
-   otherwise paint them with the accent fill — `:has()` here outranks it. */
-.btn-icon:has(.leanfin-icon) {
+   otherwise paint them with the accent fill. A bare class loses to that
+   selector on specificity, so `:has()` is what outranks it — the background,
+   colour and border below repeat the base rule on purpose, and removing them
+   hands the buttons back to the accent fill. */
+.leanfin-btn-icon:has(.leanfin-icon) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1106,17 +1039,17 @@ nav a.brand:hover {
     border: 1px solid var(--border);
 }
 
-.btn-icon:has(.leanfin-icon):hover {
+.leanfin-btn-icon:has(.leanfin-icon):hover {
     background: var(--bg-hover);
     color: var(--text);
 }
 
-.btn-icon-danger:has(.leanfin-icon) {
+.leanfin-btn-icon-danger:has(.leanfin-icon) {
     color: var(--negative);
     border-color: color-mix(in srgb, var(--negative) 25%, transparent);
 }
 
-.btn-icon-danger:has(.leanfin-icon):hover {
+.leanfin-btn-icon-danger:has(.leanfin-icon):hover {
     background: var(--negative-bg);
     color: var(--negative);
 }

@@ -402,14 +402,6 @@ button:active, .btn:active {
     padding: 0.7rem;
 }
 
-/* ── Action bar ─────────────────────────────────────────────── */
-.action-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-}
-
 /* ── Loading skeleton ───────────────────────────────────────── */
 .loading {
     padding: 2rem;

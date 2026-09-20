@@ -144,7 +144,7 @@ async fn transaction_label_ids_filter_returns_matching() {
     let response = app
         .server
         .get("/leanfin/transactions")
-        .add_query_param("label_ids", &label_id.to_string())
+        .add_query_param("label_ids", label_id.to_string())
         .await;
     let body = response.text();
 
@@ -300,7 +300,7 @@ async fn transaction_account_filter() {
     let response = app
         .server
         .get("/leanfin/transactions")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .await;
     let body = response.text();
     // ING Direct savings account has "MyInvestor" and "Self transfer" transactions

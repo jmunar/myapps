@@ -13,57 +13,21 @@ pub fn routes() -> Router<AppState> {
 
 pub fn leanfin_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = super::i18n::t(lang);
-    let ct = myapps_core::i18n::t(lang);
-    vec![
-        NavItem {
-            href: format!("{base}/leanfin"),
-            label: "LeanFin".to_string(),
-            active: false,
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/leanfin"),
-            label: t.transactions.to_string(),
-            active: active == "transactions",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/leanfin/accounts"),
-            label: t.accounts.to_string(),
-            active: active == "accounts",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/leanfin/balance-evolution"),
-            label: t.balance.to_string(),
-            active: active == "balance",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/leanfin/breakdown"),
-            label: t.expenses.to_string(),
-            active: active == "breakdown",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/leanfin/labels"),
-            label: t.labels.to_string(),
-            active: active == "labels",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/leanfin/settings"),
-            label: t.settings.to_string(),
-            active: active == "settings",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/logout"),
-            label: ct.log_out.to_string(),
-            active: false,
-            right: true,
-        },
-    ]
+    myapps_core::layout::app_nav(
+        base,
+        "/leanfin",
+        "LeanFin",
+        active,
+        lang,
+        &[
+            ("", t.transactions, "transactions"),
+            ("/accounts", t.accounts, "accounts"),
+            ("/balance-evolution", t.balance, "balance"),
+            ("/breakdown", t.expenses, "breakdown"),
+            ("/labels", t.labels, "labels"),
+            ("/settings", t.settings, "settings"),
+        ],
+    )
 }
 
 #[derive(sqlx::FromRow)]

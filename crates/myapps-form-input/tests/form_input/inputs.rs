@@ -855,7 +855,12 @@ async fn new_input_page_escapes_script_close_in_embedded_json() {
         !body.contains("</script><b>x"),
         "embedded JSON must escape '</' so the surrounding <script> tag stays open"
     );
-    assert!(body.contains("<\\/script>"));
+    // `json_for_script` escapes the markup characters rather than just the
+    // `</` sequence, so the closing tag cannot be reassembled at all.
+    assert!(
+        body.contains("\\u003c/script\\u003e"),
+        "the embedded JSON must carry the row in escaped form"
+    );
 }
 
 #[tokio::test]
@@ -1386,12 +1391,14 @@ async fn view_page_wires_the_row_endpoints_into_the_script() {
     let id = input_id(&app, "March expenses").await;
 
     let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    // The endpoints now reach input-view.js through the #view-config JSON tag
+    // rather than being interpolated into the script body.
     assert!(
-        body.contains(&format!("'/forms/inputs/{id}/rows'")),
+        body.contains(&format!(r#""addRow":"/forms/inputs/{id}/rows""#)),
         "the add-row handler needs its endpoint"
     );
     assert!(
-        body.contains(&format!("'/forms/inputs/{id}/rows/delete'")),
+        body.contains(&format!(r#""delRow":"/forms/inputs/{id}/rows/delete""#)),
         "the delete-row handler needs its endpoint"
     );
     // The two new i18n strings reach the page.
@@ -1631,4 +1638,60 @@ async fn single_column_form_keeps_several_blank_rows() {
     let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
     assert_eq!(body.matches(r#"class="ci-row-del""#).count(), 3);
     assert!(body.contains(r#"data-row="2" data-col="0" data-type="text">Bread<"#));
+}
+
+// input-new.js and input-view.js take everything through a JSON config tag.
+// If the blob stops being valid JSON, JSON.parse throws and the whole page
+// script dies — so assert it parses, not merely that it is present.
+#[tokio::test]
+async fn the_entry_config_blob_is_valid_json() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let body = app.server.get("/forms/new").await.text();
+    let open = r#"<script type="application/json" id="entry-config">"#;
+    let start = body.find(open).expect("entry-config tag missing") + open.len();
+    let end = start + body[start..].find("</script>").expect("unterminated tag");
+
+    let cfg: serde_json::Value =
+        serde_json::from_str(&body[start..end]).expect("entry-config must be valid JSON");
+    assert!(cfg["rowSets"].is_array(), "entry grid needs its row sets");
+    assert!(
+        cfg["formTypes"].is_array(),
+        "entry grid needs its form types"
+    );
+    for key in [
+        "row",
+        "selectHint",
+        "bool",
+        "removeRow",
+        "noRowsYet",
+        "linkDefault",
+        "linkAdd",
+        "csvFormatDynamic",
+        "csvFormatFixed",
+    ] {
+        assert!(!cfg["labels"][key].is_null(), "missing label {key}");
+    }
+}
+
+#[tokio::test]
+async fn the_view_config_blob_is_valid_json() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    let open = r#"<script type="application/json" id="view-config">"#;
+    let start = body.find(open).expect("view-config tag missing") + open.len();
+    let end = start + body[start..].find("</script>").expect("unterminated tag");
+
+    let cfg: serde_json::Value =
+        serde_json::from_str(&body[start..end]).expect("view-config must be valid JSON");
+    for key in ["bool", "linkDefault", "deleteRow", "rowOpFailed"] {
+        assert!(!cfg["labels"][key].is_null(), "missing label {key}");
+    }
+    for key in ["save", "addRow", "delRow"] {
+        assert!(cfg["urls"][key].is_string(), "missing url {key}");
+    }
 }

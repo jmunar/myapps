@@ -2105,6 +2105,7 @@ dependencies = [
  "myapps-leanfin",
  "myapps-mindflow",
  "myapps-notes",
+ "myapps-test-harness",
  "myapps-voice-to-text",
  "openssl",
  "serde_json",

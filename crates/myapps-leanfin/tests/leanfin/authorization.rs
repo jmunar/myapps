@@ -372,7 +372,7 @@ async fn breakdown_chart_for_another_users_group_reports_not_found() {
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &victim.group.to_string())
+        .add_query_param("group_id", victim.group.to_string())
         .add_query_param("days", "365")
         .await
         .text();
@@ -403,7 +403,7 @@ async fn balance_deep_link_to_another_users_account_falls_back_to_all_accounts()
     let body = app
         .server
         .get("/leanfin/balance-evolution")
-        .add_query_param("account_id", &victim.account.to_string())
+        .add_query_param("account_id", victim.account.to_string())
         .await
         .text();
 

@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 use super::notes_nav;
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -25,14 +26,12 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct NoteRow {
     id: i64,
     client_uuid: String,
     title: String,
     body: String,
     pinned: i64,
-    created_at: String,
     updated_at: String,
 }
 
@@ -45,7 +44,7 @@ async fn list(
     let t = super::i18n::t(lang);
 
     let notes: Vec<NoteRow> = sqlx::query_as(
-        "SELECT id, client_uuid, title, body, pinned, created_at, updated_at FROM notes_notes WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC",
+        "SELECT id, client_uuid, title, body, pinned, updated_at FROM notes_notes WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC",
     )
     .bind(user_id.0)
     .fetch_all(&state.pool)
@@ -155,7 +154,7 @@ async fn edit(
     let t = super::i18n::t(lang);
 
     let note: Option<NoteRow> = sqlx::query_as(
-        "SELECT id, client_uuid, title, body, pinned, created_at, updated_at FROM notes_notes WHERE id = ? AND user_id = ?",
+        "SELECT id, client_uuid, title, body, pinned, updated_at FROM notes_notes WHERE id = ? AND user_id = ?",
     )
     .bind(id)
     .bind(user_id.0)
@@ -219,7 +218,7 @@ async fn edit(
         <script src="{base}/static/notes-vendor.bundle.js?v={sv}"></script>
         <script src="{base}/static/notes-tiptap-bootstrap.js?v={sv}"></script>"##,
         id = note.id,
-        uuid = html_attr_escape(&note.client_uuid),
+        uuid = html_escape(&note.client_uuid),
         untitled = t.untitled,
         back = t.back,
         delete = t.delete,
@@ -343,17 +342,4 @@ async fn handle_dictation(
     let _ = std::fs::remove_file(&wav_path);
 
     Ok(text)
-}
-
-// ── Helpers ─────────────────────────────────────────────────
-
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-fn html_attr_escape(s: &str) -> String {
-    html_escape(s).replace('\'', "&#39;")
 }

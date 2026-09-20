@@ -515,7 +515,7 @@ async fn alloc_editor_inner(
                       hx-post="{base}/leanfin/transactions/{txn_id}/allocations/{alloc_id}/delete"
                       hx-target="#alloc-editor-{txn_id}"
                       hx-swap="outerHTML">
-                    <button class="btn-icon btn-icon-danger" type="submit">&times;</button>
+                    <button class="leanfin-btn-icon leanfin-btn-icon-danger" type="submit">&times;</button>
                 </form>
             </div>"##,
             name = html_escape(&a.label_name),

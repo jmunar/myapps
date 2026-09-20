@@ -39,7 +39,6 @@ impl App for LeanFinApp {
         AppInfo {
             key: "leanfin",
             name: "LeanFin",
-            description: "Personal expense tracker",
             icon: "$",
             path: "/leanfin",
         }
@@ -75,13 +74,8 @@ impl App for LeanFinApp {
         action: &'a str,
         params: &'a std::collections::HashMap<String, serde_json::Value>,
         base_path: &'a str,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<myapps_core::command::CommandResult, String>>
-                + Send
-                + 'a,
-        >,
-    > {
+    ) -> myapps_core::registry::BoxFuture<'a, Result<myapps_core::command::CommandResult, String>>
+    {
         Box::pin(ops::dispatch(pool, user_id, action, params, base_path))
     }
 
@@ -89,8 +83,7 @@ impl App for LeanFinApp {
         &'a self,
         pool: &'a sqlx::SqlitePool,
         user_id: i64,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
-    {
+    ) -> Option<myapps_core::registry::BoxFuture<'a, anyhow::Result<()>>> {
         Some(Box::pin(services::seed::run(pool, user_id, self)))
     }
 
@@ -98,8 +91,7 @@ impl App for LeanFinApp {
         &'a self,
         pool: &'a sqlx::SqlitePool,
         config: &'a myapps_core::config::Config,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
-    {
+    ) -> Option<myapps_core::registry::BoxFuture<'a, anyhow::Result<()>>> {
         Some(Box::pin(services::sync::run(pool, config)))
     }
 
@@ -109,8 +101,7 @@ impl App for LeanFinApp {
         config: &'a myapps_core::config::Config,
         user_id: i64,
         days: i64,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
-    {
+    ) -> Option<myapps_core::registry::BoxFuture<'a, anyhow::Result<()>>> {
         Some(Box::pin(async move {
             let result = services::sync::backfill_for_user(pool, config, user_id, days).await;
             tracing::info!(

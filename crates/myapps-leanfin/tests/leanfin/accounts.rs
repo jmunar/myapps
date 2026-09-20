@@ -741,7 +741,7 @@ async fn the_accounts_list_offers_a_rename_control_per_account() {
 
     assert!(body.contains(&format!(r#"id="account-name-{id}""#)));
     assert!(body.contains(&format!(r#"hx-get="/leanfin/accounts/{id}/name""#)));
-    assert!(body.contains(r#"class="btn-icon account-rename""#));
+    assert!(body.contains(r#"class="leanfin-btn-icon account-rename""#));
 }
 
 #[tokio::test]
@@ -767,7 +767,7 @@ async fn the_rename_endpoint_swaps_in_an_editor_and_back_again() {
         .await
         .text();
     assert!(saved.contains("Joint current"));
-    assert!(saved.contains(r#"class="btn-icon account-rename""#));
+    assert!(saved.contains(r#"class="leanfin-btn-icon account-rename""#));
 
     let stored: Option<String> =
         sqlx::query_scalar("SELECT account_name FROM leanfin_accounts WHERE id = ?")

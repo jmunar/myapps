@@ -11,7 +11,6 @@ pub struct Translations {
     pub drop_title: &'static str,
     pub drop_hint: &'static str,
     pub drop_browse: &'static str,
-    pub uploading: &'static str,
 
     // File list
     pub col_name: &'static str,
@@ -26,7 +25,6 @@ pub struct Translations {
     pub storage_used: &'static str,
 
     // Retention settings
-    pub retention_title: &'static str,
     pub retention_label: &'static str,
     pub retention_hint: &'static str,
     pub retention_save: &'static str,
@@ -50,7 +48,6 @@ pub const EN: Translations = Translations {
     drop_title: "Drop files here",
     drop_hint: "or",
     drop_browse: "choose files",
-    uploading: "Uploading",
 
     col_name: "Name",
     col_size: "Size",
@@ -63,7 +60,6 @@ pub const EN: Translations = Translations {
     delete_confirm: "Delete this file? This cannot be undone.",
     storage_used: "used",
 
-    retention_title: "Deletion period",
     retention_label: "Delete files after",
     retention_hint: "days. Applies to the files you already have, too.",
     retention_save: "Save",
@@ -86,7 +82,6 @@ pub const ES: Translations = Translations {
     drop_title: "Suelta archivos aquí",
     drop_hint: "o",
     drop_browse: "selecciona archivos",
-    uploading: "Subiendo",
 
     col_name: "Nombre",
     col_size: "Tamaño",
@@ -99,7 +94,6 @@ pub const ES: Translations = Translations {
     delete_confirm: "¿Eliminar este archivo? No se puede deshacer.",
     storage_used: "usado",
 
-    retention_title: "Periodo de eliminación",
     retention_label: "Eliminar archivos tras",
     retention_hint: "días. También se aplica a los archivos que ya tienes.",
     retention_save: "Guardar",

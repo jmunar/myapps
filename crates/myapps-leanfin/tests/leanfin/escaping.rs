@@ -166,7 +166,7 @@ async fn a_label_named_like_a_closing_script_tag_cannot_break_out_of_the_payload
     let body = app
         .server
         .get("/leanfin/breakdown/chart")
-        .add_query_param("group_id", &group.to_string())
+        .add_query_param("group_id", group.to_string())
         .add_query_param("days", "90")
         .await
         .text();

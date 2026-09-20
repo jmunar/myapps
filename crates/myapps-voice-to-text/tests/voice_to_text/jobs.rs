@@ -154,3 +154,19 @@ async fn delete_job_removes_from_list() {
         .unwrap();
     assert!(count.is_none());
 }
+
+// recorder.js drives the mic buttons by id and reads its status strings off
+// #rec-status; the inline onclick handlers it replaced are gone.
+#[tokio::test]
+async fn new_job_page_gives_the_recorder_its_hooks() {
+    let app =
+        myapps_test_harness::spawn_app(vec![Box::new(myapps_voice_to_text::VoiceToTextApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/voice/new").await.text();
+    assert!(body.contains(r#"id="rec-start""#));
+    assert!(body.contains(r#"id="rec-stop""#));
+    assert!(body.contains("data-recording="));
+    assert!(body.contains("data-processing="));
+    assert!(!body.contains("onclick=\"startRecording()\""));
+}

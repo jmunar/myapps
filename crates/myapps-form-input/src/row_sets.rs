@@ -22,7 +22,6 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct RowSetRow {
     id: i64,
     label: String,

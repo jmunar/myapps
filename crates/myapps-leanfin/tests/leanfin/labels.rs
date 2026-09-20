@@ -660,3 +660,18 @@ async fn breakdown_pills_use_the_group_colour() {
         );
     }
 }
+
+// label-panel.js is delegated from the document and keys off [data-lf-panel];
+// the inline `lfPanel(this)` handlers it replaced are gone.
+#[tokio::test]
+async fn labels_page_marks_its_panel_triggers() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(LeanFinApp)]).await;
+    app.seed_and_login(&LeanFinApp).await;
+
+    let body = app.server.get("/leanfin/labels").await.text();
+    assert!(
+        body.contains("data-lf-panel"),
+        "label-panel.js only fires for triggers carrying data-lf-panel"
+    );
+    assert!(!body.contains("lfPanel(this)"));
+}

@@ -20,7 +20,7 @@ async fn login_page_renders() {
 #[tokio::test]
 async fn login_with_valid_credentials_redirects() {
     let app = harness::spawn_app().await;
-    myapps::auth::create_user(&app.pool, "test", "pass")
+    myapps_core::auth::create_user(&app.pool, "test", "pass")
         .await
         .unwrap();
 
@@ -37,7 +37,7 @@ async fn login_with_valid_credentials_redirects() {
 #[tokio::test]
 async fn login_with_wrong_password_shows_error() {
     let app = harness::spawn_app().await;
-    myapps::auth::create_user(&app.pool, "test", "pass")
+    myapps_core::auth::create_user(&app.pool, "test", "pass")
         .await
         .unwrap();
 
@@ -411,7 +411,7 @@ async fn set_language_requires_authentication() {
 #[tokio::test]
 async fn invite_page_renders_for_valid_token() {
     let app = harness::spawn_app().await;
-    let token = myapps::auth::create_invite(&app.pool).await.unwrap();
+    let token = myapps_core::auth::create_invite(&app.pool).await.unwrap();
 
     let response = app.server.get(&format!("/invite/{token}")).await;
     let body = response.text();
@@ -435,7 +435,7 @@ async fn invite_page_shows_error_for_invalid_token() {
 #[tokio::test]
 async fn invite_registration_creates_user_and_logs_in() {
     let app = harness::spawn_app().await;
-    let token = myapps::auth::create_invite(&app.pool).await.unwrap();
+    let token = myapps_core::auth::create_invite(&app.pool).await.unwrap();
 
     let response = app
         .server
@@ -458,7 +458,7 @@ async fn invite_registration_creates_user_and_logs_in() {
 #[tokio::test]
 async fn invite_registration_password_mismatch_shows_error() {
     let app = harness::spawn_app().await;
-    let token = myapps::auth::create_invite(&app.pool).await.unwrap();
+    let token = myapps_core::auth::create_invite(&app.pool).await.unwrap();
 
     let response = app
         .server
@@ -478,7 +478,7 @@ async fn invite_registration_password_mismatch_shows_error() {
 #[tokio::test]
 async fn invite_token_cannot_be_reused() {
     let app = harness::spawn_app().await;
-    let token = myapps::auth::create_invite(&app.pool).await.unwrap();
+    let token = myapps_core::auth::create_invite(&app.pool).await.unwrap();
 
     // Use the invite
     app.server
@@ -511,7 +511,7 @@ async fn login_page_links_core_css() {
 #[tokio::test]
 async fn invite_page_links_core_css() {
     let app = harness::spawn_app().await;
-    let token = myapps::auth::create_invite(&app.pool).await.unwrap();
+    let token = myapps_core::auth::create_invite(&app.pool).await.unwrap();
 
     let response = app.server.get(&format!("/invite/{token}")).await;
     let body = response.text();
@@ -521,7 +521,7 @@ async fn invite_page_links_core_css() {
 #[tokio::test]
 async fn invite_page_has_language_toggle() {
     let app = harness::spawn_app().await;
-    let token = myapps::auth::create_invite(&app.pool).await.unwrap();
+    let token = myapps_core::auth::create_invite(&app.pool).await.unwrap();
 
     let response = app.server.get(&format!("/invite/{token}")).await;
     let body = response.text();
@@ -530,16 +530,16 @@ async fn invite_page_has_language_toggle() {
 
 // --- External app tests (FEAT-75) ---
 
-fn test_external_apps() -> Vec<myapps::config::ExternalApp> {
+fn test_external_apps() -> Vec<myapps_core::config::ExternalApp> {
     vec![
-        myapps::config::ExternalApp {
+        myapps_core::config::ExternalApp {
             key: "vault".into(),
             name: "Vaultwarden".into(),
             description: "Password manager".into(),
             icon: "🔐".into(),
             url: "https://vault.example.com".into(),
         },
-        myapps::config::ExternalApp {
+        myapps_core::config::ExternalApp {
             key: "cockpit".into(),
             name: "Cockpit".into(),
             description: "Server management".into(),

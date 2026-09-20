@@ -408,3 +408,90 @@ async fn form_type_edit_page_escapes_attribute_values() {
     );
     assert!(body.contains("&quot;"));
 }
+
+// The column editor moved out of two near-identical inline <script> blocks
+// into `static/columns-editor.js`, which is the same file on both pages and
+// reads everything that used to be interpolated into it off `#columns-editor`.
+// Nothing in CI parses that JS, so these pin the contract it depends on: if an
+// attribute is dropped or renamed, the editor goes dead in the browser without
+// any build failing.
+#[tokio::test]
+async fn create_page_gives_the_column_editor_its_config() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let body = app.server.get("/forms/form-types").await.text();
+
+    assert!(body.contains(r#"id="columns-editor""#));
+    assert!(body.contains(r#"data-form="ft-create-form""#));
+    assert!(body.contains(r#"data-target="ft-create-columns""#));
+    assert!(body.contains(r#"id="ft-create-form""#));
+    assert!(body.contains(r#"id="ft-create-columns""#));
+    assert!(body.contains("data-add-column"));
+    assert!(body.contains("data-col-remove"));
+    for attr in [
+        "data-ph-name",
+        "data-t-text",
+        "data-t-number",
+        "data-t-bool",
+        "data-t-link",
+        "data-t-multiline",
+    ] {
+        assert!(body.contains(attr), "missing {attr} on the column editor");
+    }
+}
+
+#[tokio::test]
+async fn edit_page_gives_the_column_editor_its_config() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_form_types WHERE name = 'Weekly quiz' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let body = app
+        .server
+        .get(&format!("/forms/form-types/{id}/edit"))
+        .await
+        .text();
+
+    assert!(body.contains(r#"id="columns-editor""#));
+    assert!(body.contains(r#"data-form="ft-edit-form""#));
+    assert!(body.contains(r#"data-target="ft-edit-columns""#));
+    assert!(body.contains(r#"id="ft-edit-form""#));
+    assert!(body.contains(r#"id="ft-edit-columns""#));
+    assert!(body.contains("data-add-column"));
+}
+
+// Both pages must ship the one shared file, not a per-page copy.
+#[tokio::test]
+async fn both_pages_ship_the_same_column_editor_script() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+
+    let (id,): (i64,) =
+        sqlx::query_as("SELECT id FROM form_input_form_types WHERE name = 'Weekly quiz' LIMIT 1")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+
+    let create = app.server.get("/forms/form-types").await.text();
+    let edit = app
+        .server
+        .get(&format!("/forms/form-types/{id}/edit"))
+        .await
+        .text();
+
+    let marker = "function serializeColumns()";
+    assert!(
+        create.contains(marker),
+        "create page lost the editor script"
+    );
+    assert!(edit.contains(marker), "edit page lost the editor script");
+    // The old inline copies defined this global; the shared file does not.
+    assert!(!create.contains("function addColumnRow"));
+    assert!(!edit.contains("function addColumnRow"));
+}

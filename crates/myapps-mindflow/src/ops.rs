@@ -1,4 +1,4 @@
-use myapps_core::command::{CommandAction, CommandParam, CommandResult, ParamType};
+use myapps_core::command::{CommandAction, CommandParam, CommandResult, ParamType, text_param};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
@@ -50,10 +50,7 @@ pub async fn dispatch(
 ) -> Result<CommandResult, String> {
     match action {
         "capture_thought" => {
-            let content = params
-                .get("content")
-                .and_then(|v| v.as_str())
-                .ok_or("Missing content parameter")?;
+            let content = text_param(params, "content").ok_or("Missing content parameter")?;
             capture_thought(pool, user_id, content, None, None)
                 .await
                 .map_err(|e| format!("Database error: {e}"))?;

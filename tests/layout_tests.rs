@@ -502,3 +502,69 @@ fn active_href(html: &str) -> Option<String> {
         .find(|(_, class)| class.split_whitespace().any(|c| c == "active"))
         .map(|(href, _)| href)
 }
+
+// ── Contracts the extracted JavaScript depends on ────────────
+//
+// The page scripts moved out of Rust `format!` strings into `static/*.js`.
+// They no longer have values interpolated into them; they read what they need
+// off the DOM instead. Nothing in CI parses those files, so a renamed or
+// dropped attribute is a ReferenceError in a browser and a green build here.
+// These tests pin the handful of attributes that carry the contract.
+
+#[tokio::test]
+async fn every_page_exposes_the_base_path_to_scripts() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    for path in EVERY_PAGE {
+        let body = app.server.get(path).await.text();
+        assert!(
+            body.contains(r#"data-base="#),
+            "{path} must expose data-base on <html>: push.js, sw-register.js, \
+             command-bar.js, mind-map.js and recorder.js all read it"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_login_page_exposes_the_base_path_too() {
+    // The login page does not go through `render_page`, so it carries its own
+    // <html> tag — and the same sw-register.js that reads data-base off it.
+    let app = harness::spawn_app().await;
+    let body = app.server.get("/login").expect_success().await.text();
+    assert!(body.contains(r#"data-base="#));
+    assert!(body.contains("serviceWorker"));
+}
+
+#[tokio::test]
+async fn every_page_inlines_the_push_helper_once() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    for path in EVERY_PAGE {
+        let body = app.server.get(path).await.text();
+        assert_eq!(
+            body.matches("window.MyAppsPush =").count(),
+            1,
+            "{path} must inline push.js exactly once — launcher-push.js and \
+             sw-register.js both depend on window.MyAppsPush"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_launcher_gives_its_push_script_the_labels() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/").await.text();
+    assert!(body.contains(r#"id="push-status""#));
+    for attr in [
+        "data-enabled=",
+        "data-blocked=",
+        "data-blocked-settings=",
+        "data-enable=",
+    ] {
+        assert!(body.contains(attr), "launcher push status missing {attr}");
+    }
+}

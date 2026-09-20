@@ -124,3 +124,24 @@ async fn mind_map_page_shows_inbox_badge() {
     // Seed data has 3 uncategorized (inbox) thoughts
     assert!(body.contains("Inbox"));
 }
+
+// mind-map.js reads its empty-state label off #mindmap and the base path off
+// <html data-base>. Nothing in CI parses that file, so pin the attributes.
+#[tokio::test]
+async fn map_page_gives_the_script_its_container_and_label() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_mindflow::MindFlowApp)]).await;
+    app.seed_and_login(&myapps_mindflow::MindFlowApp).await;
+
+    let body = app.server.get("/mindflow").await.text();
+    assert!(body.contains(r#"id="mindmap""#));
+    assert!(
+        body.contains("data-empty-label="),
+        "mind-map.js reads its empty-state text from #mindmap"
+    );
+    assert!(
+        body.contains("/static/d3.v7.min.js?v="),
+        "d3 must be cache-busted"
+    );
+    // refreshMap() is called from an hx-on attribute, so it has to stay global.
+    assert!(body.contains("window.refreshMap"));
+}
