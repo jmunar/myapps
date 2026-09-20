@@ -33,7 +33,7 @@ myapps-test-harness = { path = "crates/myapps-test-harness" }
 
 [package]
 name = "myapps"
-version = "0.20.3"
+version = "0.20.4"
 edition.workspace = true
 
 [features]
