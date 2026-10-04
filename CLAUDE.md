@@ -3,7 +3,7 @@
 A single Rust binary serving several small personal web apps behind one login:
 LeanFin (expenses), MindFlow (thoughts/mind map), VoiceToText (transcription),
 FormInput (custom forms), Notes (markdown), FileClipboard (file transfer between
-a user's devices). Axum + HTMX + server-rendered HTML + SQLite via sqlx with
+a user's devices), Challenges (graded maths and physics problems). Axum + HTMX + server-rendered HTML + SQLite via sqlx with
 runtime-checked queries (no compile-time macros). Deployed to an Odroid N2
 (aarch64, 4 GB RAM) behind nginx.
 
