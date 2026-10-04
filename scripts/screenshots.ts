@@ -152,6 +152,22 @@ test.describe("README screenshots", () => {
     }
     await snap(page, "file-clipboard");
 
+    // ── Challenges ──
+    // Seeding inserts a few sample problems when no dataset is imported, and
+    // marks three of them, so both the problem and the stats have content.
+    await page.goto(`${BASE_URL}/challenges`);
+    await snap(page, "challenges-picker");
+
+    await page.locator(".challenges-draw button").first().click();
+    await page.waitForURL(/\/challenges\/problems\/\d+$/);
+    await page.locator(".challenges-reveal > summary").click();
+    // KaTeX typesets client-side; .katex only exists if the script ran.
+    await expect(page.locator(".challenges-problem .katex").first()).toBeVisible();
+    await snap(page, "challenges-problem");
+
+    await page.goto(`${BASE_URL}/challenges/stats`);
+    await snap(page, "challenges-stats");
+
     // ── Notes ──
     await page.goto(`${BASE_URL}/notes`);
     await snap(page, "notes-list");

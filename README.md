@@ -20,6 +20,7 @@ login and launcher.
 | **FormInput** (✎) | [`myapps-form-input`](crates/myapps-form-input/) | Custom forms backed by row sets and column-typed inputs. Define form types, manage row sets, and capture spreadsheet-style entries as CSV. |
 | **Notes** (✏️) | [`myapps-notes`](crates/myapps-notes/) | Markdown-based note-taking with live WYSIWYG editing and voice dictation. |
 | **FileClipboard** (📥) | [`myapps-file-clipboard`](crates/myapps-file-clipboard/) | Drop files here, pick them up on any device. Drag-and-drop upload with progress, a list of what is stored, and a configurable deletion period (7 days by default). |
+| **Challenges** (🎯) | [`myapps-challenges`](crates/myapps-challenges/) | One undergraduate maths or physics problem at a time, from UGPhysics or Hendrycks MATH, at a level that follows how you are doing. Reveal the solution, mark yourself right or wrong, and track accuracy per subject. |
 
 All apps share authentication, database, layout/styling, i18n (EN/ES), and
 push notifications.
@@ -74,6 +75,14 @@ hide per-user.
 
 <p align="center">
   <img src="docs/screenshots/file-clipboard.png" width="270" alt="FileClipboard – Files" />
+</p>
+
+### Challenges
+
+<p align="center">
+  <img src="docs/screenshots/challenges-picker.png" width="270" alt="Challenges – Dataset picker" />
+  <img src="docs/screenshots/challenges-problem.png" width="270" alt="Challenges – Problem with solution" />
+  <img src="docs/screenshots/challenges-stats.png" width="270" alt="Challenges – Stats" />
 </p>
 
 ### Notes

@@ -2093,12 +2093,13 @@ checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
 name = "myapps"
-version = "0.20.5"
+version = "0.21.0"
 dependencies = [
  "anyhow",
  "axum-test",
  "chrono",
  "clap",
+ "myapps-challenges",
  "myapps-core",
  "myapps-file-clipboard",
  "myapps-form-input",
@@ -2111,6 +2112,24 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+]
+
+[[package]]
+name = "myapps-challenges"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-test",
+ "myapps-core",
+ "myapps-test-harness",
+ "rand 0.9.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

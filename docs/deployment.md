@@ -137,7 +137,7 @@ Note what each group is for, so the list can be trimmed knowingly:
 | `systemctl restart` / `status` | `restart`, `status`, and the tail of every deploy |
 | `journalctl` | `logs` |
 | `cp`, `mv`, `chmod`, `rsync` | installing the binary and `static/` |
-| `sudo -u myapps` | running CLI subcommands (`invite`, `create-user`, `cron`) as the service user |
+| `sudo -u myapps` | running CLI subcommands (`invite`, `create-user`, `cron`, `import`) as the service user |
 | `sqlite3` as `myapps` | the manual backup, and the sandbox prod broker's snapshot — both read-only |
 
 Nothing here writes to `/etc/systemd/system`, and that is deliberate: a deploy
@@ -438,7 +438,7 @@ When set, myapps sends requests to a running llama.cpp server
 Only `DATABASE_URL` and `BIND_ADDR` are required to start the server.
 `DEPLOY_APPS` limits which apps are mounted and shown in the launcher. Valid
 keys: `leanfin`, `mindflow`, `voice_to_text`, `form_input`, `notes`,
-`file_clipboard`. When empty or unset, all apps are available.
+`file_clipboard`, `challenges`. When empty or unset, all apps are available.
 `AUTH_SSO_HEADER` enables reverse-proxy SSO authentication (e.g. Authelia). When
 set to the header name that carries the authenticated username (typically
 `Remote-User`), myapps trusts that header and auto-creates users on first visit.
@@ -536,6 +536,35 @@ Installed at `/etc/cron.d/myapps` by `setup`. Runs daily at 06:00:
 ```
 0 6 * * * myapps /opt/myapps/myapps cron
 ```
+
+## Challenges problem datasets
+
+Challenges serves problems from a catalogue that migrations create empty. The
+server fills it itself: on start, `serve` imports every dataset whose import
+has never completed, in a background task, from the Hugging Face
+datasets-server (outbound HTTPS to `datasets-server.huggingface.co`). The site
+is up meanwhile; each dataset's card offers *Start* as soon as its first
+problems land.
+
+A full import takes about 5 minutes for UGPhysics and 8 for Hendrycks MATH:
+requests are paced, and the datasets-server answers 429 when they are not,
+which the import waits out. Progress and the final counts go to the journal
+(`./deploy.sh prod logs`). A completed import is recorded in
+`challenges_imports`, so later starts skip it. An interrupted one (a restart,
+no network) is not, and resumes on the next start.
+
+Two cases are deliberately left alone: a database where `seed` put its sample
+problems (screenshots, demo users) never starts downloading, and the CLI runs
+no `serve` hook. To refresh a dataset by hand:
+
+```bash
+ssh deploy@odroid.local 'sudo -u myapps /opt/myapps/myapps import --app challenges --dataset ugphysics'
+ssh deploy@odroid.local 'sudo -u myapps /opt/myapps/myapps import --app challenges --dataset hendrycks-math'
+```
+
+Re-running an import is safe: it upserts on the problem's key within its
+dataset, so problem ids, and the attempt history that points at them, survive
+a refresh. Nothing deletes catalogue rows.
 
 ## Backups and Rollback
 

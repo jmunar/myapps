@@ -650,3 +650,50 @@ uploading user and deleted automatically after a configurable period.
   request starts, so two uploads racing from the same user can each pass the
   check and jointly exceed it. Bounded by the per-file limit and harmless on a
   single-user instance; a transactional reservation would close it.
+
+### Challenges (seventh sub-application)
+
+Challenges is graded practice for undergraduate maths and physics: it draws one
+problem at a time near the user's level, shows the worked solution on request,
+and records whether the user got it right. Design notes and dataset research:
+[ideas-03-graded-math-physics.md](ideas-03-graded-math-physics.md).
+
+#### Implemented
+
+- **Two datasets** — UGPhysics (13 subjects, its `level` mapped to three tiers:
+  knowledge recall, laws application, derivation/practical) and Hendrycks MATH
+  (7 subjects, levels 1–5). Problems with diagrams the page cannot show
+  (`[asy]`) or with no level are dropped at import.
+- **Import at runtime** — `serve` imports, in the background, every dataset not
+  yet fully imported, from the Hugging Face datasets-server, paced to stay under
+  its rate limit and resumable after an interrupted run; `myapps import --app
+  challenges --dataset <key>` refreshes one by hand. The upsert keeps problem
+  ids, and with them the attempt history, stable across re-imports. Seeded
+  databases (sample problems) are skipped.
+- **Problem selection** — a uniformly random subject, then a difficulty drawn
+  around the user's level in that subject (L-1/L/L+1 weighted 15/60/25),
+  preferring unseen problems, falling back to the nearest levels, then
+  repeating the one seen longest ago. Skip draws again without the current one.
+- **Per-subject staircase** — 2 right in a row moves up, 1 wrong moves down
+  (converges near 71% correct), with a fast start that moves up on every right
+  answer until the first wrong one. Cold start at the easiest level.
+- **Self-marking** — the answer and worked solution sit behind a reveal, under
+  which the user marks right or wrong; a double submit within 10 s is ignored.
+- **Stats** — problems and accuracy per dataset on the picker; per subject
+  (current level, correct/attempts, accuracy) and per level on the stats page.
+- **Maths rendering** — KaTeX (vendored) typesets inline, display and
+  `align`/`equation`-style environments client-side.
+- **Command bar** — "next problem" (optionally per dataset) and "stats".
+- **Integration tests** — auth, picker, problem rendering and escaping, level
+  changes, double submit, draw order and fallbacks, skip, stats.
+
+#### Not yet implemented
+
+- **Answer checking** — typed answers checked numerically or symbolically
+  instead of self-marking.
+- **Graded difficulty** — a one-off grader's per-problem estimates, shipped as a
+  versioned file keyed by problem and text hash (see the design notes).
+- **Learned difficulty** — Elo/IRT-style ratings updated on every attempt.
+- **More datasets** — U-MATH, PhysUniBench, SciBench; Hendrycks `[asy]`
+  diagrams; `tabular` tables, which KaTeX cannot render.
+- **Subject filter** and a **daily problem** notification.

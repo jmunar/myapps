@@ -6,7 +6,7 @@ const CACHE_NAME = "myapps-" + STATIC_VERSION;
 // browser actually requests.
 //
 // Only assets layout.rs loads on *every* page belong here. Page-local
-// libraries (chart.min.js, d3.v7.min.js) are left to the cache-first
+// libraries (chart.min.js, d3.v7.min.js, katex/) are left to the cache-first
 // write-through handler below, so they cost nothing until a page that
 // needs them is actually opened.
 const V = "?v=" + STATIC_VERSION;

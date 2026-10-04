@@ -66,6 +66,15 @@ pub enum Command {
         #[arg(long, default_value = "90")]
         days: i64,
     },
+    /// Load or refresh an app's shared catalogue (e.g. a problem dataset)
+    Import {
+        /// App key to import into (e.g. challenges)
+        #[arg(long)]
+        app: String,
+        /// What to import; the app defines the valid values (e.g. ugphysics)
+        #[arg(long)]
+        dataset: String,
+    },
 }
 
 /// Load `.env` files and initialise the tracing subscriber.
@@ -206,8 +215,33 @@ pub async fn run(
             )
             .await?;
         }
+        Command::Import { app, dataset } => {
+            let app_pools = create_app_pools(&config.database_url, &deployed).await?;
+            run_import(&pool, &app_pools, &config, &deployed, &app, &dataset).await?;
+        }
     }
 
+    Ok(())
+}
+
+async fn run_import(
+    pool: &SqlitePool,
+    app_pools: &HashMap<&'static str, SqlitePool>,
+    config: &Config,
+    apps: &[Box<dyn App>],
+    app_key: &str,
+    what: &str,
+) -> anyhow::Result<()> {
+    let app = apps
+        .iter()
+        .find(|a| a.info().key == app_key)
+        .ok_or_else(|| anyhow::anyhow!("Unknown or undeployed app '{app_key}'"))?;
+    let scoped = app_pools.get(app_key).unwrap_or(pool);
+    let fut = app
+        .import(scoped, config, what)
+        .ok_or_else(|| anyhow::anyhow!("App '{app_key}' has nothing to import"))?;
+    fut.await?;
+    tracing::info!("Import of '{what}' into {app_key} complete");
     Ok(())
 }
 
