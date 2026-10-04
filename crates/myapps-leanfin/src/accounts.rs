@@ -125,11 +125,11 @@ async fn list_accounts(
                     </div>
                     <div class="account-actions">
                         <form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
-                            <button type="submit" class="btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
+                            <button type="submit" class="leanfin-btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                               onsubmit="return confirm('{delete_confirm_bank}')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
+                            <button type="submit" class="leanfin-btn-icon leanfin-btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                         </form>
                     </div>
                 </div>"#,
@@ -160,7 +160,7 @@ async fn list_accounts(
             let reauth_btn = if is_expired || session_expires_at < warn_threshold {
                 format!(
                     r#"<form method="POST" action="{base}/leanfin/accounts/{}/reauth" style="display:inline">
-                        <button type="submit" class="btn-icon" aria-label="{reauthorize}" title="{reauthorize}">{reauth_icon}</button>
+                        <button type="submit" class="leanfin-btn-icon" aria-label="{reauthorize}" title="{reauthorize}">{reauth_icon}</button>
                     </form>"#,
                     a.id,
                     reauthorize = t.acc_reauthorize,
@@ -186,11 +186,11 @@ async fn list_accounts(
                                onchange="fetch('{base}/leanfin/accounts/{id}/color',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'color='+encodeURIComponent(this.value)}}).then(function(){{var el=event.target.closest('.account-item');el.style.setProperty('--account-color',event.target.value)}})">
                         {reauth_btn}
                         <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
-                            <button type="submit" class="btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
+                            <button type="submit" class="leanfin-btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                               onsubmit="return confirm('{delete_confirm_bank}')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
+                            <button type="submit" class="leanfin-btn-icon leanfin-btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                         </form>
                     </div>
                 </div>"##,
@@ -234,11 +234,11 @@ async fn list_accounts(
                     </div>
                     <div class="account-actions">
                         <form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
-                            <button type="submit" class="btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
+                            <button type="submit" class="leanfin-btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                               onsubmit="return confirm('{delete_confirm_manual}')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
+                            <button type="submit" class="leanfin-btn-icon leanfin-btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                         </form>
                     </div>
                 </div>"#,
@@ -264,15 +264,15 @@ async fn list_accounts(
                     <div class="account-actions">
                         <input type="color" class="account-color-picker" value="{color_val}"
                                onchange="fetch('{base}/leanfin/accounts/{id}/color',{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:'color='+encodeURIComponent(this.value)}}).then(function(){{var el=event.target.closest('.account-item');el.style.setProperty('--account-color',event.target.value)}})">
-                        <a href="{base}/leanfin/accounts/manual/{id}/value" class="btn-icon">{update_value}</a>
-                        <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="btn-icon">{import_csv}</a>
-                        <a href="{base}/leanfin/accounts/manual/{id}/edit" class="btn-icon">{edit}</a>
+                        <a href="{base}/leanfin/accounts/manual/{id}/value" class="leanfin-btn-icon">{update_value}</a>
+                        <a href="{base}/leanfin/accounts/manual/{id}/import-csv" class="leanfin-btn-icon">{import_csv}</a>
+                        <a href="{base}/leanfin/accounts/manual/{id}/edit" class="leanfin-btn-icon">{edit}</a>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
-                            <button type="submit" class="btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
+                            <button type="submit" class="leanfin-btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
                         </form>
                         <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                               onsubmit="return confirm('{delete_confirm_manual}')" style="display:inline">
-                            <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
+                            <button type="submit" class="leanfin-btn-icon leanfin-btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                         </form>
                     </div>
                 </div>"##,
@@ -323,7 +323,7 @@ async fn list_accounts(
         let toggle_btn = if a.archived {
             format!(
                 r#"<form method="POST" action="{base}/leanfin/accounts/{id}/unarchive" style="display:inline">
-                    <button type="submit" class="btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
+                    <button type="submit" class="leanfin-btn-icon" aria-label="{unarchive}" title="{unarchive}">{unarchive_icon}</button>
                 </form>"#,
                 id = a.id,
                 unarchive = t.acc_unarchive,
@@ -332,7 +332,7 @@ async fn list_accounts(
         } else {
             format!(
                 r#"<form method="POST" action="{base}/leanfin/accounts/{id}/archive" style="display:inline">
-                    <button type="submit" class="btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
+                    <button type="submit" class="leanfin-btn-icon" aria-label="{archive}" title="{archive}">{archive_icon}</button>
                 </form>"#,
                 id = a.id,
                 archive = t.acc_archive,
@@ -358,7 +358,7 @@ async fn list_accounts(
                     {toggle_btn}
                     <form method="POST" action="{base}/leanfin/accounts/{id}/delete"
                           onsubmit="return confirm('{delete_confirm}')" style="display:inline">
-                        <button type="submit" class="btn-icon btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
+                        <button type="submit" class="leanfin-btn-icon leanfin-btn-icon-danger" aria-label="{delete}" title="{delete}">{delete_icon}</button>
                     </form>
                 </div>
             </div>"##,
@@ -537,7 +537,7 @@ fn name_field(base: &str, id: i64, name: &str, lang: Lang) -> String {
     format!(
         r##"<div class="account-name" id="account-name-{id}">
             <span class="account-bank">{name}</span>
-            <button type="button" class="btn-icon account-rename"
+            <button type="button" class="leanfin-btn-icon account-rename"
                     aria-label="{rename}" title="{rename}"
                     hx-get="{base}/leanfin/accounts/{id}/name"
                     hx-target="#account-name-{id}"

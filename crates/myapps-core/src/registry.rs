@@ -10,11 +10,18 @@ use crate::command::{CommandAction, CommandResult};
 use crate::config::Config;
 use crate::routes::AppState;
 
+/// A boxed, `Send` future with a caller-supplied lifetime.
+///
+/// `App` has to stay dyn-compatible — it is stored as `Box<dyn App>` — so its
+/// async methods cannot be `async fn`. This is the shape they return instead;
+/// the alias keeps the five signatures below (and their implementations in
+/// every app crate) readable.
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 /// Metadata for an application in the launcher.
 pub struct AppInfo {
     pub key: &'static str,
     pub name: &'static str,
-    pub description: &'static str,
     pub icon: &'static str,
     pub path: &'static str,
 }
@@ -43,7 +50,7 @@ pub trait App: Send + Sync {
         _action: &'a str,
         _params: &'a HashMap<String, serde_json::Value>,
         _base_path: &'a str,
-    ) -> Pin<Box<dyn Future<Output = Result<CommandResult, String>> + Send + 'a>> {
+    ) -> BoxFuture<'a, Result<CommandResult, String>> {
         Box::pin(async { Err("not implemented".into()) })
     }
 
@@ -52,7 +59,7 @@ pub trait App: Send + Sync {
         &'a self,
         _pool: &'a SqlitePool,
         _user_id: i64,
-    ) -> Pin<Box<dyn Future<Output = HashMap<String, String>> + Send + 'a>> {
+    ) -> BoxFuture<'a, HashMap<String, String>> {
         Box::pin(async { HashMap::new() })
     }
 
@@ -61,7 +68,7 @@ pub trait App: Send + Sync {
         &'a self,
         _pool: &'a SqlitePool,
         _user_id: i64,
-    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>> {
+    ) -> Option<BoxFuture<'a, anyhow::Result<()>>> {
         None
     }
 
@@ -70,7 +77,7 @@ pub trait App: Send + Sync {
         &'a self,
         _pool: &'a SqlitePool,
         _config: &'a Config,
-    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>> {
+    ) -> Option<BoxFuture<'a, anyhow::Result<()>>> {
         None
     }
 
@@ -83,7 +90,7 @@ pub trait App: Send + Sync {
         _config: &'a Config,
         _user_id: i64,
         _days: i64,
-    ) -> Option<Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'a>>> {
+    ) -> Option<BoxFuture<'a, anyhow::Result<()>>> {
         None
     }
 

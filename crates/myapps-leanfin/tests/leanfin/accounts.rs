@@ -741,7 +741,7 @@ async fn the_accounts_list_offers_a_rename_control_per_account() {
 
     assert!(body.contains(&format!(r#"id="account-name-{id}""#)));
     assert!(body.contains(&format!(r#"hx-get="/leanfin/accounts/{id}/name""#)));
-    assert!(body.contains(r#"class="btn-icon account-rename""#));
+    assert!(body.contains(r#"class="leanfin-btn-icon account-rename""#));
 }
 
 #[tokio::test]
@@ -767,7 +767,7 @@ async fn the_rename_endpoint_swaps_in_an_editor_and_back_again() {
         .await
         .text();
     assert!(saved.contains("Joint current"));
-    assert!(saved.contains(r#"class="btn-icon account-rename""#));
+    assert!(saved.contains(r#"class="leanfin-btn-icon account-rename""#));
 
     let stored: Option<String> =
         sqlx::query_scalar("SELECT account_name FROM leanfin_accounts WHERE id = ?")
@@ -929,5 +929,77 @@ async fn the_balance_account_picker_shows_no_iban() {
             .await
             .text()
             .contains(&iban)
+    );
+}
+
+// ── The icon button class is prefixed ────────────────────────────
+//
+// `.btn-icon` was defined by both LeanFin and VoiceToText, and apps.css is one
+// concatenated sheet with no scoping, so whichever came last won. LeanFin's
+// copy is now `.leanfin-btn-icon`. Every call site had to be renamed by hand:
+// a missed one keeps rendering and simply loses (or borrows) its styling.
+
+#[tokio::test]
+async fn the_accounts_list_renders_only_the_prefixed_icon_class() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let body = app.server.get("/leanfin/accounts").await.text();
+
+    // The seed has bank and manual accounts, so the archive/delete/edit
+    // controls are all on the page.
+    assert!(
+        body.matches(r#"class="leanfin-btn-icon"#).count() >= 4,
+        "the accounts list should render its icon buttons with the prefixed class"
+    );
+    assert!(
+        !body.contains(r#"class="btn-icon"#),
+        "an unrenamed call site would take VoiceToText's .btn-icon styling"
+    );
+}
+
+#[tokio::test]
+async fn the_allocation_editor_renders_only_the_prefixed_icon_class() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    // An allocated transaction, so the editor renders a delete button per
+    // allocation rather than only the empty add form.
+    let txn_id: i64 = sqlx::query_scalar("SELECT transaction_id FROM leanfin_allocations LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+
+    let body = app
+        .server
+        .get(&format!("/leanfin/transactions/{txn_id}/allocations"))
+        .await
+        .text();
+
+    assert!(
+        body.contains(r#"class="leanfin-btn-icon leanfin-btn-icon-danger""#),
+        "the allocation rows should keep their prefixed delete button, got {body}"
+    );
+    assert!(!body.contains(r#"class="btn-icon"#));
+}
+
+/// The rename is only half done if the stylesheet still defines the old name:
+/// `/static/apps.css` is concatenated from every deployed app, and the class
+/// the HTML asks for has to be the class the sheet paints.
+#[tokio::test]
+async fn the_served_stylesheet_defines_the_prefixed_icon_class() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_leanfin::LeanFinApp)]).await;
+    app.seed_and_login(&myapps_leanfin::LeanFinApp).await;
+
+    let css = app.server.get("/static/apps.css").await.text();
+    assert!(
+        css.contains(".leanfin-btn-icon"),
+        "apps.css must style the class the pages render"
+    );
+    // LeanFin is the only app in this harness, so any bare `.btn-icon` rule
+    // here is a leftover of the old name.
+    assert!(
+        !css.contains(".btn-icon"),
+        "LeanFin's stylesheet still defines the unprefixed class"
     );
 }

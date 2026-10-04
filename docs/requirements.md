@@ -192,7 +192,10 @@ visibility into spending patterns.
   provider-supplied text (transaction descriptions, counterparty names) are
   HTML-escaped before interpolation into server-rendered templates, via the
   shared `myapps_core::components::html_escape`. It escapes both quote
-  characters, so it is safe in element bodies and in quoted attributes.
+  characters, so it is safe in element bodies and in quoted attributes. Data
+  reaching a `<script>` body goes through `json_for_script` instead, which
+  escapes the markup characters so a value containing `</script>` cannot close
+  the element early.
 - **User-uploaded file downloads are inert** — FileClipboard serves stored
   files with `Content-Disposition: attachment`, `X-Content-Type-Options:
   nosniff`, and a neutral `application/octet-stream` type, never the
@@ -209,7 +212,8 @@ visibility into spending patterns.
 ### CI/CD
 
 - GitHub Actions enforces formatting (rustfmt), linting (clippy with
-  warnings-as-errors), and tests on every push and pull request.
+  warnings-as-errors, across all targets so test code is linted too), and tests
+  on every push and pull request.
 - Merging to `main` triggers automatic deployment: the CD pipeline auto-bumps
   the version, cross-compiles for aarch64, creates a GitHub Release with the
   binary, then deploys to staging and production (with smoke tests). Deploys

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use super::AppState;
 use crate::auth::UserId;
+use crate::components::html_escape;
 use crate::config::{Config, ExternalApp};
 use crate::i18n::{self, Lang};
 use crate::layout::{NavItem, render_page};
@@ -15,6 +16,10 @@ use crate::models::user_app_visibility;
 use crate::registry::App;
 
 const TARGET: &str = "#launcher-area";
+
+/// Notification opt-in behaviour for the launcher. Relies on `window.MyAppsPush`
+/// from `static/push.js`, which layout.rs inlines on every page.
+const LAUNCHER_PUSH_JS: &str = include_str!("../../../../static/launcher-push.js");
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -24,63 +29,23 @@ pub fn routes() -> Router<AppState> {
         .route("/launcher/visibility", post(set_visibility))
 }
 
-fn push_script(base: &str, lang: Lang) -> String {
+/// Notification status line plus the enable button. Behaviour lives in
+/// `static/launcher-push.js`; the labels reach it as data attributes, so the
+/// script is the same bytes for every language.
+fn push_script(_base: &str, lang: Lang) -> String {
     let t = i18n::t(lang);
-    let notif_enabled = t.launcher_notif_enabled;
-    let notif_blocked = t.launcher_notif_blocked;
-    let notif_blocked_settings = t.launcher_notif_blocked_settings;
-    let notif_enable = t.launcher_notif_enable;
     format!(
-        r#"<div id="push-status" style="text-align:center;margin-top:1.5rem;font-size:0.9rem;color:#888;"></div>
-        <script>
-        (function() {{
-            var el = document.getElementById("push-status");
-            if (!("Notification" in window) || !("PushManager" in window)) return;
-            if (Notification.permission === "granted") {{
-                el.textContent = "{notif_enabled}";
-            }} else if (Notification.permission === "denied") {{
-                el.textContent = "{notif_blocked_settings}";
-            }} else {{
-                var btn = document.createElement("button");
-                btn.textContent = "{notif_enable}";
-                btn.className = "btn btn-secondary";
-                btn.onclick = function() {{
-                    Notification.requestPermission().then(function(perm) {{
-                        if (perm === "granted") {{
-                            el.textContent = "{notif_enabled}";
-                            navigator.serviceWorker.ready.then(function(reg) {{
-                                fetch("{base}/push/vapid-key").then(function(r) {{ return r.text(); }}).then(function(key) {{
-                                    var padding = (4 - key.length % 4) % 4;
-                                    var b64 = key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(padding);
-                                    var raw = atob(b64);
-                                    var arr = new Uint8Array(raw.length);
-                                    for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-                                    return reg.pushManager.subscribe({{ userVisibleOnly: true, applicationServerKey: arr }});
-                                }}).then(function(sub) {{
-                                    if (!sub) return;
-                                    var key = sub.getKey("p256dh");
-                                    var auth = sub.getKey("auth");
-                                    var body = {{
-                                        endpoint: sub.endpoint,
-                                        p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(key))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""),
-                                        auth: btoa(String.fromCharCode.apply(null, new Uint8Array(auth))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")
-                                    }};
-                                    fetch("{base}/push/subscribe", {{
-                                        method: "POST",
-                                        headers: {{ "Content-Type": "application/json" }},
-                                        body: JSON.stringify(body)
-                                    }});
-                                }});
-                            }});
-                        }} else {{
-                            el.textContent = "{notif_blocked}";
-                        }}
-                    }});
-                }};
-                el.appendChild(btn);
-            }}
-        }})();
-        </script>"#
+        r#"<div id="push-status"
+             style="text-align:center;margin-top:1.5rem;font-size:0.9rem;color:#888;"
+             data-enabled="{enabled}"
+             data-blocked="{blocked}"
+             data-blocked-settings="{blocked_settings}"
+             data-enable="{enable}"></div>
+        <script>{LAUNCHER_PUSH_JS}</script>"#,
+        enabled = html_escape(t.launcher_notif_enabled),
+        blocked = html_escape(t.launcher_notif_blocked),
+        blocked_settings = html_escape(t.launcher_notif_blocked_settings),
+        enable = html_escape(t.launcher_notif_enable),
     )
 }
 

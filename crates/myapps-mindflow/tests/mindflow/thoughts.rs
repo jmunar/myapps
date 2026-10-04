@@ -204,3 +204,38 @@ async fn create_sub_thought() {
     .unwrap();
     assert_eq!(count, 1);
 }
+
+// The detail query builds a `FromRow` struct out of a join, and columns were
+// pruned from it. A column that stops matching makes the row fail to map, and
+// the handler turns that into "thought not found" — or, for the two joined
+// category columns, into the grey Inbox badge. So assert the badge the seeded
+// thought's category paints, not just that the page renders.
+#[tokio::test]
+async fn thought_detail_shows_the_category_badge_from_the_join() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_mindflow::MindFlowApp)]).await;
+    app.seed_and_login(&myapps_mindflow::MindFlowApp).await;
+
+    let (id,): (i64,) = sqlx::query_as(
+        "SELECT id FROM mindflow_thoughts WHERE content LIKE '%Q1 project%' LIMIT 1",
+    )
+    .fetch_one(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app
+        .server
+        .get(&format!("/mindflow/thoughts/{id}"))
+        .await
+        .text();
+
+    // Seeded under Work, which is #2196F3.
+    assert!(
+        body.contains(r#"<span class="label-badge" style="--label-color:#2196F3">Work</span>"#),
+        "the detail page should paint the badge from the joined category"
+    );
+    // The fallback badge is what a broken join would leave behind.
+    assert!(
+        !body.contains("--label-color:#9E9E9E"),
+        "a categorized thought must not fall back to the Inbox badge"
+    );
+}

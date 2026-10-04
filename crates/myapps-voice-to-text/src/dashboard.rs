@@ -11,33 +11,14 @@ pub fn routes() -> Router<AppState> {
 
 pub fn voice_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = super::i18n::t(lang);
-    let ct = myapps_core::i18n::t(lang);
-    vec![
-        NavItem {
-            href: format!("{base}/voice"),
-            label: "VoiceToText".to_string(),
-            active: false,
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/voice"),
-            label: t.jobs.to_string(),
-            active: active == "jobs",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/voice/new"),
-            label: t.new.to_string(),
-            active: active == "new",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/logout"),
-            label: ct.log_out.to_string(),
-            active: false,
-            right: true,
-        },
-    ]
+    myapps_core::layout::app_nav(
+        base,
+        "/voice",
+        "VoiceToText",
+        active,
+        lang,
+        &[("", t.jobs, "jobs"), ("/new", t.new, "new")],
+    )
 }
 
 #[derive(sqlx::FromRow)]

@@ -65,22 +65,17 @@ async fn capture(
 // -- Thought detail ───────────────────────────────────────────
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct ThoughtRow {
-    id: i64,
     content: String,
     status: String,
     category_id: Option<i64>,
     category_name: Option<String>,
     category_color: Option<String>,
     created_at: String,
-    updated_at: String,
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct CommentRow {
-    id: i64,
     content: String,
     created_at: String,
 }
@@ -95,13 +90,11 @@ struct ActionRow {
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct DescendantThought {
     id: i64,
     parent_thought_id: Option<i64>,
     content: String,
     created_at: String,
-    depth: i32,
 }
 
 #[derive(sqlx::FromRow)]
@@ -120,9 +113,9 @@ async fn detail(
     let t = super::i18n::t(lang);
 
     let thought: Option<ThoughtRow> = sqlx::query_as(
-        r#"SELECT t.id, t.content, t.status, t.category_id,
+        r#"SELECT t.content, t.status, t.category_id,
                   c.name AS category_name, c.color AS category_color,
-                  t.created_at, t.updated_at
+                  t.created_at
            FROM mindflow_thoughts t
            LEFT JOIN mindflow_categories c ON t.category_id = c.id
            WHERE t.id = ? AND t.user_id = ?"#,
@@ -138,7 +131,7 @@ async fn detail(
     };
 
     let comments: Vec<CommentRow> = sqlx::query_as(
-        "SELECT id, content, created_at FROM mindflow_comments WHERE thought_id = ? ORDER BY created_at ASC",
+        "SELECT content, created_at FROM mindflow_comments WHERE thought_id = ? ORDER BY created_at ASC",
     )
     .bind(id)
     .fetch_all(&state.pool)
@@ -465,7 +458,7 @@ async fn add_comment(
 
     // Re-render comment list
     let comments: Vec<CommentRow> = sqlx::query_as(
-        "SELECT id, content, created_at FROM mindflow_comments WHERE thought_id = ? ORDER BY created_at ASC",
+        "SELECT content, created_at FROM mindflow_comments WHERE thought_id = ? ORDER BY created_at ASC",
     )
     .bind(id)
     .fetch_all(&state.pool)

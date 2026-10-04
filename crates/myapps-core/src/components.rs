@@ -102,6 +102,31 @@ fn render_scalar(value: &serde_json::Value, html: &mut String) {
     }
 }
 
+/// Serialize a JSON value for embedding in a `<script>` body.
+///
+/// `serde_json` already handles quotes and control characters; escaping the
+/// three markup characters on top of that keeps a string containing
+/// `</script>` from closing the element early. Any JSON built from user- or
+/// provider-supplied data MUST go through this rather than plain
+/// `to_string()`.
+pub fn json_for_script(value: &serde_json::Value) -> String {
+    value
+        .to_string()
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
+}
+
+/// Build a `<script>` that calls a page-local JS function with one JSON
+/// argument — the shape every HTMX chart/empty-state fragment uses.
+///
+/// Going through here rather than `format!` means the argument cannot reach a
+/// script body without `json_for_script` escaping, so a value containing
+/// `</script>` can never close the element early.
+pub fn call_script(js_fn: &str, arg: &serde_json::Value) -> String {
+    format!("<script>{js_fn}({});</script>", json_for_script(arg))
+}
+
 /// HTML-escape a string for safe interpolation into HTML element bodies or
 /// quoted attribute values. Any user- or provider-controlled string MUST go
 /// through this before reaching a `format!` template.

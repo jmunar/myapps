@@ -13,7 +13,7 @@ use super::dashboard::leanfin_nav;
 use super::period::{self, Window};
 use super::services::balance::{self, BalancePoint};
 use myapps_core::auth::UserId;
-use myapps_core::components::html_escape;
+use myapps_core::components::{call_script, html_escape};
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -166,11 +166,13 @@ async fn page(
             </div>
             <div id="balance-txn-table"></div>
         </div>
+        <script src="{base}/static/chart.min.js?v={sv}"></script>
         <script>{selector_js}</script>
         <script>{balance_js}</script>"##,
         title = t.bal_title,
         subtitle = t.bal_subtitle,
         transactions = t.exp_transactions,
+        sv = state.config.static_version,
         selector_js = period::SELECTOR_JS,
         balance_js = BALANCE_JS,
     );
@@ -309,25 +311,9 @@ async fn data(
             .collect::<Vec<_>>(),
     });
 
-    Html(format!(
-        "<script>window.updateBalanceChart({});</script>",
-        json_for_script(&payload)
-    ))
+    Html(call_script("window.updateBalanceChart", &payload))
 }
 
 fn empty_script(message: &str) -> String {
-    format!(
-        "<script>window.showBalanceEmpty({});</script>",
-        json_for_script(&serde_json::Value::from(message))
-    )
-}
-
-/// Serialize for embedding in a `<script>` body — see the note on the twin in
-/// `breakdown.rs`.
-fn json_for_script(value: &serde_json::Value) -> String {
-    value
-        .to_string()
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('&', "\\u0026")
+    call_script("window.showBalanceEmpty", &serde_json::Value::from(message))
 }

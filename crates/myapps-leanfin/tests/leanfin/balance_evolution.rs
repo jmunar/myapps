@@ -77,7 +77,7 @@ async fn data_endpoint_returns_script_calling_update_balance_chart() {
     let response = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .add_query_param("window", "10w")
         .await;
     let body = response.text();
@@ -122,7 +122,7 @@ async fn data_endpoint_returns_empty_state_when_no_balance_data() {
     let response = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .add_query_param("window", "10w")
         .await;
     let body = response.text();
@@ -163,7 +163,7 @@ async fn data_endpoint_contains_balance_data_as_json_arrays() {
     let response = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .add_query_param("window", "10w")
         .await;
     let body = response.text();
@@ -192,7 +192,7 @@ async fn data_endpoint_passes_account_id_to_chart_function() {
     let response = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .add_query_param("window", "10w")
         .await;
     let body = response.text();
@@ -282,7 +282,7 @@ async fn single_snapshot_with_historical_transactions_shows_full_series() {
     let response = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .add_query_param("window", "30d")
         .await;
     let body = response.text();
@@ -470,7 +470,7 @@ async fn manual_account_without_recent_entries_still_shows_balance() {
     let response = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .add_query_param("window", "10w")
         .await;
     let body = response.text();
@@ -575,7 +575,7 @@ async fn deep_link_preselects_the_requested_account() {
     let body = app
         .server
         .get("/leanfin/balance-evolution")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .await
         .text();
 
@@ -632,7 +632,7 @@ async fn deep_link_to_an_archived_account_falls_back_to_all_accounts() {
     let body = app
         .server
         .get("/leanfin/balance-evolution")
-        .add_query_param("account_id", &archived.to_string())
+        .add_query_param("account_id", archived.to_string())
         .await
         .text();
 
@@ -668,7 +668,7 @@ async fn every_point_carries_the_start_of_the_period_it_closes() {
     let body = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .add_query_param("window", "10w")
         .await
         .text();
@@ -700,7 +700,7 @@ async fn a_twelve_month_window_is_bucketed_by_month() {
     let body = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &account_id.to_string())
+        .add_query_param("account_id", account_id.to_string())
         .add_query_param("window", "12m")
         .await
         .text();
@@ -735,7 +735,7 @@ async fn the_running_period_is_dropped_when_the_plus_is_off() {
         chart_payload(
             &app.server
                 .get("/leanfin/balance-evolution/data")
-                .add_query_param("account_id", &account_id.to_string())
+                .add_query_param("account_id", account_id.to_string())
                 .add_query_param("window", "12m")
                 .add_query_param("current", "1")
                 .await
@@ -748,7 +748,7 @@ async fn the_running_period_is_dropped_when_the_plus_is_off() {
         chart_payload(
             &app.server
                 .get("/leanfin/balance-evolution/data")
-                .add_query_param("account_id", &account_id.to_string())
+                .add_query_param("account_id", account_id.to_string())
                 .add_query_param("window", "12m")
                 .add_query_param("current", "0")
                 .await
@@ -783,7 +783,7 @@ async fn window_start_is_blank_when_there_is_no_series() {
     let body = app
         .server
         .get("/leanfin/balance-evolution/data")
-        .add_query_param("account_id", &santander_id(&app).await.to_string())
+        .add_query_param("account_id", santander_id(&app).await.to_string())
         .add_query_param("window", "10w")
         .await
         .text();
@@ -834,7 +834,7 @@ async fn data_endpoint_falls_back_to_the_default_window_on_junk() {
         let body = app
             .server
             .get("/leanfin/balance-evolution/data")
-            .add_query_param("account_id", &account_id.to_string())
+            .add_query_param("account_id", account_id.to_string())
             .add_query_param("window", window)
             .add_query_param("current", current)
             .await
@@ -869,7 +869,7 @@ async fn an_unnamed_current_flag_keeps_the_running_period() {
         let mut request = app
             .server
             .get("/leanfin/balance-evolution/data")
-            .add_query_param("account_id", &account_id.to_string())
+            .add_query_param("account_id", account_id.to_string())
             .add_query_param("window", "12m");
         if let Some(c) = current {
             request = request.add_query_param("current", c);

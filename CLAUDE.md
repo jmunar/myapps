@@ -35,6 +35,11 @@ Default::default() })` turns that into an *empty result*, so the page renders
 "no data" rather than an error and the log line is easy to miss. When you change
 one of these structs, grep for every query that names it.
 
+The one automated hint you get is the dead-code warning on a field nothing
+reads, so put `#[allow(dead_code)]` on the *field* that is deliberately unused,
+never on the struct — a struct-level allow silences every field at once and
+takes the signal with it.
+
 **CSS has no scoping.** Every app's stylesheet is concatenated into one
 `/static/apps.css` served on every page, so a bare `table { … }` in one app
 restyles every other app. Scope every rule to an app-specific class. For tables
@@ -47,8 +52,21 @@ bare elements and an element selector there outranks a class here:
 `form { display: flex }` silently beats the UA's `[hidden] { display: none }`, so
 a `hidden` form stays open. Check what core.css already says about an element
 before styling it, and use `:has()` or a second class when you need to outrank
-it. App class names are not reserved either — `.btn-icon` is defined by both
-LeanFin and VoiceToText, and the later one in the concatenation wins.
+it. App class names are not reserved either: two apps can define the same
+class and the later one in the concatenation order (`all_app_instances`) wins
+silently, in whichever direction hurts. There are no collisions left today, and
+this should stay empty (per file first, or it just finds each rule twice):
+
+```sh
+for f in static/core.css crates/*/static/style.css; do
+  grep -o '^\.[a-zA-Z][a-zA-Z0-9_-]*' "$f" | sort -u
+done | sort | uniq -d
+```
+
+A class only your app uses gets the app key as a prefix. A class several apps
+use belongs in `core.css`, not in whichever app's stylesheet happened to define
+it first: `apps.css` carries only the *deployed* apps, so an app-owned class
+that another app relies on breaks whenever `DEPLOY_APPS` drops the owner.
 
 **A horizontal swipe anywhere empty changes tab.** `static/nav-swipe.js` is
 inlined into every page by `layout.rs`, and on a phone it drags `<main>` with
@@ -73,6 +91,16 @@ page as strings, so a misspelt identifier is not a build error but a
 the feature is simply dead on a phone. Check a JS change actually runs; a
 `node --check` only catches syntax, not an undeclared name.
 
+Page scripts live in `static/*.js` (core) or a crate's `static/`, and take
+**no interpolation**: they read the base path from `<html data-base>`, short
+strings from data attributes on the element they drive, and anything larger
+from a `<script type="application/json">` tag escaped with
+`components::json_for_script`. Putting a `{…}` back into one means brace-escaping
+the whole file again, so pass the value through the DOM instead. Because the
+attribute names are the contract and nothing type-checks them, each extracted
+script has a test asserting its attributes are still rendered — add one when
+you add a script, or a rename will fail silently in the browser only.
+
 **Handlers build HTML with `format!`, which escapes nothing.** Any user- or
 provider-supplied string (account names, labels, transaction descriptions,
 counterparties, filenames) must pass through
@@ -80,6 +108,13 @@ counterparties, filenames) must pass through
 so it is safe in element bodies and quoted attribute values. `<option>` bodies
 are *not* a safe sink — the browser re-parses entity-decoded text there and
 builds live elements.
+
+A `<script>` body is a different sink again, and `html_escape` is the wrong
+tool for it: use `components::json_for_script`, which escapes the markup
+characters so a value containing `</script>` cannot close the element, or
+`components::call_script` where you are emitting a one-call fragment. Keep
+these in `components.rs`; the codebase has carried three divergent copies of
+this escaping before.
 
 **FileClipboard is the only app with state outside SQLite.** Contents live at
 `FILE_CLIPBOARD_DIR/<user_id>/<uuid>`, metadata in `file_clipboard_files`.

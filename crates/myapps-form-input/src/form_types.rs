@@ -6,6 +6,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Column editor for both the create and edit pages. Kept in its own file so
+/// the Rust side never has to brace-escape a page of JavaScript, and so both
+/// pages provably run the same code.
+const COLUMNS_EDITOR_JS: &str = include_str!("../static/columns-editor.js");
+
 use super::{forms_nav, html_escape};
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
@@ -37,7 +42,6 @@ fn is_false(b: &bool) -> bool {
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct FormTypeRow {
     id: i64,
     name: String,
@@ -164,7 +168,11 @@ async fn list(
                     </div>
                     <div class="form-group">
                         <label>{columns_lbl}</label>
-                        <div id="columns-editor" class="ci-columns-editor">
+                        <div id="columns-editor" class="ci-columns-editor"
+                             data-form="{form_id}" data-target="{target_id}"
+                             data-ph-name="{col_name_ph}" data-t-text="{col_text}"
+                             data-t-number="{col_number}" data-t-bool="{col_bool}"
+                             data-t-link="{col_link}" data-t-multiline="{multiline_lbl}">
                             <div class="ci-column-row">
                                 <input type="text" data-col-name placeholder="{col_name_ph}" required>
                                 <select data-col-type>
@@ -177,11 +185,11 @@ async fn list(
                                     <input type="checkbox" data-col-multiline>
                                     <span>{multiline_lbl}</span>
                                 </label>
-                                <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
+                                <button type="button" class="btn-icon btn-icon-danger" data-col-remove>×</button>
                             </div>
                         </div>
                         <button type="button" class="btn btn-secondary btn-sm mt-1"
-                                onclick="addColumnRow(document.getElementById('columns-editor'))">{add_column}</button>
+                                data-add-column>{add_column}</button>
                     </div>
                     <input type="hidden" name="columns" id="ft-create-columns">
                     <button type="submit" class="mt-1">{create_btn}</button>
@@ -189,61 +197,10 @@ async fn list(
             </div>
         </div>
 
-        <script>
-        function addColumnRow(container) {{
-            var row = document.createElement('div');
-            row.className = 'ci-column-row';
-            row.innerHTML = '<input type="text" data-col-name placeholder="{col_name_ph}" required>'
-                + '<select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
-                + '<label class="ci-col-multiline-toggle"><input type="checkbox" data-col-multiline><span>{multiline_lbl}</span></label>'
-                + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
-            container.appendChild(row);
-            wireMultilineToggle(row);
-        }}
-        function wireMultilineToggle(row) {{
-            var typeEl = row.querySelector('[data-col-type]');
-            var toggleLabel = row.querySelector('.ci-col-multiline-toggle');
-            var checkbox = row.querySelector('[data-col-multiline]');
-            if (!typeEl || !toggleLabel || !checkbox) return;
-            function refresh() {{
-                var isText = typeEl.value === 'text';
-                toggleLabel.style.visibility = isText ? '' : 'hidden';
-                if (!isText) checkbox.checked = false;
-            }}
-            typeEl.addEventListener('change', refresh);
-            refresh();
-        }}
-        function serializeColumns(editorEl) {{
-            var rows = editorEl.querySelectorAll('.ci-column-row');
-            var out = [];
-            rows.forEach(function(row) {{
-                var nameEl = row.querySelector('[data-col-name]');
-                var typeEl = row.querySelector('[data-col-type]');
-                var multilineEl = row.querySelector('[data-col-multiline]');
-                var name = nameEl ? nameEl.value.trim() : '';
-                if (!name) return;
-                var type = typeEl ? typeEl.value : 'text';
-                var entry = {{ name: name, type: type }};
-                if (type === 'text' && multilineEl && multilineEl.checked) {{
-                    entry.multiline = true;
-                }}
-                out.push(entry);
-            }});
-            return JSON.stringify(out);
-        }}
-        (function() {{
-            var editor = document.getElementById('columns-editor');
-            if (editor) {{
-                editor.querySelectorAll('.ci-column-row').forEach(wireMultilineToggle);
-            }}
-            var form = document.getElementById('ft-create-form');
-            if (!form) return;
-            form.addEventListener('submit', function() {{
-                document.getElementById('ft-create-columns').value =
-                    serializeColumns(document.getElementById('columns-editor'));
-            }});
-        }})();
-        </script>"##,
+        <script>{columns_editor_js}</script>"##,
+        columns_editor_js = COLUMNS_EDITOR_JS,
+        form_id = "ft-create-form",
+        target_id = "ft-create-columns",
         title = t.ft_title,
         subtitle = t.ft_subtitle,
         your_types = t.ft_your_types,
@@ -388,7 +345,7 @@ async fn edit_page(
                     <input type="checkbox" data-col-multiline{multiline_checked}>
                     <span>{multiline_lbl}</span>
                 </label>
-                <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
+                <button type="button" class="btn-icon btn-icon-danger" data-col-remove>×</button>
             </div>"#,
             name = html_escape(&c.name),
         ));
@@ -400,7 +357,7 @@ async fn edit_page(
             <input type="text" data-col-name placeholder="{col_name_ph}" required>
             <select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>
             <label class="ci-col-multiline-toggle"><input type="checkbox" data-col-multiline><span>{multiline_lbl}</span></label>
-            <button type="button" class="btn-icon btn-icon-danger" onclick="this.closest('.ci-column-row').remove()">×</button>
+            <button type="button" class="btn-icon btn-icon-danger" data-col-remove>×</button>
         </div>"#
         );
     }
@@ -426,11 +383,15 @@ async fn edit_page(
                     </div>
                     <div class="form-group">
                         <label>{columns_lbl}</label>
-                        <div id="columns-editor" class="ci-columns-editor">
+                        <div id="columns-editor" class="ci-columns-editor"
+                             data-form="{form_id}" data-target="{target_id}"
+                             data-ph-name="{col_name_ph}" data-t-text="{col_text}"
+                             data-t-number="{col_number}" data-t-bool="{col_bool}"
+                             data-t-link="{col_link}" data-t-multiline="{multiline_lbl}">
                             {col_rows}
                         </div>
                         <button type="button" class="btn btn-secondary btn-sm mt-1"
-                                onclick="addColumnRow(document.getElementById('columns-editor'))">{add_column}</button>
+                                data-add-column>{add_column}</button>
                     </div>
                     <input type="hidden" name="columns" id="ft-edit-columns">
                     <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
@@ -441,61 +402,10 @@ async fn edit_page(
             </div>
         </div>
 
-        <script>
-        function addColumnRow(container) {{
-            var row = document.createElement('div');
-            row.className = 'ci-column-row';
-            row.innerHTML = '<input type="text" data-col-name placeholder="{col_name_ph}" required>'
-                + '<select data-col-type><option value="text">{col_text}</option><option value="number">{col_number}</option><option value="bool">{col_bool}</option><option value="link">{col_link}</option></select>'
-                + '<label class="ci-col-multiline-toggle"><input type="checkbox" data-col-multiline><span>{multiline_lbl}</span></label>'
-                + '<button type="button" class="btn-icon btn-icon-danger" onclick="this.closest(\'.ci-column-row\').remove()">×</button>';
-            container.appendChild(row);
-            wireMultilineToggle(row);
-        }}
-        function wireMultilineToggle(row) {{
-            var typeEl = row.querySelector('[data-col-type]');
-            var toggleLabel = row.querySelector('.ci-col-multiline-toggle');
-            var checkbox = row.querySelector('[data-col-multiline]');
-            if (!typeEl || !toggleLabel || !checkbox) return;
-            function refresh() {{
-                var isText = typeEl.value === 'text';
-                toggleLabel.style.visibility = isText ? '' : 'hidden';
-                if (!isText) checkbox.checked = false;
-            }}
-            typeEl.addEventListener('change', refresh);
-            refresh();
-        }}
-        function serializeColumns(editorEl) {{
-            var rows = editorEl.querySelectorAll('.ci-column-row');
-            var out = [];
-            rows.forEach(function(row) {{
-                var nameEl = row.querySelector('[data-col-name]');
-                var typeEl = row.querySelector('[data-col-type]');
-                var multilineEl = row.querySelector('[data-col-multiline]');
-                var name = nameEl ? nameEl.value.trim() : '';
-                if (!name) return;
-                var type = typeEl ? typeEl.value : 'text';
-                var entry = {{ name: name, type: type }};
-                if (type === 'text' && multilineEl && multilineEl.checked) {{
-                    entry.multiline = true;
-                }}
-                out.push(entry);
-            }});
-            return JSON.stringify(out);
-        }}
-        (function() {{
-            var editor = document.getElementById('columns-editor');
-            if (editor) {{
-                editor.querySelectorAll('.ci-column-row').forEach(wireMultilineToggle);
-            }}
-            var form = document.getElementById('ft-edit-form');
-            if (!form) return;
-            form.addEventListener('submit', function() {{
-                document.getElementById('ft-edit-columns').value =
-                    serializeColumns(document.getElementById('columns-editor'));
-            }});
-        }})();
-        </script>"##,
+        <script>{columns_editor_js}</script>"##,
+        columns_editor_js = COLUMNS_EDITOR_JS,
+        form_id = "ft-edit-form",
+        target_id = "ft-edit-columns",
         id = ft.id,
         name = html_escape(&ft.name),
         edit_title = t.ft_edit_title,

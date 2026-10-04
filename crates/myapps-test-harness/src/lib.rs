@@ -1,4 +1,5 @@
 use axum_test::TestServer;
+use myapps_core::config::ExternalApp;
 use myapps_core::registry::App;
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -22,9 +23,30 @@ impl Drop for TestApp {
     }
 }
 
+/// The handful of `Config` knobs tests actually vary. Everything else is
+/// fixed by `spawn_app_with`, so the full `Config` literal is written out in
+/// exactly one place in the workspace.
+#[derive(Default)]
+pub struct Options {
+    /// Restrict the router to a subset of apps, as `DEPLOY_APPS` does. All
+    /// apps are still migrated, so the tables of a hidden app still exist.
+    pub deploy_apps: Option<Vec<String>>,
+    /// External app shortcuts shown on the launcher.
+    pub external_apps: Vec<ExternalApp>,
+    pub version: String,
+    pub build_timestamp: String,
+    /// Trusted reverse-proxy header that stands in for a password login.
+    pub auth_sso_header: Option<String>,
+}
+
 /// Spin up a fresh app instance with the given apps and an in-memory SQLite database.
 /// Each call gets an isolated database, so tests don't interfere.
 pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
+    spawn_app_with(apps, Options::default()).await
+}
+
+/// `spawn_app`, with the launcher/auth knobs the platform-level tests vary.
+pub async fn spawn_app_with(apps: Vec<Box<dyn App>>, opts: Options) -> TestApp {
     let db_id = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
     let db_url = format!("sqlite:file:test_{db_id}?mode=memory&cache=shared");
 
@@ -46,22 +68,10 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         .await
         .unwrap();
 
-    // Create per-app scoped pools for database isolation
-    let all_keys: Vec<&'static str> = apps.iter().map(|a| a.info().key).collect();
-    let mut app_pools: HashMap<&'static str, SqlitePool> = HashMap::new();
-    for app in &apps {
-        let key = app.info().key;
-        let others: Vec<&str> = all_keys.iter().copied().filter(|k| *k != key).collect();
-        let scoped = myapps_core::db::init_scoped(&db_url, key, &others)
-            .await
-            .unwrap();
-        app_pools.insert(key, scoped);
-    }
-
     let file_clipboard_dir = std::env::temp_dir().join(format!("myapps-test-fc-{db_id}"));
 
     let config = myapps_core::config::Config {
-        database_url: db_url,
+        database_url: db_url.clone(),
         base_url: None,
         encryption_key: None,
         vapid_private_key: None,
@@ -76,16 +86,32 @@ pub async fn spawn_app(apps: Vec<Box<dyn App>>) -> TestApp {
         file_clipboard_max_file_bytes: 5 * 1024 * 1024,
         file_clipboard_user_quota_bytes: 20 * 1024 * 1024,
         file_clipboard_min_free_bytes: 0,
-        deploy_apps: None,
+        deploy_apps: opts.deploy_apps,
         llama_server_url: String::new(),
         seed: false,
         cleanup_inactive_days: 0,
         static_version: String::new(),
-        external_apps: Vec::new(),
-        auth_sso_header: None,
-        version: String::new(),
-        build_timestamp: String::new(),
+        external_apps: opts.external_apps,
+        auth_sso_header: opts.auth_sso_header,
+        version: opts.version,
+        build_timestamp: opts.build_timestamp,
     };
+
+    // `DEPLOY_APPS` hides an app from the router but not from the database:
+    // migrations above ran for every app, so a hidden app's tables still exist.
+    let apps = myapps_core::registry::deployed_app_instances(apps, &config);
+
+    // Scoped pools and the router cover only the deployed subset.
+    let all_keys: Vec<&'static str> = apps.iter().map(|a| a.info().key).collect();
+    let mut app_pools: HashMap<&'static str, SqlitePool> = HashMap::new();
+    for app in &apps {
+        let key = app.info().key;
+        let others: Vec<&str> = all_keys.iter().copied().filter(|k| *k != key).collect();
+        let scoped = myapps_core::db::init_scoped(&db_url, key, &others)
+            .await
+            .unwrap();
+        app_pools.insert(key, scoped);
+    }
 
     let app = myapps_core::routes::build_router(pool.clone(), app_pools, config, apps);
 

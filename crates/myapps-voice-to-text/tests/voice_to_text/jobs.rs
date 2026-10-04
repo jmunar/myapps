@@ -154,3 +154,41 @@ async fn delete_job_removes_from_list() {
         .unwrap();
     assert!(count.is_none());
 }
+
+// recorder.js drives the mic buttons by id and reads its status strings off
+// #rec-status; the inline onclick handlers it replaced are gone.
+#[tokio::test]
+async fn new_job_page_gives_the_recorder_its_hooks() {
+    let app =
+        myapps_test_harness::spawn_app(vec![Box::new(myapps_voice_to_text::VoiceToTextApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/voice/new").await.text();
+    assert!(body.contains(r#"id="rec-start""#));
+    assert!(body.contains(r#"id="rec-stop""#));
+    assert!(body.contains("data-recording="));
+    assert!(body.contains("data-processing="));
+    assert!(!body.contains("onclick=\"startRecording()\""));
+}
+
+// The recorder also reaches outside its own box: it reads the model the upload
+// form is set to and swaps the response into #rec-result. Both live in markup
+// the recorder does not own, so a rename there breaks it silently.
+#[tokio::test]
+async fn new_job_page_gives_the_recorder_a_model_and_a_result_slot() {
+    let app =
+        myapps_test_harness::spawn_app(vec![Box::new(myapps_voice_to_text::VoiceToTextApp)]).await;
+    app.login_as("test", "pass").await;
+
+    let body = app.server.get("/voice/new").await.text();
+    assert!(
+        body.contains(r#"<select id="model" name="model">"#),
+        "recorder.js posts document.getElementById('model').value"
+    );
+    assert!(
+        body.contains(r#"<div id="rec-result">"#),
+        "recorder.js writes the upload response into #rec-result"
+    );
+    // The upload endpoint it posts to is the same one the form uses.
+    assert!(body.contains(r#"hx-post="/voice/upload""#));
+}

@@ -1,4 +1,6 @@
-use myapps_core::command::{CommandAction, CommandParam, CommandResult, ParamType};
+use myapps_core::command::{
+    CommandAction, CommandParam, CommandResult, ParamType, db_err, text_param,
+};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
@@ -186,14 +188,6 @@ pub async fn command_context(pool: &SqlitePool, user_id: i64) -> HashMap<String,
     }
 
     ctx
-}
-
-fn text_param<'a>(params: &'a HashMap<String, serde_json::Value>, key: &str) -> Option<&'a str> {
-    params.get(key).and_then(|v| v.as_str())
-}
-
-fn db_err(e: sqlx::Error) -> String {
-    format!("Database error: {e}")
 }
 
 pub async fn dispatch(

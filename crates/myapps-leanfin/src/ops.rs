@@ -1,4 +1,4 @@
-use myapps_core::command::{CommandAction, CommandParam, CommandResult, ParamType};
+use myapps_core::command::{CommandAction, CommandParam, CommandResult, ParamType, text_param};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
@@ -76,10 +76,8 @@ pub async fn dispatch(
 ) -> Result<CommandResult, String> {
     match action {
         "add_transaction" => {
-            let description = params
-                .get("description")
-                .and_then(|v| v.as_str())
-                .ok_or("Missing description parameter")?;
+            let description =
+                text_param(params, "description").ok_or("Missing description parameter")?;
             let amount = params
                 .get("amount")
                 .and_then(|v| v.as_f64())

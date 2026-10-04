@@ -26,7 +26,7 @@ use super::labels::{GroupRow, group_display_name, user_groups};
 use super::period::{self, Bucket, Window};
 use super::services::expenses;
 use myapps_core::auth::UserId;
-use myapps_core::components::html_escape;
+use myapps_core::components::{call_script, html_escape};
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -45,17 +45,6 @@ pub fn routes() -> Router<AppState> {
 
 async fn legacy_redirect(state: axum::extract::State<AppState>) -> impl IntoResponse {
     Redirect::permanent(&format!("{}/leanfin/breakdown", state.config.base_path))
-}
-
-/// Serialize for embedding in a `<script>` body. `serde_json` handles quotes and
-/// control characters; escaping the three markup characters on top of that keeps
-/// a category named `</script>` from closing the element.
-fn json_for_script(value: &serde_json::Value) -> String {
-    value
-        .to_string()
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('&', "\\u0026")
 }
 
 /// Name of the per-period average, which depends on how wide a bucket is.
@@ -167,9 +156,11 @@ async fn page(
             </div>
             <div id="breakdown-txn-table"></div>
         </div>
+        <script src="{base}/static/chart.min.js?v={sv}"></script>
         <script>{selector_js}</script>
         <script>{breakdown_js}</script>"##,
         title = t.exp_title,
+        sv = state.config.static_version,
         subtitle = t.exp_subtitle,
         select_group = t.exp_select_group,
         by_category = t.exp_by_category,
@@ -314,15 +305,12 @@ async fn chart_data(
         "matrix": matrix,
     });
 
-    Html(format!(
-        "<script>window.updateBreakdown({});</script>",
-        json_for_script(&payload)
-    ))
+    Html(call_script("window.updateBreakdown", &payload))
 }
 
 fn empty_script(message: &str) -> String {
-    format!(
-        "<script>window.showBreakdownEmpty({});</script>",
-        json_for_script(&serde_json::Value::from(message))
+    call_script(
+        "window.showBreakdownEmpty",
+        &serde_json::Value::from(message),
     )
 }

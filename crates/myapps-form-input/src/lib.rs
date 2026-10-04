@@ -12,15 +12,9 @@ use myapps_core::registry::{App, AppInfo};
 use myapps_core::routes::AppState;
 
 /// HTML-escape a string for safe interpolation into HTML element bodies or
-/// double-quoted attribute values. User-controlled strings (labels, names,
-/// CSV cells) MUST go through this before reaching `format!` templates.
-pub(crate) fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
+/// quoted attribute values. User-controlled strings (labels, names, CSV cells)
+/// MUST go through this before reaching `format!` templates.
+pub(crate) use myapps_core::components::html_escape;
 
 /// Maximum length of a row-set label (chars). Beyond this we reject the
 /// submission rather than truncating, so the user sees their input is wrong.
@@ -41,39 +35,18 @@ pub fn router() -> Router<AppState> {
 
 pub fn forms_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
-    let ct = myapps_core::i18n::t(lang);
-    vec![
-        NavItem {
-            href: format!("{base}/forms"),
-            label: "Forms".to_string(),
-            active: false,
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/forms"),
-            label: t.inputs.to_string(),
-            active: active == "inputs",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/forms/row-sets"),
-            label: t.row_sets.to_string(),
-            active: active == "row_sets",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/forms/form-types"),
-            label: t.form_types.to_string(),
-            active: active == "form_types",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/logout"),
-            label: ct.log_out.to_string(),
-            active: false,
-            right: true,
-        },
-    ]
+    myapps_core::layout::app_nav(
+        base,
+        "/forms",
+        "Forms",
+        active,
+        lang,
+        &[
+            ("", t.inputs, "inputs"),
+            ("/row-sets", t.row_sets, "row_sets"),
+            ("/form-types", t.form_types, "form_types"),
+        ],
+    )
 }
 
 pub struct FormInputApp;
@@ -83,7 +56,6 @@ impl App for FormInputApp {
         AppInfo {
             key: "form_input",
             name: "Forms",
-            description: "Record structured data with custom forms",
             icon: "\u{270E}",
             path: "/forms",
         }
@@ -121,13 +93,8 @@ impl App for FormInputApp {
         action: &'a str,
         params: &'a std::collections::HashMap<String, serde_json::Value>,
         base_path: &'a str,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<myapps_core::command::CommandResult, String>>
-                + Send
-                + 'a,
-        >,
-    > {
+    ) -> myapps_core::registry::BoxFuture<'a, Result<myapps_core::command::CommandResult, String>>
+    {
         Box::pin(ops::dispatch(pool, user_id, action, params, base_path))
     }
 
@@ -135,11 +102,7 @@ impl App for FormInputApp {
         &'a self,
         pool: &'a sqlx::SqlitePool,
         user_id: i64,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = std::collections::HashMap<String, String>> + Send + 'a,
-        >,
-    > {
+    ) -> myapps_core::registry::BoxFuture<'a, std::collections::HashMap<String, String>> {
         Box::pin(ops::command_context(pool, user_id))
     }
 
@@ -147,8 +110,7 @@ impl App for FormInputApp {
         &'a self,
         pool: &'a sqlx::SqlitePool,
         user_id: i64,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
-    {
+    ) -> Option<myapps_core::registry::BoxFuture<'a, anyhow::Result<()>>> {
         Some(Box::pin(services::seed::run(pool, user_id, self)))
     }
 }

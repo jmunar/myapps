@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::mindflow_nav;
 use myapps_core::auth::UserId;
+use myapps_core::components::html_escape;
 use myapps_core::i18n::Lang;
 use myapps_core::layout::render_page;
 use myapps_core::routes::AppState;
@@ -65,7 +66,11 @@ async fn list(
 
     let mut cat_options = String::new();
     for c in &categories {
-        cat_options.push_str(&format!(r#"<option value="{}">{}</option>"#, c.id, c.name,));
+        cat_options.push_str(&format!(
+            r#"<option value="{}">{}</option>"#,
+            c.id,
+            html_escape(&c.name),
+        ));
     }
 
     let mut rows = String::new();

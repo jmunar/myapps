@@ -12,27 +12,14 @@ use myapps_core::routes::AppState;
 
 pub fn notes_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
     let t = i18n::t(lang);
-    let ct = myapps_core::i18n::t(lang);
-    vec![
-        NavItem {
-            href: format!("{base}/notes"),
-            label: "Notes".to_string(),
-            active: false,
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/notes"),
-            label: t.nav_notes.to_string(),
-            active: active == "list",
-            right: false,
-        },
-        NavItem {
-            href: format!("{base}/logout"),
-            label: ct.log_out.to_string(),
-            active: false,
-            right: true,
-        },
-    ]
+    myapps_core::layout::app_nav(
+        base,
+        "/notes",
+        "Notes",
+        active,
+        lang,
+        &[("", t.nav_notes, "list")],
+    )
 }
 
 pub struct NotesApp {
@@ -58,7 +45,6 @@ impl App for NotesApp {
         AppInfo {
             key: "notes",
             name: "Notes",
-            description: "Markdown-based note-taking",
             icon: "\u{270F}\u{FE0F}",
             path: "/notes",
         }
@@ -101,13 +87,8 @@ impl App for NotesApp {
         action: &'a str,
         params: &'a std::collections::HashMap<String, serde_json::Value>,
         base_path: &'a str,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<myapps_core::command::CommandResult, String>>
-                + Send
-                + 'a,
-        >,
-    > {
+    ) -> myapps_core::registry::BoxFuture<'a, Result<myapps_core::command::CommandResult, String>>
+    {
         Box::pin(ops::dispatch(pool, user_id, action, params, base_path))
     }
 
@@ -115,11 +96,7 @@ impl App for NotesApp {
         &'a self,
         pool: &'a sqlx::SqlitePool,
         user_id: i64,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = std::collections::HashMap<String, String>> + Send + 'a,
-        >,
-    > {
+    ) -> myapps_core::registry::BoxFuture<'a, std::collections::HashMap<String, String>> {
         Box::pin(ops::command_context(pool, user_id))
     }
 
@@ -127,8 +104,7 @@ impl App for NotesApp {
         &'a self,
         pool: &'a sqlx::SqlitePool,
         user_id: i64,
-    ) -> Option<std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + 'a>>>
-    {
+    ) -> Option<myapps_core::registry::BoxFuture<'a, anyhow::Result<()>>> {
         Some(Box::pin(services::seed::run(pool, user_id, self)))
     }
 

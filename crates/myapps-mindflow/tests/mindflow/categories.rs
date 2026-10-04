@@ -183,3 +183,38 @@ async fn categories_page_shows_thought_count() {
     // Work has 3 thoughts + sub-thoughts
     assert!(body.contains("Work"));
 }
+
+// Category names are user-supplied and reach two `<option>` bodies (the mind
+// map's capture form and the inbox's recategorise dropdown). Both interpolated
+// them raw until this was fixed; CLAUDE.md singles `<option>` bodies out
+// because the browser decodes entities there.
+#[tokio::test]
+async fn category_names_are_escaped_in_the_option_dropdowns() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_mindflow::MindFlowApp)]).await;
+    app.seed_and_login(&myapps_mindflow::MindFlowApp).await;
+
+    let user_id: i64 = sqlx::query_scalar("SELECT id FROM users LIMIT 1")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO mindflow_categories (user_id, name, color, icon) VALUES (?, ?, '#fff', NULL)",
+    )
+    .bind(user_id)
+    .bind("<img src=x onerror=alert(1)>")
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    for path in ["/mindflow", "/mindflow/inbox"] {
+        let body = app.server.get(path).await.text();
+        assert!(
+            !body.contains("<img src=x onerror=alert(1)>"),
+            "{path} renders a category name into an <option> body unescaped"
+        );
+        assert!(
+            body.contains("&lt;img src=x onerror=alert(1)&gt;"),
+            "{path} should still show the name, escaped"
+        );
+    }
+}

@@ -4,12 +4,16 @@ const CACHE_NAME = "myapps-" + STATIC_VERSION;
 // Versioned URLs because every <link>/<script> in layout.rs appends ?v={sv};
 // without the query string the pre-cached entries don't match what the
 // browser actually requests.
+//
+// Only assets layout.rs loads on *every* page belong here. Page-local
+// libraries (chart.min.js, d3.v7.min.js) are left to the cache-first
+// write-through handler below, so they cost nothing until a page that
+// needs them is actually opened.
 const V = "?v=" + STATIC_VERSION;
 const STATIC_ASSETS = [
   BASE_PATH + "/static/core.css" + V,
   BASE_PATH + "/static/apps.css" + V,
   BASE_PATH + "/static/htmx.min.js" + V,
-  BASE_PATH + "/static/chart.min.js" + V,
   BASE_PATH + "/static/notes-vendor.bundle.js" + V,
   BASE_PATH + "/static/notes-tiptap-bootstrap.js" + V,
   BASE_PATH + "/static/icon.svg",

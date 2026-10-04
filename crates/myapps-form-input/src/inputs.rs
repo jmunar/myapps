@@ -7,6 +7,12 @@ use axum::{
 };
 use serde::Deserialize;
 
+/// Entry grid for the new-input page, and the saved-input table editor.
+/// Both are plain files: everything they used to have interpolated into them
+/// now arrives as JSON in a `<script type="application/json">` tag.
+const INPUT_NEW_JS: &str = include_str!("../static/input-new.js");
+const INPUT_VIEW_JS: &str = include_str!("../static/input-view.js");
+
 use super::form_types::ColumnDef;
 use super::{forms_nav, html_escape};
 use myapps_core::auth::UserId;
@@ -28,7 +34,6 @@ pub fn routes() -> Router<AppState> {
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct InputRow {
     id: i64,
     row_set_id: Option<i64>,
@@ -39,7 +44,6 @@ struct InputRow {
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct RowSetRow {
     id: i64,
     label: String,
@@ -47,7 +51,6 @@ struct RowSetRow {
 }
 
 #[derive(sqlx::FromRow)]
-#[allow(dead_code)]
 struct FormTypeRow {
     id: i64,
     name: String,
@@ -269,15 +272,25 @@ async fn new_input_page(
         })
         .collect();
 
-    // `serde_json::to_string` does not escape `<`/`>`/`&`, so a row containing
-    // `</script>` would prematurely close the surrounding inline script. Escape
-    // the only sequence that can do that: a `<` immediately followed by `/`.
-    let rs_json = serde_json::to_string(&row_sets_json)
-        .unwrap_or_default()
-        .replace("</", "<\\/");
-    let ft_json = serde_json::to_string(&form_types_json)
-        .unwrap_or_default()
-        .replace("</", "<\\/");
+    // Everything the entry grid needs, handed over as one JSON document in a
+    // `<script type="application/json">` rather than interpolated into code.
+    // `json_for_script` does the escaping, so a row containing `</script>`
+    // cannot close the element early.
+    let entry_config = myapps_core::components::json_for_script(&serde_json::json!({
+        "rowSets": row_sets_json,
+        "formTypes": form_types_json,
+        "labels": {
+            "row": t.inp_row,
+            "selectHint": t.inp_select_hint,
+            "bool": t.ft_col_bool,
+            "removeRow": t.inp_remove_row,
+            "noRowsYet": t.inp_no_rows_yet,
+            "linkDefault": t.link_default_text,
+            "linkAdd": t.link_add_btn,
+            "csvFormatDynamic": t.inp_csv_format_dynamic,
+            "csvFormatFixed": t.inp_csv_format_fixed,
+        },
+    }));
 
     let mut rs_opts = String::new();
     for rs in &row_sets {
@@ -297,15 +310,8 @@ async fn new_input_page(
         ));
     }
 
-    let row_label = t.inp_row;
-    let select_hint = t.inp_select_hint;
-    let col_bool = t.ft_col_bool;
     let add_row_label = t.inp_add_row;
-    let remove_row_label = t.inp_remove_row;
-    let no_rows_yet = t.inp_no_rows_yet;
     let need_row_set = t.inp_need_row_set;
-    let link_default_text = t.link_default_text;
-    let link_add_btn = t.link_add_btn;
     let modal_html = render_link_modal(t);
 
     let body = format!(
@@ -384,372 +390,9 @@ async fn new_input_page(
 
         {modal_html}
 
-        <script>
-        (function() {{
-            var rowSets = {rs_json};
-            var formTypes = {ft_json};
-            var lblRow = '{row_label}';
-            var lblSelectHint = '{select_hint}';
-            var lblBool = '{col_bool}';
-            var lblRemoveRow = '{remove_row_label}';
-            var lblNoRowsYet = '{no_rows_yet}';
-            var lblLinkDefault = '{link_default_text}';
-            var lblLinkAdd = '{link_add_btn}';
-
-            var rsSel = document.getElementById('row_set_id');
-            var ftSel = document.getElementById('form_type_id');
-            var rsGroup = document.getElementById('row-set-group');
-            var rsWarning = document.getElementById('row-set-warning');
-            var gridContainer = document.getElementById('grid-container');
-            var addRowBtn = document.getElementById('add-row-btn');
-            var submitBtn = document.getElementById('submit-btn');
-            var csvInput = document.getElementById('csv_data');
-            var form = document.getElementById('input-form');
-
-            // dynamic-mode state: array of arrays of strings; built from DOM on submit
-            var dynamicRowCount = 0;
-
-            function currentFormType() {{
-                var ftId = parseInt(ftSel.value);
-                return formTypes.find(function(f) {{ return f.id === ftId; }});
-            }}
-
-            function currentRowSet() {{
-                var rsId = parseInt(rsSel.value);
-                return rowSets.find(function(r) {{ return r.id === rsId; }});
-            }}
-
-            function colIsMultiline(col) {{
-                var ct = col.type || col.col_type || 'text';
-                return ct === 'text' && col.multiline === true;
-            }}
-
-            function escapeHtml(s) {{
-                return String(s)
-                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            }}
-
-            function cellHtml(r, c, colType) {{
-                if (colType === 'bool') {{
-                    var parts = lblBool.split(' / ');
-                    var yes = parts[0] || 'Yes';
-                    var no = parts[1] || 'No';
-                    return '<td class="ci-col-bool"><select data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-select">'
-                        + '<option value=""></option><option value="' + yes + '">' + yes + '</option><option value="' + no + '">' + no + '</option></select></td>';
-                }} else if (colType === 'number') {{
-                    return '<td class="ci-col-number"><input type="number" step="any" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input" inputmode="decimal"></td>';
-                }} else if (colType === 'link') {{
-                    return '<td class="ci-col-link">'
-                        + '<input type="hidden" data-r="' + r + '" data-c="' + c + '" class="ci-cell" value="">'
-                        + '<button type="button" class="ci-link-btn" onclick="window.openLinkModal(this)">' + lblLinkAdd + '</button>'
-                        + '</td>';
-                }}
-                return '<td><input type="text" data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-input"></td>';
-            }}
-
-            function multilineRowHtml(r, cols, colspan) {{
-                var inner = '';
-                for (var c = 0; c < cols.length; c++) {{
-                    if (!colIsMultiline(cols[c])) continue;
-                    inner += '<div class="ci-multiline-cell">'
-                        + '<label>' + escapeHtml(cols[c].name) + '</label>'
-                        + '<textarea data-r="' + r + '" data-c="' + c + '" class="ci-cell ci-cell-textarea" rows="3"></textarea>'
-                        + '</div>';
-                }}
-                if (!inner) return '';
-                return '<tr class="ci-multiline-row" data-row="' + r + '"><td colspan="' + colspan + '">' + inner + '</td></tr>';
-            }}
-
-            function buildFixedGrid(rs, ft) {{
-                var rows = rs.rows;
-                var cols = ft.columns;
-                var visibleCols = 1; // row-name column
-                var html = '<table class="ci-input-table"><thead><tr><th class="ci-th-pupil">' + lblRow + '</th>';
-                for (var i = 0; i < cols.length; i++) {{
-                    if (colIsMultiline(cols[i])) continue;
-                    html += '<th>' + escapeHtml(cols[i].name) + '</th>';
-                    visibleCols++;
-                }}
-                html += '</tr></thead><tbody>';
-                for (var r = 0; r < rows.length; r++) {{
-                    html += '<tr class="ci-main-row" data-row="' + r + '"><td class="ci-pupil-name">' + escapeHtml(rows[r]) + '</td>';
-                    for (var c = 0; c < cols.length; c++) {{
-                        if (colIsMultiline(cols[c])) continue;
-                        var colType = cols[c].type || cols[c].col_type || 'text';
-                        html += cellHtml(r, c, colType);
-                    }}
-                    html += '</tr>';
-                    html += multilineRowHtml(r, cols, visibleCols);
-                }}
-                html += '</tbody></table>';
-                gridContainer.innerHTML = html;
-            }}
-
-            function dynamicRowHtml(r, cols, visibleCols) {{
-                var html = '<tr class="ci-main-row" data-row="' + r + '">';
-                for (var c = 0; c < cols.length; c++) {{
-                    if (colIsMultiline(cols[c])) continue;
-                    var colType = cols[c].type || cols[c].col_type || 'text';
-                    html += cellHtml(r, c, colType);
-                }}
-                html += '<td style="padding:0 0.4rem"><button type="button" class="btn-icon btn-icon-danger remove-row-btn" data-row="' + r + '" title="' + lblRemoveRow + '">×</button></td>';
-                html += '</tr>';
-                html += multilineRowHtml(r, cols, visibleCols);
-                return html;
-            }}
-
-            function visibleColCountDynamic(cols) {{
-                var count = 1; // remove-button column
-                for (var i = 0; i < cols.length; i++) {{
-                    if (!colIsMultiline(cols[i])) count++;
-                }}
-                return count;
-            }}
-
-            function buildDynamicGrid(ft) {{
-                var cols = ft.columns;
-                if (cols.length === 0) {{
-                    gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
-                    return;
-                }}
-                var visibleCols = visibleColCountDynamic(cols);
-                var html = '<table class="ci-input-table"><thead><tr>';
-                for (var i = 0; i < cols.length; i++) {{
-                    if (colIsMultiline(cols[i])) continue;
-                    html += '<th>' + escapeHtml(cols[i].name) + '</th>';
-                }}
-                html += '<th></th></tr></thead><tbody id="dynamic-rows">';
-                html += dynamicRowHtml(0, cols, visibleCols);
-                html += '</tbody></table>';
-                gridContainer.innerHTML = html;
-                dynamicRowCount = 1;
-                wireRemoveButtons(cols);
-            }}
-
-            function wireRemoveButtons(cols) {{
-                gridContainer.querySelectorAll('.remove-row-btn').forEach(function(btn) {{
-                    btn.onclick = function() {{
-                        var tbody = document.getElementById('dynamic-rows');
-                        if (!tbody) return;
-                        var mainRows = tbody.querySelectorAll('tr.ci-main-row');
-                        if (mainRows.length <= 1) return;
-                        var r = btn.dataset.row;
-                        tbody.querySelectorAll('tr[data-row="' + r + '"]').forEach(function(tr) {{ tr.remove(); }});
-                    }};
-                }});
-            }}
-
-            function applyMode() {{
-                var ft = currentFormType();
-                if (!ft) {{
-                    gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
-                    addRowBtn.style.display = 'none';
-                    return;
-                }}
-                if (ft.fixed_rows) {{
-                    rsGroup.style.display = '';
-                    rsSel.required = true;
-                    addRowBtn.style.display = 'none';
-                    if (rowSets.length === 0) {{
-                        rsWarning.style.display = '';
-                        gridContainer.innerHTML = '';
-                        submitBtn.disabled = true;
-                        return;
-                    }}
-                    rsWarning.style.display = 'none';
-                    submitBtn.disabled = false;
-                    var rs = currentRowSet();
-                    if (!rs || ft.columns.length === 0) {{
-                        gridContainer.innerHTML = '<p class="text-secondary">' + lblSelectHint + '</p>';
-                        return;
-                    }}
-                    buildFixedGrid(rs, ft);
-                }} else {{
-                    rsGroup.style.display = 'none';
-                    rsSel.required = false;
-                    rsWarning.style.display = 'none';
-                    addRowBtn.style.display = '';
-                    submitBtn.disabled = false;
-                    buildDynamicGrid(ft);
-                }}
-            }}
-
-            addRowBtn.addEventListener('click', function() {{
-                var ft = currentFormType();
-                if (!ft || ft.columns.length === 0) return;
-                var tbody = document.getElementById('dynamic-rows');
-                if (!tbody) return;
-                var visibleCols = visibleColCountDynamic(ft.columns);
-                tbody.insertAdjacentHTML('beforeend', dynamicRowHtml(dynamicRowCount, ft.columns, visibleCols));
-                dynamicRowCount++;
-                wireRemoveButtons(ft.columns);
-            }});
-
-            rsSel.addEventListener('change', applyMode);
-            ftSel.addEventListener('change', applyMode);
-            applyMode();
-
-            form.addEventListener('submit', function(e) {{
-                var ft = currentFormType();
-                if (!ft) return;
-                var cols = ft.columns;
-                var lines = [];
-
-                if (ft.fixed_rows) {{
-                    var rs = currentRowSet();
-                    if (!rs) {{ e.preventDefault(); return; }}
-                    var rows = rs.rows;
-                    var header = [lblRow];
-                    for (var i = 0; i < cols.length; i++) header.push(csvEscape(cols[i].name));
-                    lines.push(header.join(','));
-                    for (var r = 0; r < rows.length; r++) {{
-                        var row = [csvEscape(rows[r])];
-                        for (var c = 0; c < cols.length; c++) {{
-                            var cell = gridContainer.querySelector('[data-r="' + r + '"][data-c="' + c + '"]');
-                            row.push(csvEscape(cell ? cell.value : ''));
-                        }}
-                        lines.push(row.join(','));
-                    }}
-                }} else {{
-                    var header2 = [];
-                    for (var i2 = 0; i2 < cols.length; i2++) header2.push(csvEscape(cols[i2].name));
-                    lines.push(header2.join(','));
-                    var mainTrs = gridContainer.querySelectorAll('#dynamic-rows tr.ci-main-row');
-                    mainTrs.forEach(function(tr) {{
-                        var rIdx = tr.dataset.row;
-                        var rowVals = [];
-                        for (var c2 = 0; c2 < cols.length; c2++) {{
-                            // Multiline cells live in a follow-up tr, so look them
-                            // up by the (data-r, data-c) attribute pair rather than
-                            // restricting the search to the main tr.
-                            var cell2 = gridContainer.querySelector('[data-r="' + rIdx + '"][data-c="' + c2 + '"]');
-                            rowVals.push(csvEscape(cell2 ? cell2.value : ''));
-                        }}
-                        lines.push(rowVals.join(','));
-                    }});
-                }}
-                csvInput.value = lines.join('\n');
-            }});
-
-            function csvEscape(val) {{
-                if (!val) return '';
-                val = String(val);
-                if (val.indexOf(',') >= 0 || val.indexOf('"') >= 0 || val.indexOf('\n') >= 0) {{
-                    return '"' + val.replace(/"/g, '""') + '"';
-                }}
-                return val;
-            }}
-
-            // ── Link modal ─────────────────────────────────────────────
-            var modal = document.getElementById('link-modal');
-            var modalForm = document.getElementById('link-modal-form');
-            var modalUrl = document.getElementById('link-modal-url');
-            var modalText = document.getElementById('link-modal-text');
-            var modalCancel = document.getElementById('link-modal-cancel');
-            var modalActiveBtn = null;
-
-            function parseLinkValue(v) {{
-                if (!v) return ['', ''];
-                var i = v.indexOf('|');
-                if (i < 0) return [v, ''];
-                return [v.slice(0, i), v.slice(i + 1)];
-            }}
-            function encodeLinkValue(url, text) {{
-                if (!url) return '';
-                return text ? url + '|' + text : url;
-            }}
-            function buttonLabel(text) {{
-                return text || lblLinkDefault;
-            }}
-
-            window.openLinkModal = function(btn) {{
-                modalActiveBtn = btn;
-                var hidden = btn.previousElementSibling;
-                var current = hidden ? hidden.value : '';
-                var parsed = parseLinkValue(current);
-                modalUrl.value = parsed[0];
-                modalText.value = parsed[1];
-                if (modal && modal.showModal) modal.showModal();
-            }};
-
-            if (modalCancel) modalCancel.addEventListener('click', function() {{
-                modalActiveBtn = null;
-                if (modal && modal.close) modal.close();
-            }});
-
-            if (modalForm) modalForm.addEventListener('submit', function(e) {{
-                e.preventDefault();
-                if (!modalActiveBtn) {{ if (modal && modal.close) modal.close(); return; }}
-                var url = modalUrl.value.trim();
-                if (!url) return;
-                var text = modalText.value.trim();
-                var hidden = modalActiveBtn.previousElementSibling;
-                if (hidden) hidden.value = encodeLinkValue(url, text);
-                modalActiveBtn.textContent = buttonLabel(text);
-                modalActiveBtn = null;
-                if (modal && modal.close) modal.close();
-            }});
-
-            // ── Tabs (manual entry vs CSV upload) ────────────────────────
-            var tabBtnManual = document.getElementById('tab-btn-manual');
-            var tabBtnCsv = document.getElementById('tab-btn-csv');
-            var tabPaneManual = document.getElementById('tab-pane-manual');
-            var tabPaneCsv = document.getElementById('tab-pane-csv');
-            function activateTab(name) {{
-                var manual = name === 'manual';
-                tabPaneManual.style.display = manual ? '' : 'none';
-                tabPaneCsv.style.display = manual ? 'none' : '';
-                tabBtnManual.style.borderBottomColor = manual ? 'var(--accent-color, #1A6B5A)' : 'transparent';
-                tabBtnManual.style.fontWeight = manual ? '600' : '';
-                tabBtnManual.setAttribute('aria-selected', manual ? 'true' : 'false');
-                tabBtnCsv.style.borderBottomColor = manual ? 'transparent' : 'var(--accent-color, #1A6B5A)';
-                tabBtnCsv.style.fontWeight = manual ? '' : '600';
-                tabBtnCsv.setAttribute('aria-selected', manual ? 'false' : 'true');
-            }}
-            tabBtnManual.addEventListener('click', function() {{ activateTab('manual'); }});
-            tabBtnCsv.addEventListener('click', function() {{ activateTab('csv'); }});
-
-            // ── CSV form: mirror the row-set visibility logic ────────────
-            var csvRsSel = document.getElementById('csv_row_set_id');
-            var csvFtSel = document.getElementById('csv_form_type_id');
-            var csvRsGroup = document.getElementById('csv-row-set-group');
-            var csvRsWarning = document.getElementById('csv-row-set-warning');
-            var csvSubmitBtn = document.getElementById('csv-submit-btn');
-            var csvFormatHint = document.getElementById('csv-format-hint');
-            var lblCsvFormatDynamic = '{csv_format_dynamic}';
-            var lblCsvFormatFixed = '{csv_format_fixed}';
-
-            function applyCsvMode() {{
-                var ftId = parseInt(csvFtSel.value);
-                var ft = formTypes.find(function(f) {{ return f.id === ftId; }});
-                if (!ft) {{
-                    csvSubmitBtn.disabled = true;
-                    return;
-                }}
-                if (ft.fixed_rows) {{
-                    csvRsGroup.style.display = '';
-                    csvRsSel.required = true;
-                    csvFormatHint.textContent = lblCsvFormatFixed;
-                    if (rowSets.length === 0) {{
-                        csvRsWarning.style.display = '';
-                        csvSubmitBtn.disabled = true;
-                        return;
-                    }}
-                    csvRsWarning.style.display = 'none';
-                    csvSubmitBtn.disabled = false;
-                }} else {{
-                    csvRsGroup.style.display = 'none';
-                    csvRsSel.required = false;
-                    csvRsWarning.style.display = 'none';
-                    csvSubmitBtn.disabled = false;
-                    csvFormatHint.textContent = lblCsvFormatDynamic;
-                }}
-            }}
-            csvFtSel.addEventListener('change', applyCsvMode);
-            applyCsvMode();
-        }})();
-        </script>"##,
+        <script type="application/json" id="entry-config">{entry_config}</script>
+        <script>{INPUT_NEW_JS}</script>"##,
+        csv_format_dynamic = t.inp_csv_format_dynamic,
         new_title = t.inp_new_title,
         new_subtitle = t.inp_new_subtitle,
         row_set_lbl = t.inp_row_set,
@@ -761,14 +404,8 @@ async fn new_input_page(
         csv_file_lbl = t.inp_csv_file,
         csv_upload_btn = t.inp_csv_upload_btn,
         csv_format_help = t.inp_csv_format_help,
-        csv_format_dynamic = t.inp_csv_format_dynamic,
-        csv_format_fixed = t.inp_csv_format_fixed,
         add_row_label = add_row_label,
-        remove_row_label = remove_row_label,
-        no_rows_yet = no_rows_yet,
         need_row_set = need_row_set,
-        link_default_text = link_default_text,
-        link_add_btn = link_add_btn,
         modal_html = modal_html,
     );
 
@@ -965,8 +602,21 @@ async fn view(
         None => String::new(),
     };
 
-    let col_bool = t.ft_col_bool;
-    let link_default_text = t.link_default_text;
+    // Labels and endpoints for `input-view.js`, handed over as JSON so the
+    // script itself stays free of interpolation.
+    let view_config = myapps_core::components::json_for_script(&serde_json::json!({
+        "labels": {
+            "bool": t.ft_col_bool,
+            "linkDefault": t.link_default_text,
+            "deleteRow": t.inp_delete_row_confirm,
+            "rowOpFailed": t.inp_row_op_failed,
+        },
+        "urls": {
+            "save": format!("{base}/forms/inputs/{}/cell", inp.id),
+            "addRow": format!("{base}/forms/inputs/{}/rows", inp.id),
+            "delRow": format!("{base}/forms/inputs/{}/rows/delete", inp.id),
+        },
+    }));
     let search_placeholder = t.inp_search_placeholder;
     let modal_html = render_link_modal(t);
 
@@ -994,402 +644,11 @@ async fn view(
 
         {modal_html}
 
-        <script>
-        (function() {{
-            var lblBool = '{col_bool}';
-            var lblLinkDefault = '{link_default_text}';
-            var lblDeleteRow = '{delete_row_confirm}';
-            var lblRowOpFailed = '{row_op_failed}';
-            var saveUrl = '{base}/forms/inputs/{id}/cell';
-            var addRowUrl = '{base}/forms/inputs/{id}/rows';
-            var delRowUrl = '{base}/forms/inputs/{id}/rows/delete';
-
-            // ── Sort & search ──────────────────────────────────────────
-            // Operates purely on the DOM. Cells keep their original
-            // data-row/data-col, so saves still hit the underlying CSV row
-            // regardless of the visible order or which rows are filtered out.
-            var tbody = document.querySelector('.ci-input-table tbody');
-            var mainRows = tbody ? Array.from(tbody.querySelectorAll('tr.ci-main-row')) : [];
-            // Pair each main row with its (optional) multiline follow-up so
-            // sort moves them together and search hides them together.
-            var rowGroups = mainRows.map(function(tr) {{
-                var follow = tbody.querySelector('tr.ci-multiline-row[data-row="' + tr.dataset.row + '"]');
-                return {{ main: tr, follow: follow }};
-            }});
-            var activeSort = null;      // {{ col: idx, dir: 'asc'|'desc', type: '...' }}
-            var activeSearch = '';
-
-            function cellTextAt(tr, colIdx) {{
-                var c = tr.querySelector('[data-col="' + colIdx + '"]');
-                return c ? (c.textContent || '').trim() : '';
-            }}
-
-            function rowHaystack(g) {{
-                var s = g.main.textContent;
-                if (g.follow) s += ' ' + g.follow.textContent;
-                return s.toLowerCase();
-            }}
-
-            function applySearch() {{
-                rowGroups.forEach(function(g) {{
-                    var visible = !activeSearch || rowHaystack(g).indexOf(activeSearch) >= 0;
-                    g.main.style.display = visible ? '' : 'none';
-                    if (g.follow) g.follow.style.display = visible ? '' : 'none';
-                }});
-            }}
-
-            function applySort() {{
-                if (!tbody) return;
-                var ordered;
-                if (!activeSort) {{
-                    ordered = rowGroups.slice().sort(function(a, b) {{
-                        return parseInt(a.main.dataset.originalIndex) - parseInt(b.main.dataset.originalIndex);
-                    }});
-                }} else {{
-                    var col = activeSort.col, dir = activeSort.dir, type = activeSort.type;
-                    ordered = rowGroups.slice().sort(function(a, b) {{
-                        var va = cellTextAt(a.main, col), vb = cellTextAt(b.main, col);
-                        var cmp;
-                        if (type === 'number') {{
-                            var na = parseFloat(va), nb = parseFloat(vb);
-                            var aNaN = isNaN(na), bNaN = isNaN(nb);
-                            if (aNaN && bNaN) cmp = 0;
-                            else if (aNaN) cmp = 1;        // empties sort last
-                            else if (bNaN) cmp = -1;
-                            else cmp = na - nb;
-                        }} else {{
-                            cmp = va.localeCompare(vb, undefined, {{ numeric: false, sensitivity: 'base' }});
-                        }}
-                        return dir === 'asc' ? cmp : -cmp;
-                    }});
-                }}
-                ordered.forEach(function(g) {{
-                    tbody.appendChild(g.main);
-                    if (g.follow) tbody.appendChild(g.follow);
-                }});
-            }}
-
-            function refreshSortBtnStates() {{
-                document.querySelectorAll('.ci-sort-btn').forEach(function(btn) {{
-                    var on = activeSort &&
-                        parseInt(btn.dataset.col) === activeSort.col &&
-                        btn.dataset.dir === activeSort.dir;
-                    btn.classList.toggle('ci-sort-active', !!on);
-                }});
-            }}
-
-            document.querySelectorAll('.ci-sort-btn').forEach(function(btn) {{
-                btn.addEventListener('click', function() {{
-                    var col = parseInt(btn.dataset.col);
-                    var dir = btn.dataset.dir;
-                    var th = btn.closest('th');
-                    var type = th ? (th.dataset.colType || 'text') : 'text';
-                    if (activeSort && activeSort.col === col && activeSort.dir === dir) {{
-                        activeSort = null;       // toggle off
-                    }} else {{
-                        activeSort = {{ col: col, dir: dir, type: type }};
-                    }}
-                    refreshSortBtnStates();
-                    applySort();
-                }});
-            }});
-
-            var searchInput = document.getElementById('ci-global-search');
-            if (searchInput) {{
-                searchInput.addEventListener('input', function() {{
-                    activeSearch = searchInput.value.trim().toLowerCase();
-                    applySearch();
-                }});
-            }}
-
-            // ── Link modal ─────────────────────────────────────────────
-            var modal = document.getElementById('link-modal');
-            var modalForm = document.getElementById('link-modal-form');
-            var modalUrl = document.getElementById('link-modal-url');
-            var modalText = document.getElementById('link-modal-text');
-            var modalCancel = document.getElementById('link-modal-cancel');
-            var modalActiveCell = null;
-
-            function parseLinkValue(v) {{
-                if (!v) return ['', ''];
-                var i = v.indexOf('|');
-                if (i < 0) return [v, ''];
-                return [v.slice(0, i), v.slice(i + 1)];
-            }}
-            function encodeLinkValue(url, text) {{
-                if (!url) return '';
-                return text ? url + '|' + text : url;
-            }}
-            function renderLinkCellHtml(value) {{
-                var parsed = parseLinkValue(value);
-                var url = parsed[0], text = parsed[1] || lblLinkDefault;
-                if (!url) return '';
-                var a = document.createElement('a');
-                a.href = url;
-                a.target = '_blank';
-                a.rel = 'noopener';
-                a.textContent = text;
-                return a.outerHTML;
-            }}
-
-            if (modalCancel) modalCancel.addEventListener('click', function() {{
-                modalActiveCell = null;
-                if (modal && modal.close) modal.close();
-            }});
-            if (modalForm) modalForm.addEventListener('submit', function(e) {{
-                e.preventDefault();
-                if (!modalActiveCell) {{ if (modal && modal.close) modal.close(); return; }}
-                var url = modalUrl.value.trim();
-                if (!url) return;
-                var text = modalText.value.trim();
-                var newValue = encodeLinkValue(url, text);
-                var cell = modalActiveCell;
-                modalActiveCell = null;
-                saveLink(cell, newValue);
-                if (modal && modal.close) modal.close();
-            }});
-
-            function saveLink(cell, newValue) {{
-                var oldValue = cell.dataset.value || '';
-                cell.dataset.value = newValue;
-                cell.innerHTML = renderLinkCellHtml(newValue);
-                var body = 'row=' + encodeURIComponent(cell.dataset.row)
-                    + '&col=' + encodeURIComponent(cell.dataset.col)
-                    + '&value=' + encodeURIComponent(newValue);
-                fetch(saveUrl, {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
-                    body: body,
-                    credentials: 'same-origin',
-                }}).then(function(res) {{
-                    if (!res.ok) {{
-                        alert('Save failed (' + res.status + ')');
-                        cell.dataset.value = oldValue;
-                        cell.innerHTML = renderLinkCellHtml(oldValue);
-                    }}
-                }}).catch(function() {{
-                    alert('Save failed (network error)');
-                    cell.dataset.value = oldValue;
-                    cell.innerHTML = renderLinkCellHtml(oldValue);
-                }});
-            }}
-
-            // ── Cell editing ───────────────────────────────────────────
-            // Multiline cells wrap the editable value in a <div class="ci-multiline-value">
-            // alongside a label, so the edit/save logic operates on that inner element.
-            // Regular cells edit the cell itself.
-            function valueEl(cell) {{
-                return cell.querySelector('.ci-multiline-value') || cell;
-            }}
-            function isMultiline(cell) {{
-                return cell.classList.contains('ci-multiline-cell');
-            }}
-
-            // Delegated so rows appended after load are editable too.
-            var tableEl = document.querySelector('.ci-input-table');
-            if (tableEl) tableEl.addEventListener('dblclick', function(e) {{
-                var cell = e.target.closest('.ci-cell-editable');
-                if (!cell || !tableEl.contains(cell)) return;
-                if (cell.classList.contains('ci-cell-editing')) return;
-                var colType = cell.dataset.type || 'text';
-                if (colType === 'link') {{
-                    modalActiveCell = cell;
-                    var parsed = parseLinkValue(cell.dataset.value || '');
-                    modalUrl.value = parsed[0];
-                    modalText.value = parsed[1];
-                    if (modal && modal.showModal) modal.showModal();
-                    return;
-                }}
-                startEdit(cell);
-            }});
-
-            function startEdit(cell) {{
-                var target = valueEl(cell);
-                var oldValue = target.textContent;
-                var colType = cell.dataset.type || 'text';
-                cell.classList.add('ci-cell-editing');
-                cell.dataset.oldValue = oldValue;
-                var control;
-                if (colType === 'bool') {{
-                    var parts = lblBool.split(' / ');
-                    var yes = parts[0] || 'Yes';
-                    var no = parts[1] || 'No';
-                    control = document.createElement('select');
-                    control.className = 'ci-cell ci-cell-select';
-                    control.innerHTML = '<option value=""></option>'
-                        + '<option value="' + yes + '">' + yes + '</option>'
-                        + '<option value="' + no + '">' + no + '</option>';
-                    control.value = oldValue;
-                }} else if (colType === 'number') {{
-                    control = document.createElement('input');
-                    control.type = 'number';
-                    control.step = 'any';
-                    control.inputMode = 'decimal';
-                    control.className = 'ci-cell ci-cell-input';
-                    control.value = oldValue;
-                }} else if (isMultiline(cell)) {{
-                    control = document.createElement('textarea');
-                    control.className = 'ci-cell ci-cell-textarea';
-                    control.rows = Math.max(3, oldValue.split('\n').length);
-                    control.value = oldValue;
-                }} else {{
-                    control = document.createElement('input');
-                    control.type = 'text';
-                    control.className = 'ci-cell ci-cell-input';
-                    control.value = oldValue;
-                }}
-                target.textContent = '';
-                target.appendChild(control);
-                control.focus();
-                if (control.select) control.select();
-
-                var done = false;
-                function finish(commit) {{
-                    if (done) return;
-                    done = true;
-                    if (commit) {{
-                        save(cell, control.value);
-                    }} else {{
-                        valueEl(cell).textContent = cell.dataset.oldValue || '';
-                        cell.classList.remove('ci-cell-editing');
-                        delete cell.dataset.oldValue;
-                    }}
-                }}
-                control.addEventListener('keydown', function(e) {{
-                    // In a textarea Enter inserts a newline; only Ctrl/Cmd+Enter commits.
-                    if (e.key === 'Enter' && (control.tagName !== 'TEXTAREA' || e.ctrlKey || e.metaKey)) {{
-                        e.preventDefault(); finish(true);
-                    }} else if (e.key === 'Escape') {{
-                        e.preventDefault(); finish(false);
-                    }}
-                }});
-                control.addEventListener('blur', function() {{ finish(true); }});
-            }}
-
-            function save(cell, newValue) {{
-                var body = 'row=' + encodeURIComponent(cell.dataset.row)
-                    + '&col=' + encodeURIComponent(cell.dataset.col)
-                    + '&value=' + encodeURIComponent(newValue);
-                fetch(saveUrl, {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
-                    body: body,
-                    credentials: 'same-origin',
-                }}).then(function(res) {{
-                    if (res.ok) {{
-                        valueEl(cell).textContent = newValue;
-                    }} else {{
-                        alert('Save failed (' + res.status + ')');
-                        valueEl(cell).textContent = cell.dataset.oldValue || '';
-                    }}
-                }}).catch(function() {{
-                    alert('Save failed (network error)');
-                    valueEl(cell).textContent = cell.dataset.oldValue || '';
-                }}).finally(function() {{
-                    cell.classList.remove('ci-cell-editing');
-                    delete cell.dataset.oldValue;
-                }});
-            }}
-
-            // ── Add / delete rows (dynamic inputs only) ────────────────
-            // Deleting renumbers the stored CSV, so every data-row in the DOM
-            // is rewritten afterwards from the rows' original order. Cell saves
-            // address rows by that index, so a stale one would write an edit
-            // into the wrong record.
-            function setRowIndex(tr, r) {{
-                tr.dataset.row = r;
-                tr.querySelectorAll('[data-row]').forEach(function(el) {{ el.dataset.row = r; }});
-            }}
-
-            function reindexRows() {{
-                rowGroups.slice().sort(function(a, b) {{
-                    return parseInt(a.main.dataset.originalIndex) - parseInt(b.main.dataset.originalIndex);
-                }}).forEach(function(g, i) {{
-                    setRowIndex(g.main, i + 1);          // CSV line 0 is the header
-                    if (g.follow) setRowIndex(g.follow, i + 1);
-                    g.main.dataset.originalIndex = i;
-                }});
-            }}
-
-            // Only prompt when the row would actually lose data.
-            function rowIsEmpty(g) {{
-                var els = [].slice.call(g.main.querySelectorAll('.ci-cell-editable'));
-                if (g.follow) els = els.concat([].slice.call(g.follow.querySelectorAll('.ci-cell-editable')));
-                return els.every(function(el) {{
-                    if (el.dataset.type === 'link') return !(el.dataset.value || '');
-                    return (el.textContent || '').trim() === '';
-                }});
-            }}
-
-            if (tableEl) tableEl.addEventListener('click', function(e) {{
-                var btn = e.target.closest('.ci-row-del');
-                if (!btn) return;
-                var main = btn.closest('tr.ci-main-row');
-                if (!main) return;
-                var idx = -1;
-                for (var i = 0; i < rowGroups.length; i++) {{
-                    if (rowGroups[i].main === main) {{ idx = i; break; }}
-                }}
-                if (idx < 0) return;
-                var g = rowGroups[idx];
-                if (!rowIsEmpty(g) && !confirm(lblDeleteRow)) return;
-                btn.disabled = true;
-                fetch(delRowUrl, {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
-                    body: 'row=' + encodeURIComponent(main.dataset.row),
-                    credentials: 'same-origin',
-                }}).then(function(res) {{
-                    if (!res.ok) {{
-                        btn.disabled = false;
-                        alert(lblRowOpFailed + ' (' + res.status + ')');
-                        return;
-                    }}
-                    rowGroups.splice(idx, 1);
-                    main.remove();
-                    if (g.follow) g.follow.remove();
-                    reindexRows();
-                }}).catch(function() {{
-                    btn.disabled = false;
-                    alert(lblRowOpFailed);
-                }});
-            }});
-
-            var addRowBtn = document.getElementById('ci-add-row-btn');
-            if (addRowBtn && tbody) addRowBtn.addEventListener('click', function() {{
-                addRowBtn.disabled = true;
-                // The failure alert covers the request only. By the time the
-                // markup comes back the row is already stored, so a later DOM
-                // error must not tell the user the row was not added.
-                fetch(addRowUrl, {{ method: 'POST', credentials: 'same-origin' }})
-                    .then(function(res) {{
-                        if (!res.ok) throw new Error(res.status);
-                        return res.text();
-                    }})
-                    .catch(function() {{
-                        alert(lblRowOpFailed);
-                        return null;
-                    }})
-                    .then(function(html) {{
-                        addRowBtn.disabled = false;
-                        if (html === null) return;
-                        tbody.insertAdjacentHTML('beforeend', html);
-                        var mains = tbody.querySelectorAll('tr.ci-main-row');
-                        var main = mains[mains.length - 1];
-                        var follow = tbody.querySelector('tr.ci-multiline-row[data-row="' + main.dataset.row + '"]');
-                        rowGroups.push({{ main: main, follow: follow }});
-                        // Deliberately not re-sorted or re-filtered: a new blank
-                        // row must stay visible so it can be filled in.
-                    }});
-            }});
-        }})();
-        </script>"##,
+        <script type="application/json" id="view-config">{view_config}</script>
+        <script>{INPUT_VIEW_JS}</script>"##,
         name = html_escape(&inp.name),
         ft_name = html_escape(ft_name.as_deref().unwrap_or("?")),
         back = t.inp_back,
-        id = inp.id,
-        delete_row_confirm = t.inp_delete_row_confirm,
-        row_op_failed = t.inp_row_op_failed,
     );
 
     Html(render_page(
