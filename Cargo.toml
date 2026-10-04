@@ -29,6 +29,7 @@ myapps-voice-to-text = { path = "crates/myapps-voice-to-text" }
 myapps-form-input = { path = "crates/myapps-form-input" }
 myapps-notes = { path = "crates/myapps-notes" }
 myapps-file-clipboard = { path = "crates/myapps-file-clipboard" }
+myapps-challenges = { path = "crates/myapps-challenges" }
 myapps-test-harness = { path = "crates/myapps-test-harness" }
 
 [package]
@@ -48,6 +49,7 @@ myapps-voice-to-text.workspace = true
 myapps-form-input.workspace = true
 myapps-notes.workspace = true
 myapps-file-clipboard.workspace = true
+myapps-challenges.workspace = true
 
 clap = { version = "4", features = ["derive"] }
 tokio.workspace = true

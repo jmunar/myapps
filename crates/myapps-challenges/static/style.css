@@ -1,0 +1,167 @@
+/* ── Challenges ─────────────────────────────────────────────── */
+
+.challenges-datasets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 1rem;
+}
+
+.challenges-dataset h2 {
+    margin-bottom: 0.25rem;
+}
+
+.challenges-dataset p {
+    margin-bottom: 0.75rem;
+}
+
+.challenges-dataset code {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+
+/* core.css makes every form a column; these are one button wide. */
+.challenges-draw {
+    align-items: flex-start;
+}
+
+/* Problem and solution text: third-party LaTeX in prose, typeset by KaTeX.
+   pre-wrap keeps the dataset's line breaks; a display formula wider than the
+   screen scrolls inside its own block, which nav-swipe.js's overflow check
+   already leaves alone. */
+.challenges-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.6;
+}
+
+.challenges-text .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.25rem 0;
+}
+
+.challenges-reveal {
+    margin-top: 1rem;
+}
+
+.challenges-reveal > summary {
+    cursor: pointer;
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.challenges-reveal[open] > summary {
+    border-bottom: 1px solid var(--border-light);
+}
+
+.challenges-reveal h3 {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin: 1.25rem 0 0.5rem;
+}
+
+.challenges-reveal h3:first-child {
+    margin-top: 0;
+}
+
+.challenges-grade {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* Two classes to outrank core.css's `button[type="submit"]` accent fill. */
+.challenges-grade .challenges-right {
+    background: var(--positive);
+}
+
+.challenges-grade .challenges-wrong {
+    background: var(--negative);
+}
+
+.challenges-grade .challenges-right,
+.challenges-grade .challenges-wrong {
+    flex: 1 1 10rem;
+}
+
+.challenges-draw .btn-secondary {
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.challenges-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.challenges-level-change {
+    max-width: 30rem;
+}
+
+.challenges-level-change h2 {
+    margin-bottom: 0.25rem;
+}
+
+.challenges-level-change p {
+    margin-bottom: 1rem;
+}
+
+.challenges-up h2 {
+    color: var(--positive);
+}
+
+.challenges-down h2 {
+    color: var(--negative);
+}
+
+.challenges-stats .card-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.challenges-stats td.challenges-num,
+.challenges-stats td.challenges-acc {
+    font-family: var(--font-mono);
+    text-align: right;
+}
+
+.challenges-stats .challenges-acc {
+    text-align: right;
+}
+
+.challenges-levels {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+}
+
+.challenges-stats h3 {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+@media (max-width: 640px) {
+    .challenges-stats .table-cards {
+        padding: 0 0.75rem;
+    }
+
+    .challenges-stats .challenges-subject { grid-column: 1; grid-row: 1; font-weight: 600; }
+    .challenges-stats .challenges-acc     { grid-column: 2; grid-row: 1; }
+    .challenges-stats .challenges-level   { grid-column: 1; grid-row: 2; color: var(--text-secondary); }
+    .challenges-stats .challenges-num     { grid-column: 2; grid-row: 2; color: var(--text-secondary); }
+}

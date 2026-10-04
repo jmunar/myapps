@@ -2099,6 +2099,7 @@ dependencies = [
  "axum-test",
  "chrono",
  "clap",
+ "myapps-challenges",
  "myapps-core",
  "myapps-file-clipboard",
  "myapps-form-input",
@@ -2111,6 +2112,24 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+]
+
+[[package]]
+name = "myapps-challenges"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-test",
+ "myapps-core",
+ "myapps-test-harness",
+ "rand 0.9.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

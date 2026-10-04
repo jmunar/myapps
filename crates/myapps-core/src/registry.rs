@@ -14,7 +14,7 @@ use crate::routes::AppState;
 ///
 /// `App` has to stay dyn-compatible — it is stored as `Box<dyn App>` — so its
 /// async methods cannot be `async fn`. This is the shape they return instead;
-/// the alias keeps the five signatures below (and their implementations in
+/// the alias keeps the six signatures below (and their implementations in
 /// every app crate) readable.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -90,6 +90,18 @@ pub trait App: Send + Sync {
         _config: &'a Config,
         _user_id: i64,
         _days: i64,
+    ) -> Option<BoxFuture<'a, anyhow::Result<()>>> {
+        None
+    }
+
+    /// Load or refresh a shared catalogue, invoked by `myapps import`. `what`
+    /// names the thing to import (e.g. a dataset key); its meaning is up to the
+    /// app. Returns `None` if the app has nothing to import.
+    fn import<'a>(
+        &'a self,
+        _pool: &'a SqlitePool,
+        _config: &'a Config,
+        _what: &'a str,
     ) -> Option<BoxFuture<'a, anyhow::Result<()>>> {
         None
     }

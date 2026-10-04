@@ -97,6 +97,11 @@ myapps/
 │   │   ├── static/            # style.css + upload.js (drag-and-drop uploader)
 │   │   ├── tests/
 │   │   └── src/
+│   ├── myapps-challenges/     # Challenges graded maths and physics practice
+│   │   ├── migrations/
+│   │   ├── static/            # style.css + challenges-math.js (KaTeX typesetting)
+│   │   ├── tests/
+│   │   └── src/
 │   └── myapps-test-harness/ # Shared test utilities (spawn_app, spawn_app_with, Options, TestApp)
 ├── tests/                   # Root integration tests
 │   ├── harness/mod.rs       # Platform spawners over myapps-test-harness (all apps registered)
@@ -252,6 +257,21 @@ After login, the top-level router serves:
     always `Content-Disposition: attachment` + `nosniff`)
   - `POST /file_clipboard/files/{id}/delete` — Delete file and its bytes
   - `POST /file_clipboard/settings` — Set the deletion period (1–365 days)
+
+- `/challenges/` — Challenges sub-app (nested router). Problems come from a
+  shared catalogue (`challenges_problems`, no `user_id`) that `serve` fills in
+  the background on start, for any dataset not yet imported (or by hand with
+  `myapps import --app challenges --dataset <key>`).
+  Maths is typeset client-side by KaTeX, vendored under `static/katex/`.
+  - `/challenges/` — Dataset picker (UGPhysics, Hendrycks MATH)
+  - `POST /challenges/draw` — Draw a problem: a uniformly random subject,
+    then a level near yours in it, unseen problems first; redirects to it
+  - `/challenges/problems/{id}` — Problem, with the answer, worked solution
+    and the right/wrong buttons behind a `<details>`
+  - `POST /challenges/problems/{id}/attempt` — Record a self-marked attempt
+    and move the per-subject level (2-up/1-down); shows a level change, or
+    draws the next problem
+  - `/challenges/stats` — Accuracy and current level per subject and per level
 
 ## Database Schema
 

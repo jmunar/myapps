@@ -9,6 +9,7 @@ pub fn all_app_instances() -> Vec<Box<dyn App>> {
         Box::new(myapps_form_input::FormInputApp),
         Box::new(myapps_notes::NotesApp::new()),
         Box::new(myapps_file_clipboard::FileClipboardApp),
+        Box::new(myapps_challenges::ChallengesApp),
     ]
 }
 
