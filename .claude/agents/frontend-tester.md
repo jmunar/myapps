@@ -98,10 +98,6 @@ inside a normal one, so a pattern that works on one silently no-ops on the
 other and the "test still passes" conclusion is wrong. Prefer a `python3`
 edit that asserts its own match count.
 
-**If `/workspace/target` is full** (it is, on the per-branch microVM, and cannot
-be reclaimed), build with `CARGO_TARGET_DIR=/tmp/mt CARGO_INCREMENTAL=0
-CARGO_PROFILE_DEV_DEBUG=0`; never `cargo clean`.
-
 ## Conventions
 
 - One `spawn_app()` per test — no shared state between tests.

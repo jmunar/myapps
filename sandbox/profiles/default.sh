@@ -1,31 +1,28 @@
 describe "Base sandbox — no credentials, no host paths, nothing reachable"
 
-image myapps-dev:latest
+# Enforced by a systemd scope when the host has one; see devbox.sh. Without
+# systemd they are advisory, and the sandbox is bounded by the host instead.
 cpus 4
 memory 8G
+
 workdir /workspace
-user dev
 hostname "$BRANCH"
 
-env CARGO_HOME /home/dev/.cargo
 env RUST_BACKTRACE 1
 # Claude Code's non-essential endpoints are not in any allow list, so leaving
-# these on only produces blocked requests and log noise.
+# these on only produces refused CONNECTs and log noise.
 env DISABLE_TELEMETRY 1
 env DISABLE_ERROR_REPORTING 1
 env DISABLE_AUTOUPDATER 1
 
-# Quotas, because msb defaults every mount to 4096 MiB. /workspace holds the
-# clone and the broker's own target/, which the overmount below does not
-# cover; /workspace/target holds a full debug build plus clippy and test
-# artifacts, which went past 6 GiB the first time anyone measured it.
-mount "$CLONE:/workspace:quota=16384"
-mount "$TARGET_CACHE:/workspace/target:quota=32768"
+# The clone, and the only host directory the sandbox writes by default.
+mount "$CLONE:/workspace"
+mount "$TARGET_CACHE:/workspace/target"
 mount "$MODELS:/workspace/models:ro"
-# `up` recreates the sandbox, so the guest disk is ephemeral: the agent's
-# own history and settings only survive if they live on a mount.
-mount "$CLAUDE_STATE:/home/dev/.claude"
-
-# Blocked by the `public` preset already; one line for the classic
-# exfiltration target is worth the redundancy.
-deny 169.254.169.254
+# Per branch unless `cargo-cache-shared` is granted, which mounts the shared
+# registry *inside* this one — which is why the parent has to be declared here,
+# in the profile, ahead of any capability.
+mount "$CARGO_HOME_DIR:$HOME_DIR/.cargo"
+# $HOME is a tmpfs, so the agent's own history and settings only survive
+# because they live on this mount.
+mount "$CLAUDE_STATE:$HOME_DIR/.claude"

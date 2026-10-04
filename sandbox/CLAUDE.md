@@ -1,123 +1,154 @@
 # Sandboxed development
 
-`devbox.sh` and this directory run development inside a microVM per branch: the
-guest holds a clone, the Rust toolchain and Claude Code, and no credentials.
-Usage, capabilities and the roadmap are in [README.md](README.md); what follows
-is only what will bite you while changing it.
+`devbox.sh` and this directory run development inside a bubblewrap sandbox per
+branch: a clone of the repository and the host's own toolchain, read-only, in a
+set of namespaces with no network in them and no credentials. Usage,
+capabilities and the roadmap are in [README.md](README.md); what follows is only
+what will bite you while changing it.
 
-The pieces: `render.sh` turns a profile plus capability fragments into an `msb`
-command line, `devbox.sh` runs it and owns the host side, `brokers/anthropic` is
-the only process that ever sees the Anthropic credential, `brokers/prod` the
-only one that sees the Odroid SSH key, `image/` builds the guest.
+The pieces: `render.sh` turns a profile plus capability fragments into a `bwrap`
+command line and a short plan, `devbox.sh` runs both and owns the host side,
+`brokers/anthropic` is the only process that ever sees the Anthropic credential,
+`brokers/prod` the only one that sees the Odroid SSH key, `brokers/proxy` is the
+only way out to the network.
 
 ## Gotchas
 
 These are the things that have actually broken, and that reading the code
-nearby will not warn you about. Most of them are msb 0.7.2 behaving in ways its
-documentation does not mention.
+nearby will not warn you about.
 
-**Drive msb by command-line flags, never `--conf`.** `msb --conf` takes a
-"sparse single-sandbox configuration" whose schema the binary will not tell you,
-while `msb run --help` documents every flag exactly. `render.sh` therefore emits
-an argument list, not a config file. Every `msb` invocation lives in one block at
-the top of `devbox.sh` — when a flag moves, that block is the only edit.
+**There is no daemon and no lifecycle.** A sandbox exists for exactly as long
+as the command running in it: `devbox.sh shell` starts the brokers, the proxy
+and the relays, runs bwrap, and kills all of them on the way out. There is
+nothing to `up`, nothing to `stop`, and nothing left behind to go stale. Any
+change that introduces a background process outliving the command has to say
+what cleans it up, because `cleanup_sandbox` will not.
 
-**Never abort an `msb exec`.** Kill the client — a host-side `timeout`, a
-Ctrl-C — and the sandbox stops answering: *every* later exec against it hangs
-forever, and the only cure is `remove` and recreate. So nothing here wraps an
-exec in `timeout`, the broker health check runs once and is never retried, and
-`msb exec --timeout` is used to bound the guest command instead. A long run of
-mysterious hangs in this code was self-inflicted, one aborted exec at a time.
+**The runtime directory is per invocation, not per branch.** Two shells on one
+branch each get `$XDG_RUNTIME_DIR/devbox/<branch>.<pid>/`, their own brokers
+and their own sockets — otherwise the second one's broker would unlink the
+first one's socket and the first session would lose the model mid-turn. That
+is also why the bwrap arguments are rendered on every command rather than
+cached: the runtime path is in them.
 
-**`--no-net` takes the guest agent down with the workload.** A sandbox created
-with it answers `msb ping` and hangs on every `msb exec`. A capability set that
-grants no egress must still render `--net-default-egress deny`, which is the
-same thing for the workload without the wedge. `render.sh` does this; do not
-"simplify" it back to `--no-net`.
+**The socket is the authorisation.** No bearer token anywhere: `--bind
+$RUNTIME_DIR /run/devbox` is the *entire* reason a sandbox can reach its own
+brokers, and a sandbox that was not given that directory cannot name the
+socket. Adding a TCP listener to any broker would undo that and put the token
+machinery back; the brokers refuse to listen on anything but a Unix socket for
+that reason.
 
-**A running image command wedges exec the same way.** `msb run --detach` with
-any long-lived command, and `--init` with a PID 1 handoff, both leave the
-sandbox pingable and exec-dead. Hence `msb create`, which boots it idle, and
-hence the guest image's `CMD` stays `/bin/bash`. Nothing long-lived may run in
-the guest — which is why the broker is a host TCP port the guest dials rather
-than anything the guest has to host.
+**Nothing in the guest is reachable except through a socket.** `--unshare-net`
+leaves the sandbox with loopback and nothing else, so *both* directions are
+`socat` over a Unix socket in that directory: inbound, a
+`TCP-LISTEN:<port> … UNIX-CONNECT` inside the namespace for each broker, and
+outbound, a `UNIX-LISTEN … TCP:127.0.0.1:<port>` pair for a published dev
+server. A capability that needs a new channel needs a relay on both sides, and
+the inner one belongs in the generated entrypoint, not in the image — there is
+no image.
 
-**The guest reaches the host at `host.microsandbox.internal`, and only then.**
-It resolves to the sandbox's gateway, and it only resolves to anything when the
-capability set asked for msb's `host` network group — `allow host:tcp:<port>`
-in a fragment. The gateway is a host userspace process, not a tap device, so a
-service bound to the host's `127.0.0.1` *is* reachable through it: the broker
-binds loopback and refuses to bind wider. The port is part of the rule, and a
-host port that is not in it is refused, so one capability cannot reach another
-broker.
+**Ports inside the sandbox are constants, and that is not laziness.** 8080 for
+the Anthropic broker, 8081 for prod, 3128 for the proxy. Each sandbox has its
+own network namespace, so two sandboxes both listening on 8080 never meet, and
+the whole port-claiming apparatus the microVM needed — claim, freeze, skip
+what another branch holds — is gone. Do not reintroduce a claimed port.
 
-What loopback does not buy is authorisation. Every process on the host, and
-every sandbox granted `host`, can open that port, so the broker answers only
-requests carrying the sandbox's own token — `.devbox/<branch>/broker.token`,
-generated at `create`, handed to the guest as `ANTHROPIC_AUTH_TOKEN`. The
-exception is Claude Code's `/api/hello` probe, which arrives before the client
-applies the token; `UNAUTHENTICATED` in the broker lists it. Requiring a token
-there 401s the start of every session.
+**The egress proxy is the only way out, and it fails closed.** `HTTPS_PROXY`
+points at it, so cargo, git, npm, gh and Claude Code go through it and anything
+that ignores the proxy environment reaches nothing at all. It speaks only
+`CONNECT`, matches the hostname **exactly** against the allow-list, and
+resolves the name itself *after* the check, so an allowed name cannot be
+pointed at an address the guest picked. IP literals are refused outright, which
+is why `169.254.169.254` needs no deny rule: it is not a name, so it can never
+be on a list of names.
 
-**A port is claimed once and then frozen.** It goes into the guest's
-`ANTHROPIC_BASE_URL`, so a port that moved under a running sandbox would leave
-it talking to nothing. `claim_port` keeps what `.devbox/<branch>/broker.port`
-already says, and when picking a new one it skips ports other branches have
-claimed as well as ports currently listening — a stopped sandbox is not
-listening, and its port still belongs to it.
+`HTTP_PROXY` is deliberately unset. Setting it would send plain-HTTP requests —
+including the sandbox's own loopback calls to the brokers — into a proxy that
+does not implement them.
 
-**Every mount gets a 4096 MiB quota unless it asks for a bigger one.** msb puts
-a quota on each directory-backed mount and defaults it to 4 GiB — which a debug
-build of this workspace exhausts partway through, reported inside the guest as
-an ordinary `No space left on device` while the host still has hundreds of
-gigabytes free. `--volume` cannot set it; only `--mount-dir` takes
-`quota=<MiB>`, so `render.sh` emits a mount as `--mount-dir` exactly when its
-spec carries one. The accounting is also write-only: deleting files never gives
-the space back, so `cargo clean` empties the directory and the volume goes on
-reporting itself full until the sandbox is recreated. Any mount that
-accumulates anything needs a quota in its fragment.
+**No TLS interception means the GitHub token is really in the sandbox.** This
+is the one property the microVM had that this does not: msb substituted the
+value outside the guest, and a CONNECT tunnel cannot. What replaces it is the
+token's shape — a GitHub App installation token, scoped to this repository and
+expiring in an hour, minted per sandbox start. A fine-grained PAT works and
+does not expire; `doctor` says so every time. Anything that widens that token's
+scope is the decision, not the plumbing.
 
-**A mount source that is a symlink fails as ELOOP.** msb bind-mounts the path
-it is given without resolving it, and reports `Too many levels of symbolic
-links` naming the *mount*, not the link — `mount workspace_m_36b1a663` for a
-symlinked `models/` inside `/workspace`. Worktrees make this easy to hit, since
-sharing one whisper-model directory between them is the obvious thing to do, so
-`render()` resolves that source with `pwd -P`. Any new host path a fragment
-mounts wants the same treatment.
+**The base filesystem is in `render.sh`, not in a profile, on purpose.** The
+read-only `/usr`, the curated `/etc`, the tmpfs `$HOME` and the absence of a
+resolver are one code path that every sandbox goes through, because a
+per-profile copy is a per-profile chance to bind `$HOME` by accident. If you
+find yourself adding a mount there rather than to a fragment, ask whether every
+sandbox should have it.
 
-**A tag in docker's image cache is invisible to msb.** `build-image` pipes
-`docker save` into `msb load -t`; building the image without loading it leaves
-`create` pulling a nonexistent image from a registry.
+**`/etc` is a list, not a bind.** `--ro-bind /etc /etc` would be one line and
+would also hand the sandbox every world-readable configuration file on the
+machine. `ETC_ENTRIES` is what the toolchain actually reads. When something
+fails in a way that looks like a missing library or a missing certificate, that
+list is the first place to look — and `/etc/ld.so.cache` in particular, whose
+absence makes `execvp` report `No such file or directory` for a binary that is
+plainly there.
 
-**Do not add CA handling to the guest.** msb installs its TLS-interception CA
-itself and points `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `CURL_CA_BUNDLE` and
-`REQUESTS_CA_BUNDLE` at `/.msb/tls/ca.pem`. An earlier `devbox-trust-ca` script
-existed to do this and was deleted; secret substitution needs that interception,
-so nothing should disable it either.
+**`/etc/resolv.conf` is absent deliberately.** There is nothing to resolve
+against in an empty network namespace, and every allowed name is resolved by
+the proxy on the host. A tool that tries anyway fails immediately instead of
+hanging, and `getent hosts github.com` failing is a *passing* line in
+`selftest`.
 
-**The guest gets a standalone clone, never a worktree.** A worktree's `.git` is
-a file pointing outside the mount, and any arrangement where the guest can write
-the main repository's `.git` hands it the shared object store and `.git/hooks` —
-which the *host* executes later. `git clone --no-hardlinks` is part of that, not
-hygiene: without it the clone's objects are the same inodes as this
-repository's, and a guest that rewrites one corrupts the host's copy.
+**Mount order is load order.** bwrap performs binds in the order given, so a
+mount nested inside another only works if the parent came first:
+`cargo-cache-shared` puts the shared registry inside the profile's
+`$HOME/.cargo`, and it works only because capabilities are applied after the
+profile. A fragment that mounts into a path another fragment provides has to be
+granted after it, and `dedup` preserves order for the same reason.
 
-**`origin` in the clone must be HTTPS.** Secret substitution only works on HTTP,
-and there is no SSH key in the VM by design, so an SSH remote fails in a way
-that looks like a network problem.
+**Not `--new-session`, and that is a considered choice.** It calls `setsid()`,
+which costs the sandbox its controlling terminal: no job control, no Ctrl-C,
+and Claude Code's TUI misbehaves. Its purpose is to block TIOCSTI injection
+back into the parent's terminal, and that syscall has been disabled by default
+since Linux 6.2. `doctor` checks `dev.tty.legacy_tiocsti` and warns when it is
+enabled. On a kernel where it is on, the trade is real and the flag belongs
+back.
 
-**A secret's value never appears in a fragment.** `secret NAME host...` names an
-environment variable that `devbox.sh` reads on the host and `msb` substitutes
-outside the VM; the guest only ever holds the placeholder (`$MSB_GITHUB_TOKEN`).
-`msb` rejects an inline `ENV=VALUE@HOST` outright. Anything that puts a real
-credential into `env`, a mount or the image is the one mistake this whole
-directory exists to prevent.
+**The sandbox runs as you, in a user namespace.** Files it writes to the clone
+are yours, which is what makes the arrangement usable — and it means the mount
+list is the whole boundary. A kernel LPE escapes it, which a microVM's
+hypervisor boundary would not: that is the price paid for deleting the image,
+the quotas and ten msb workarounds, and it is written down in README.md under
+what is out of scope.
 
-**The broker follows `~/.claude/.credentials.json`; it does not refresh it.**
-Claude Code on the host refreshes that file as you use it, and OAuth refresh
-tokens rotate — a second refresh chain would invalidate the host's own login.
-`--refresh writeback` exists for when you want the broker to own the chain, and
-it rewrites the same file so there is still only one.
+**`selftest` is not a nicety.** A mount list is something you can get wrong
+silently, and one stray `--bind` undoes the whole directory. `./devbox.sh
+selftest <branch>` asserts the negatives — no `~/.ssh`, no credentials file, no
+host checkout, no route out, no resolver — and the positives that prove it is
+still usable. Run it after touching `render.sh`, and add a line to it when you
+add a mount.
+
+**The environment is a file, not `--setenv`.** `/proc/<pid>/cmdline` is
+world-readable and the GitHub token is in that environment, so bwrap gets
+`--clearenv` and the entrypoint sources `/run/devbox/env`, written at 0600 in a
+0700 directory. Anything that moves a value into an argument vector has undone
+that. The same rule is why the brokers take `--listen-unix` and a path, never a
+secret.
+
+**The sandbox gets a standalone clone, never a worktree.** A worktree's `.git`
+is a file pointing outside the mount, and any arrangement where the sandbox can
+write the main repository's `.git` hands it the shared object store and
+`.git/hooks` — which the *host* executes later. `git clone --no-hardlinks` is
+part of that, not hygiene: without it the clone's objects are the same inodes
+as this repository's, and a sandbox that rewrites one corrupts the host's copy.
+
+**`origin` in the clone must be HTTPS.** There is no SSH key in the sandbox by
+design, and the proxy only speaks CONNECT to port 443, so an SSH remote fails
+in a way that looks like a network problem.
+
+**The host's toolchain is the sandbox's toolchain.** `~/.rustup`,
+`~/.cargo/bin` and `~/.local/share/claude` are bind-mounted read-only; there is
+no image to build and no second copy of Rust on the disk. Two consequences:
+upgrading rustup on the host upgrades every sandbox at once, and the host and
+sandbox `target/` directories are interchangeable because the compiler is
+literally the same binary. If pinning ever matters more than that, the answer
+is a rootfs bound at `/`, not a Dockerfile.
 
 **Pushing anything under `.github/workflows/` needs `Workflows: write`** on the
 GitHub token. Adding or removing an environment variable in this repo means
@@ -125,12 +156,12 @@ editing `cd.yml`, so a branch that does routine work fails at the very end of
 `/finish-development` with an error that reads like a git problem.
 
 **`deploy.sh` stays host-only, permanently.** No capability may grant deploy;
-the Odroid SSH key does not enter a VM. Same for `make deploy-*`. Prod access
-from a sandbox goes through `brokers/prod` — a verb-limited API, never a tunnel
-and never a key — and that broker's vocabulary is three read verbs. Adding a
-fourth is a decision about what a compromised sandbox can do to production, not
-a convenience; anything that takes a command, a path or a query from the guest
-has stopped being this shape.
+the Odroid SSH key does not enter a sandbox. Same for `make deploy-*`. Prod
+access from a sandbox goes through `brokers/prod` — a verb-limited API, never a
+tunnel and never a key — and that broker's vocabulary is three read verbs.
+Adding a fourth is a decision about what a compromised sandbox can do to
+production, not a convenience; anything that takes a command, a path or a query
+from the guest has stopped being this shape.
 
 **The scrub list fails closed, and that is the point.** Every table in a
 snapshot must appear in `DELETE`, `REWRITE` or `KEEP` in
@@ -138,24 +169,24 @@ snapshot must appear in `DELETE`, `REWRITE` or `KEEP` in
 rather than this repository's migrations. Add a table to any app and the next
 `devbox-prod snapshot` refuses by name until someone classifies it. That is
 deliberate: the failure being guarded against is not a wrong rule, it is a
-table added next year quietly carrying its contents into a VM. Classifying it
-takes one line; working around the check hands away the only thing that makes
-a snapshot safe to hold.
+table added next year quietly carrying its contents into a sandbox.
+Classifying it takes one line; working around the check hands away the only
+thing that makes a snapshot safe to hold.
 
 **Both `--no-hostname` and `-n 0` are there to keep the same promise.** The
-guest is not supposed to learn where prod is — the capability hands it a URL on
-`host.microsandbox.internal` and nothing else — and journal output undoes that
-by default: `-o short-iso` prints the machine's hostname on every line, so
-`logs` passes `--no-hostname`. `systemctl status` appends a journal tail of its
-own in the *default* format, which `--no-hostname` does not reach from there,
-so `status` passes `-n 0` and drops it. Both were verified by grepping the real
-Odroid's answers for its hostname. Anything new the broker forwards wants the
-same look: the check is to run it against prod and grep.
+sandbox is not supposed to learn where prod is — the capability hands it a
+loopback URL and nothing else — and journal output undoes that by default:
+`-o short-iso` prints the machine's hostname on every line, so `logs` passes
+`--no-hostname`. `systemctl status` appends a journal tail of its own in the
+*default* format, which `--no-hostname` does not reach from there, so `status`
+passes `-n 0` and drops it. Both were verified by grepping the real Odroid's
+answers for its hostname. Anything new the broker forwards wants the same look:
+the check is to run it against prod and grep.
 
-**The prod broker's health check must not touch the LAN.** `cmd_up` calls
-`/_broker/health` on every start, so that endpoint answers from configuration
-alone and never SSHes. Making it "more useful" by probing the Odroid would make
-starting a sandbox fail on a train.
+**The prod broker's health check must not touch the LAN.** Every sandbox start
+that has `prod-readonly` calls `/_broker/health`, so that endpoint answers from
+configuration alone and never SSHes. Making it "more useful" by probing the
+Odroid would make starting a sandbox fail on a train.
 
 **A snapshot lands under a possibly-running dev server.** `devbox-prod
 snapshot` removes `-wal` and `-shm` beside the file it replaces, because SQLite
@@ -163,15 +194,17 @@ would otherwise apply the old write-ahead log to the new database — stale WAL
 files next to a replaced database are not an empty database, they are a corrupt
 one. Stop the server first; the helper says so, it cannot enforce it.
 
-**The brokers are outside the cargo workspace.** `brokers/anthropic` and
-`brokers/prod` each carry their own `[workspace]` and the root manifest
-excludes `sandbox/`, so `make check` stays exactly what CI runs. Keep it that
-way — and run their own `cargo test` when you change one, because nothing else
-will.
+**The brokers are outside the cargo workspace.** `brokers/anthropic`,
+`brokers/prod` and `brokers/proxy` each carry their own `[workspace]` and the
+root manifest excludes `sandbox/`, so `make check` stays exactly what CI runs.
+Keep it that way — and run their own `cargo test` when you change one, because
+nothing else will.
 
-**`devbox-prod` lives in the image.** It is baked into `/usr/local/bin` like
-`devbox-git-askpass`, so changing it means `./devbox.sh build-image` *and* a
-sandbox recreated: a running one keeps the image it was created with.
+**The guest helpers are bind-mounted, not installed.** `sandbox/guest/` lands
+at `/opt/devbox/bin` and `sandbox/bootstrap/` at `/opt/devbox/bootstrap`, both
+read-only, so editing `devbox-prod` takes effect on the very next command. The
+old rule — rebuild the image *and* recreate the sandbox — is gone with the
+image.
 
 ## Writing a capability
 
@@ -180,47 +213,41 @@ parser and no dependency beyond bash: the schema is small and fixed, merging is
 appending, and substitution is shell variables.
 
 ```sh
-describe "git push and gh pr create; the token value never enters the VM"
+describe "git push and gh pr create, with a token that expires in an hour"
 
-secret GITHUB_TOKEN github.com api.github.com
-secret_file GITHUB_TOKEN "$GITHUB_TOKEN_FILE"
-
+credential GH_TOKEN github
 allow github.com api.github.com codeload.github.com objects.githubusercontent.com
-
-env GH_TOKEN '$MSB_GITHUB_TOKEN'
-env GIT_ASKPASS /usr/local/bin/devbox-git-askpass
+env GIT_ASKPASS /opt/devbox/bin/devbox-git-askpass
 ```
 
-Directives: `describe`, `conflicts`, `image`, `cpus`, `memory`, `workdir`,
-`user`, `hostname`, `profile`, `env`, `mount`, `allow`, `deny`, `port`,
-`secret`, `secret_file`, `broker`, `cli`. Fragments read the sandbox's paths
-from the environment: `BRANCH`, `CLONE`, `TARGET_CACHE`, `CARGO_CACHE`,
-`MODELS`, `CLAUDE_STATE`, `BROKER_PORT`, `PROD_PORT`, `BROKER_TOKEN`,
-`HOST_ALIAS`, `GITHUB_TOKEN_FILE`.
+Directives: `describe`, `conflicts`, `cpus`, `memory`, `workdir`, `hostname`,
+`env`, `mount`, `allow`, `port`, `broker`, `credential`, `cli`. Fragments read
+the sandbox's paths from the environment: `BRANCH`, `CLONE`, `TARGET_CACHE`,
+`CARGO_HOME_DIR`, `CARGO_CACHE`, `MODELS`, `CLAUDE_STATE`, `GUEST_BIN`,
+`BOOTSTRAP_DIR`, `HOME_DIR`, `PLAYWRIGHT_CACHE`, and the three fixed in-sandbox
+ports `ANTHROPIC_PORT`, `PROD_PORT`, `PROXY_PORT`.
 
-Later fragments win on scalars and on `env`; lists concatenate and de-duplicate;
-capabilities apply in the order given, after the profile. Two capabilities that
-would both set the same single thing must declare `conflicts`, because lists
-concatenate silently — `preview` and `preview-lan` would otherwise publish port
-3000 twice, once to loopback and once to the LAN.
+Later fragments win on scalars and on `env`; lists concatenate and de-duplicate
+in order; capabilities apply in the order given, after the profile. Two
+capabilities that would both set the same single thing must declare
+`conflicts`, because lists concatenate silently — `preview` and `preview-lan`
+would otherwise publish port 3000 twice, once to loopback and once to the LAN.
 
-`cli` is the escape hatch for a flag `render.sh` does not model. Use it for
-flags, not for things that belong in a directive.
-
-**Changing the image means rebuilding *and* reloading:** `./devbox.sh
-build-image`. A running sandbox keeps the image it was created with.
+`cli` is the escape hatch for a bwrap flag `render.sh` does not model. Use it
+for flags, not for things that belong in a directive.
 
 ## Layout
 
 ```
-devbox.sh            the host side: clone, render, brokers, lifecycle
-render.sh            profile + capabilities -> an msb command line
+devbox.sh            the host side: clone, render, helpers, one bwrap
+render.sh            profile + capabilities -> a bwrap command line and a plan
 profiles/            base sandboxes (resources, mounts)
 capabilities/        one fragment per capability
-image/               guest image; image/guest/ is baked into /usr/local/bin
-bootstrap/           scripts run inside the guest (first-boot, seed)
-brokers/anthropic/   host daemon; holds the OAuth token
+guest/               bind-mounted read-only at /opt/devbox/bin
+bootstrap/           run inside the sandbox from /opt/devbox/bootstrap
+brokers/anthropic/   host daemon; holds the Anthropic credential
 brokers/prod/        host daemon; holds the Odroid SSH key, three read verbs
+brokers/proxy/       host daemon; the allow-listed way out to the network
 brokers/github/      GitHub App token minting
-.devbox/<branch>/    generated args and state (gitignored)
+.devbox/<branch>/    generated args, plan, env (gitignored)
 ```

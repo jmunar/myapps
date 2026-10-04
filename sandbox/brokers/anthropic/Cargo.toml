@@ -3,7 +3,7 @@
 [workspace]
 
 [package]
-name = "msb-broker-anthropic"
+name = "devbox-broker-anthropic"
 version = "0.1.0"
 edition = "2024"
 description = "Host-side credential broker: the only process that sees the Anthropic token"

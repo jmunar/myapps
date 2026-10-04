@@ -8,11 +8,11 @@
 # expire an hour later. That is the difference between a static credential in a
 # config file and one whose leak is worth an hour.
 #
-# Config: ~/.config/msb-devbox/github-app.json
+# Config: ~/.config/devbox/github-app.json
 #   {
 #     "app_id": "123456",
 #     "installation_id": "78901234",
-#     "private_key": "~/.config/msb-devbox/github-app.pem",
+#     "private_key": "~/.config/devbox/github-app.pem",
 #     "repositories": ["myapps"],
 #     "permissions": {
 #       "contents": "write",
@@ -26,7 +26,7 @@
 # Prints the token on stdout and nothing else.
 set -euo pipefail
 
-config="${1:-${XDG_CONFIG_HOME:-$HOME/.config}/msb-devbox/github-app.json}"
+config="${1:-${XDG_CONFIG_HOME:-$HOME/.config}/devbox/github-app.json}"
 [ -f "$config" ] || { echo "mint-token: no such config: $config" >&2; exit 1; }
 
 app_id=$(jq -r '.app_id' "$config")

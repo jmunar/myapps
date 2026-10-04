@@ -7,20 +7,20 @@
 # command on prod and no way to add one from this side: an argument that is not
 # understood is refused by the broker, not passed along.
 #
-# The capability supplies MYAPPS_PROD_URL and MYAPPS_PROD_TOKEN. Without
-# `prod-readonly` granted, neither exists and nothing here works — which is the
-# intended failure.
+# The capability supplies MYAPPS_PROD_URL, which points at a loopback port a
+# socat relays to the broker's socket. Without `prod-readonly` granted there is
+# no socket, no relay and no variable — which is the intended failure. There is
+# no token: the broker answers whoever can reach its socket, and the only thing
+# that can is this sandbox.
 set -euo pipefail
 
-: "${MYAPPS_PROD_URL:=}" "${MYAPPS_PROD_TOKEN:=}"
+: "${MYAPPS_PROD_URL:=}"
 
 die() { echo "devbox-prod: $*" >&2; exit 1; }
 
-[ -n "$MYAPPS_PROD_URL" ] && [ -n "$MYAPPS_PROD_TOKEN" ] || die \
+[ -n "$MYAPPS_PROD_URL" ] || die \
     "no prod broker in this sandbox — grant it on the host with
     ./devbox.sh grant <branch> prod-readonly"
-
-auth=(-H "Authorization: Bearer $MYAPPS_PROD_TOKEN")
 
 usage() {
     cat <<'USAGE'
@@ -57,7 +57,7 @@ cmd_snapshot() {
     trap 'rm -f "$tmp" "$headers"' EXIT
 
     echo "devbox-prod: asking the broker for a snapshot (dump, rebuild, scrub — this takes a while)" >&2
-    curl -sS --fail-with-body "${auth[@]}" -D "$headers" -o "$tmp" \
+    curl -sS --fail-with-body -D "$headers" -o "$tmp" \
         "$MYAPPS_PROD_URL/snapshot/db" || die "the broker refused: $(cat "$tmp" 2>/dev/null)"
 
     # A stale -wal/-shm beside a replaced database is not an empty database,
@@ -89,7 +89,7 @@ cmd_logs() {
     done
     local query=(--data-urlencode "since=$since" --data-urlencode "lines=$lines")
     [ -n "$unit" ] && query+=(--data-urlencode "unit=$unit")
-    curl -sS --fail-with-body "${auth[@]}" --get "${query[@]}" "$MYAPPS_PROD_URL/logs"
+    curl -sS --fail-with-body --get "${query[@]}" "$MYAPPS_PROD_URL/logs"
 }
 
 cmd_status() {
@@ -102,11 +102,11 @@ cmd_status() {
     done
     local query=()
     [ -n "$unit" ] && query+=(--data-urlencode "unit=$unit")
-    curl -sS --fail-with-body "${auth[@]}" --get "${query[@]}" "$MYAPPS_PROD_URL/status"
+    curl -sS --fail-with-body --get "${query[@]}" "$MYAPPS_PROD_URL/status"
 }
 
 cmd_health() {
-    curl -sS --fail-with-body "${auth[@]}" "$MYAPPS_PROD_URL/_broker/health"
+    curl -sS --fail-with-body "$MYAPPS_PROD_URL/_broker/health"
     echo
 }
 

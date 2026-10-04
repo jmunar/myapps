@@ -1,11 +1,14 @@
-describe "git push and gh pr create; the token value never enters the VM"
+describe "git push and gh pr create, with a token that expires in an hour"
 
-secret GITHUB_TOKEN github.com api.github.com
-secret_file GITHUB_TOKEN "$GITHUB_TOKEN_FILE"
+# Unlike every other credential here, this one is *in* the sandbox. Injecting
+# it from outside needs TLS interception, and there is none: the egress proxy
+# tunnels bytes it cannot read. What replaces that is the token's own shape —
+# `devbox.sh` mints a GitHub App installation token per sandbox start, scoped
+# to this repository and expiring in an hour, which is close to exactly what
+# the capability grants anyway. A fine-grained PAT works and does not expire,
+# and `doctor` says so.
+credential GH_TOKEN github
 
 allow github.com api.github.com codeload.github.com objects.githubusercontent.com
 
-# Both are the placeholder, not the token: msb substitutes the real value
-# outside the VM and only for the hosts above.
-env GH_TOKEN '$MSB_GITHUB_TOKEN'
-env GIT_ASKPASS /usr/local/bin/devbox-git-askpass
+env GIT_ASKPASS /opt/devbox/bin/devbox-git-askpass

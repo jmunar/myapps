@@ -1,8 +1,8 @@
 //! The prod broker: read-only access to the real deployment, for a sandbox.
 //!
-//! Same shape as `brokers/anthropic` — one process per sandbox, one host
-//! loopback port, answering only requests that carry that sandbox's bearer
-//! token — and the same reason for existing: the credential stays on the host.
+//! Same shape as `brokers/anthropic` — one process per sandbox invocation, on
+//! a Unix socket only that sandbox has mounted — and the same reason for
+//! existing: the credential stays on the host.
 //! Here it is the Odroid's SSH key, which `sandbox/CLAUDE.md` says permanently
 //! never enters a VM.
 //!
@@ -33,13 +33,12 @@ use argon2::{
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
+use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use clap::Parser;
 use remote::{DeployEnv, Remote};
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -47,19 +46,15 @@ use std::time::{Duration, Instant};
 
 #[derive(Parser)]
 #[command(
-    name = "msb-broker-prod",
+    name = "devbox-broker-prod",
     about = "Host-side prod broker: read-only snapshots and logs, behind a verb-limited API"
 )]
 struct Args {
-    /// Loopback only, like the Anthropic broker: msb's `host` network group
-    /// reaches a host loopback port from inside a guest, so binding wider
-    /// would only widen who can ask.
-    #[arg(long, default_value = "127.0.0.1:8788")]
-    listen: SocketAddr,
-
-    /// File holding the bearer token the sandbox must present.
+    /// Unix socket to listen on, in the sandbox's own runtime directory. Which
+    /// sandbox may ask is decided by the mount table, the way the Anthropic
+    /// broker's is.
     #[arg(long)]
-    token_file: PathBuf,
+    listen_unix: PathBuf,
 
     /// Sandbox name, recorded in the audit log.
     #[arg(long, default_value = "unknown")]
@@ -117,7 +112,6 @@ struct Args {
 }
 
 struct AppState {
-    token: String,
     remote: Remote,
     target: String,
     work_dir: PathBuf,
@@ -134,59 +128,11 @@ struct AppState {
     snapshot_lock: tokio::sync::Mutex<()>,
 }
 
-/// Length is not secret — the token is fixed-width hex — but the comparison
-/// runs to the end anyway so a wrong guess leaks nothing by timing.
-fn secret_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
-fn read_token(path: &Path) -> Result<String> {
-    let token = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?
-        .trim()
-        .to_string();
-    if token.is_empty() {
-        bail!(
-            "{} is empty — the broker will not run without a token",
-            path.display()
-        );
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(path)?.permissions().mode();
-        if mode & 0o077 != 0 {
-            eprintln!(
-                "broker: warning: {} is readable beyond its owner (mode {:o})",
-                path.display(),
-                mode & 0o777
-            );
-        }
-    }
-    Ok(token)
-}
-
 fn error(status: StatusCode, message: &str) -> Response {
     (status, axum::Json(serde_json::json!({ "error": message }))).into_response()
 }
 
 impl AppState {
-    fn authorized(&self, headers: &HeaderMap) -> bool {
-        // No unauthenticated exception here, unlike the Anthropic broker: that
-        // one forwards Claude Code's pre-token `/api/hello` probe, and nothing
-        // reaches this broker before its client has the token.
-        headers
-            .get("authorization")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.strip_prefix("Bearer "))
-            .or_else(|| headers.get("x-api-key").and_then(|v| v.to_str().ok()))
-            .is_some_and(|token| secret_eq(token, &self.token))
-    }
-
     fn audit(&self, entry: serde_json::Value) {
         let Some(path) = &self.audit_log else { return };
         use std::io::Write;
@@ -323,14 +269,12 @@ async fn sqlite(db: &Path, script: Option<&Path>, query: Option<&str>) -> Result
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-async fn health(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !state.authorized(&headers) {
-        return unauthorized(&state, "health");
-    }
+async fn health(State(state): State<Arc<AppState>>) -> Response {
     // Deliberately cheap and deliberately quiet about where prod is: the
     // sandbox learns which deployment it is talking to and which units it may
-    // read, never the host it reaches. `devbox.sh up` calls this on every
-    // start, so it must not depend on the LAN either.
+    // read, never the host it reaches. Every sandbox start calls this, so it
+    // must not depend on the LAN either — `devbox-prod health` off a train
+    // still answers.
     axum::Json(serde_json::json!({
         "status": "ok",
         "sandbox": state.sandbox,
@@ -343,19 +287,7 @@ async fn health(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respo
     .into_response()
 }
 
-fn unauthorized(state: &AppState, verb: &str) -> Response {
-    state.record(verb, "unauthorized", serde_json::Value::Null);
-    error(
-        StatusCode::UNAUTHORIZED,
-        "this broker belongs to another sandbox (bad or missing bearer token)",
-    )
-}
-
-async fn snapshot(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !state.authorized(&headers) {
-        return unauthorized(&state, "snapshot");
-    }
-
+async fn snapshot(State(state): State<Arc<AppState>>) -> Response {
     {
         let last = state.last_snapshot.lock().expect("lock poisoned");
         if let Some(at) = *last
@@ -494,12 +426,8 @@ fn hash_password(password: &str) -> Result<String> {
 
 async fn logs(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    if !state.authorized(&headers) {
-        return unauthorized(&state, "logs");
-    }
     let unit = match state.unit(&params) {
         Ok(unit) => unit,
         Err(response) => return *response,
@@ -549,12 +477,8 @@ async fn logs(
 
 async fn status(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    if !state.authorized(&headers) {
-        return unauthorized(&state, "status");
-    }
     let unit = match state.unit(&params) {
         Ok(unit) => unit,
         Err(response) => return *response,
@@ -585,17 +509,26 @@ async fn status(
     }
 }
 
+/// Bind the sandbox's socket, clearing a path a crash left behind.
+fn bind_socket(path: &Path) -> Result<tokio::net::UnixListener> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    let _ = std::fs::remove_file(path);
+    let listener = tokio::net::UnixListener::bind(path)
+        .with_context(|| format!("binding {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(listener)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-
-    if !args.listen.ip().is_loopback() {
-        bail!(
-            "refusing to listen on {} — the broker binds loopback only; the guest \
-             reaches it through msb's `host` network group",
-            args.listen
-        );
-    }
 
     let env = DeployEnv::read(&args.deploy_env)?;
     let target = args
@@ -626,13 +559,10 @@ async fn main() -> Result<()> {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
             .unwrap_or_else(std::env::temp_dir);
-        cache.join("msb-devbox/prod").join(&args.sandbox)
+        cache.join("devbox/prod").join(&args.sandbox)
     });
 
-    let token = read_token(&args.token_file)?;
-
     let state = Arc::new(AppState {
-        token,
         remote,
         target,
         work_dir,
@@ -647,9 +577,7 @@ async fn main() -> Result<()> {
         snapshot_lock: tokio::sync::Mutex::new(()),
     });
 
-    let listener = tokio::net::TcpListener::bind(args.listen)
-        .await
-        .with_context(|| format!("binding {}", args.listen))?;
+    let listener = bind_socket(&args.listen_unix)?;
 
     // No fallback route, unlike the Anthropic broker: that one is a proxy and
     // forwards what it does not recognise. This one has a vocabulary, and
@@ -661,14 +589,19 @@ async fn main() -> Result<()> {
         .route("/status", get(status))
         .with_state(state);
 
-    eprintln!("broker: prod broker listening on {}", args.listen);
+    eprintln!(
+        "broker: prod broker listening on {}",
+        args.listen_unix.display()
+    );
 
-    axum::serve(listener, app)
+    let result = axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await
-        .context("serving")
+        .context("serving");
+    let _ = std::fs::remove_file(&args.listen_unix);
+    result
 }
 
 #[cfg(test)]
@@ -707,12 +640,5 @@ mod tests {
         ] {
             assert!(parse_since(bad).is_err(), "accepted {bad:?}");
         }
-    }
-
-    #[test]
-    fn the_token_comparison_rejects_a_different_length() {
-        assert!(secret_eq("abc", "abc"));
-        assert!(!secret_eq("abc", "abcd"));
-        assert!(!secret_eq("abc", "abd"));
     }
 }

@@ -6,8 +6,8 @@
 # The host's real .env, deploy/*.env and data/ are never mounted, so this is
 # what makes the checkout runnable at all.
 #
-# Piped in by `devbox.sh` rather than baked into the image, so changing it does
-# not mean a rebuild.
+# Bind-mounted read-only at /opt/devbox/bootstrap and run by `devbox.sh`, so
+# changing it takes effect on the next command — there is no image to rebuild.
 set -euo pipefail
 
 cd /workspace
@@ -35,8 +35,9 @@ set_var() {
 set_var ENCRYPTION_KEY "$(openssl rand -hex 32)"
 set_var DATABASE_URL "sqlite://data/myapps.db"
 set_var FILE_CLIPBOARD_DIR "data/file_clipboard"
-# The published port reaches nothing if the server binds the VM's own loopback.
-set_var BIND_ADDR "0.0.0.0:3000"
+# Loopback, deliberately: the `preview` capability relays to it from the host
+# over a Unix socket, so the server never has to listen beyond the sandbox.
+set_var BIND_ADDR "127.0.0.1:3000"
 set_var BASE_URL "http://localhost:3000"
 set_var WHISPER_MODELS_DIR "models"
 
