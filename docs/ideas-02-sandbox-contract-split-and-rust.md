@@ -1,5 +1,13 @@
 # Idea 02: Make `sandbox` generic — split the broker contract from its implementations
 
+> **Written against the microsandbox implementation (2026-09-20).** The
+> substrate changed on 2026-09-21: `sandbox/` is now bubblewrap and socat, with
+> no microVM, no guest image and no docker anywhere. The argument below is
+> unaffected — the thing blocking reuse is still that a generic `sandbox` would
+> ship an *Anthropic* broker at all — but its premises about what `devbox.sh`
+> requires, and about shipping brokers as docker images, are stale. See
+> [sandbox/README.md](../sandbox/README.md).
+
 ## Summary
 
 `sandbox/` is being considered for reuse in other repos. Everything in it is

@@ -4,4 +4,4 @@ describe "reach the dev server from any device on the LAN (phone review)"
 conflicts preview
 
 port 0.0.0.0:3000:3000
-env BIND_ADDR 0.0.0.0:3000
+env BIND_ADDR 127.0.0.1:3000

@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 #
-# Development in a microVM: one sandbox per branch, no credentials inside it.
+# Development in a sandbox: one per branch, no credentials inside it.
 #
-# The host keeps ~/.claude, the GitHub token, ~/.ssh, the real .env and the real
-# data/. The guest gets a clone of the repository, the Rust toolchain and Claude
-# Code. What crosses the boundary is exactly what the granted capabilities say,
-# and the generated .devbox/<branch>/msb-args is the whole of it.
+# The host keeps ~/.claude, the GitHub credential, ~/.ssh, the real .env and the
+# real data/. The sandbox gets a clone of the repository and the host's own
+# toolchain, read-only, in a set of namespaces with no network in them. What
+# crosses the boundary is exactly what the granted capabilities say, and the
+# generated .devbox/<branch>/bwrap-args and plan are the whole of it.
+#
+# There is no daemon and no lifecycle: a sandbox exists for as long as a command
+# is running in it. Everything it needs on the host — the brokers, the egress
+# proxy, the relays — starts with that command and dies with it.
 #
 # Usage: sandbox/README.md. Changing any of this: sandbox/CLAUDE.md.
 set -euo pipefail
@@ -13,23 +18,20 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$REPO_DIR/sandbox"
 STATE_ROOT="$REPO_DIR/.devbox"
-CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/msb-devbox"
-CONFIG_ROOT="${XDG_CONFIG_HOME:-$HOME/.config}/msb-devbox"
-LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/msb-devbox"
-BROKER_BIN="$SANDBOX_DIR/brokers/anthropic/target/release/msb-broker-anthropic"
-PROD_BROKER_BIN="$SANDBOX_DIR/brokers/prod/target/release/msb-broker-prod"
+CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/devbox"
+LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/devbox"
+RUNTIME_ROOT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/devbox"
+BROKER_BIN="$SANDBOX_DIR/brokers/anthropic/target/release/devbox-broker-anthropic"
+PROD_BROKER_BIN="$SANDBOX_DIR/brokers/prod/target/release/devbox-broker-prod"
+PROXY_BIN="$SANDBOX_DIR/brokers/proxy/target/release/devbox-broker-proxy"
 # Which deployment the prod broker reads, as a path relative to the repository.
 # The same file deploy.sh reads, so prod is described in exactly one place.
 PROD_ENV_FILE="${DEVBOX_PROD_ENV:-deploy/prod.env}"
-# One broker per sandbox means one host loopback port per sandbox, picked once
-# and kept: the guest gets it baked into ANTHROPIC_BASE_URL, so a port that
-# moved on restart would need the sandbox recreated to notice.
-ANTHROPIC_PORT_BASE="${DEVBOX_BROKER_PORT_BASE:-18800}"
-PROD_PORT_BASE="${DEVBOX_PROD_PORT_BASE:-18900}"
-PORT_RANGE=100
-# The guest's name for the host. msb resolves it to the sandbox's gateway, and
-# only when the capability set asked for the `host` network group.
-HOST_ALIAS="host.microsandbox.internal"
+
+# Ports *inside* the sandbox, which are constants rather than something to
+# claim: each sandbox has its own network namespace, so two sandboxes both
+# listening on 8080 never meet. Nothing on the host binds them.
+export ANTHROPIC_PORT=8080 PROD_PORT=8081 PROXY_PORT=3128
 
 # cargo-cache-shared is in the default set: without it every branch recompiles
 # the whole dependency tree. It is also the one writable surface shared between
@@ -37,33 +39,21 @@ HOST_ALIAS="host.microsandbox.internal"
 DEFAULT_CAPS="${DEVBOX_CAPS:-anthropic,github,rust-deps,node-deps,cargo-cache-shared,preview}"
 DEFAULT_PROFILE="${DEVBOX_PROFILE:-default}"
 
-# ---------------------------------------------------------------------------
-# Every `msb` invocation lives here. msb is beta and its flags move; when one
-# changes, this is the only block to edit.
-# ---------------------------------------------------------------------------
-# `create`, not `run --detach`: on msb 0.7.2 a sandbox whose image command is
-# running stops answering `msb exec` altogether. See sandbox/README.md.
-msb_create() { local name="$1"; shift; msb create --name "$name" --replace "$@"; }
-msb_stop()   { msb stop "$1"; }
-msb_rm()     { msb rm -f "$1"; }
-msb_exec()   { local name="$1"; shift; msb exec -t "$name" -- "$@"; }
-# Never wrap an exec in a host-side `timeout`: on msb 0.7.2, killing the client
-# leaves the session stuck and every later exec against that sandbox hangs
-# forever. Let msb's own --timeout end the command instead.
-msb_exec_quiet() { local name="$1"; shift; msb exec --timeout 30s "$name" -- "$@"; }
-msb_ping()   { msb ping -q "$1" >/dev/null 2>&1; }
-msb_running() { msb list --running -q 2>/dev/null | grep -qx "$1"; }
-
 die() { echo "devbox: $*" >&2; exit 1; }
 info() { echo "devbox: $*"; }
 require() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed"; }
 
-sandbox_name() { echo "myapps-$1"; }
-clone_dir()    { echo "$(dirname "$REPO_DIR")/myapps-$1"; }
-state_dir()    { echo "$STATE_ROOT/$1"; }
+# Where the host keeps the GitHub credential. One path, no fallback: a
+# credential that can live in two places is one you have to look for twice.
+config_file() {
+    printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/devbox/$1"
+}
+
+clone_dir() { echo "$(dirname "$REPO_DIR")/myapps-$1"; }
+state_dir() { echo "$STATE_ROOT/$1"; }
 
 check_branch() {
-    # No slashes: the branch name is also a directory name and a sandbox name.
+    # No slashes: the branch name is also a directory name.
     [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]] || die "refusing branch name '$1' (letters, digits, . _ - only)"
 }
 
@@ -73,225 +63,242 @@ known_branch() {
 
 # --- configuration ---------------------------------------------------------
 
-# A connect that fails means nothing is listening. Pure bash, so no dependency
-# on ss or lsof; the subshell closes the descriptor on the way out.
-port_free() {
-    ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
-}
-
-# A stopped sandbox is not listening on its port, so "free" is not enough on its
-# own: another branch's port has to stay reserved while its broker is down.
-port_claimed_elsewhere() {
-    local port="$1" branch="$2" file="$3" dir
-    for dir in "$STATE_ROOT"/*/; do
-        [ -d "$dir" ] || continue
-        [ "$(basename "$dir")" = "$branch" ] && continue
-        [ "$(cat "$dir/$file" 2>/dev/null)" = "$port" ] && return 0
-    done
-    return 1
-}
-
-claim_port() {
-    local branch="$1" file="$2" base="$3" state port offset
-    state="$(state_dir "$branch")"
-    port="$(cat "$state/$file" 2>/dev/null || true)"
-    # Keep the one already claimed: it is in the guest's environment, and
-    # changing it silently would leave a running sandbox talking to nothing.
-    if [ -n "$port" ]; then printf '%s' "$port"; return 0; fi
-    for ((offset = 0; offset < PORT_RANGE; offset++)); do
-        port=$((base + offset))
-        port_claimed_elsewhere "$port" "$branch" "$file" && continue
-        port_free "$port" || continue
-        echo "$port" > "$state/$file"
-        printf '%s' "$port"
-        return 0
-    done
-    die "no free TCP port in $base-$((base + PORT_RANGE - 1)) for a broker"
-}
-
-# The token replaces what the Unix socket's path used to do. A host TCP port is
-# open to every process on the host and to every other sandbox granted the
-# `host` group, so the broker only answers the sandbox that can present this.
-# Generated once, at create, and kept beside the rest of the sandbox's state.
-claim_token() {
-    local state="$1" file="$state/broker.token"
-    if [ ! -s "$file" ]; then
-        (umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$file")
-    fi
-    cat "$file"
-}
-
+# RUNTIME_DIR is per *invocation*, not per branch: two shells on one branch each
+# get their own brokers and their own sockets, and neither can unlink the
+# other's. It goes into bwrap-args, so the render is per invocation too — which
+# costs nothing, since rendering is sourcing eight small shell fragments.
 render() {
-    local branch="$1" state caps profile models broker_port prod_port
+    local branch="$1" state models
     state="$(state_dir "$branch")"
-    caps="$(cat "$state/capabilities")"
-    profile="$(cat "$state/profile")"
-    mkdir -p "$CACHE_ROOT/target/$branch" "$CACHE_ROOT/cargo/registry" "$CACHE_ROOT/cargo/git" \
-        "$CACHE_ROOT/claude/$branch"
+    mkdir -p "$CACHE_ROOT/target/$branch" "$CACHE_ROOT/cargo-home/$branch" \
+        "$CACHE_ROOT/cargo/registry" "$CACHE_ROOT/cargo/git" "$CACHE_ROOT/claude/$branch"
     mkdir -p "$REPO_DIR/models"
-    # Physical path: a worktree often shares one models directory with the main
-    # checkout through a symlink, and msb will not bind-mount a symlinked
-    # source — it fails as ELOOP, "too many levels of symbolic links", naming
-    # the mount that contains it rather than the link.
     models="$(cd "$REPO_DIR/models" && pwd -P)"
-
-    # Resolved into variables rather than inline below: a `die` inside the
-    # assignment prefix of a command only kills its own subshell, and the
-    # sandbox would render with an empty port instead of stopping.
-    broker_port="$(claim_port "$branch" broker.port "$ANTHROPIC_PORT_BASE")"
-    prod_port="$(claim_port "$branch" prod.port "$PROD_PORT_BASE")"
 
     BRANCH="$branch" \
     CLONE="$(clone_dir "$branch")" \
     TARGET_CACHE="$CACHE_ROOT/target/$branch" \
+    CARGO_HOME_DIR="$CACHE_ROOT/cargo-home/$branch" \
     CARGO_CACHE="$CACHE_ROOT/cargo" \
     MODELS="$models" \
     CLAUDE_STATE="$CACHE_ROOT/claude/$branch" \
-    BROKER_PORT="$broker_port" \
-    PROD_PORT="$prod_port" \
-    BROKER_TOKEN="$(claim_token "$state")" \
-    HOST_ALIAS="$HOST_ALIAS" \
-    GITHUB_TOKEN_FILE="$CONFIG_ROOT/github-token" \
+    GUEST_BIN="$SANDBOX_DIR/guest" \
+    BOOTSTRAP_DIR="$SANDBOX_DIR/bootstrap" \
+    PLAYWRIGHT_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright" \
+    HOME_DIR="$HOME" \
+    RUNTIME_DIR="${RUNTIME_DIR:-$RUNTIME_ROOT/$branch.config}" \
     bash "$SANDBOX_DIR/render.sh" \
-        --profile "$profile" --caps "$caps" --out-dir "$state"
+        --profile "$(cat "$state/profile")" --caps "$(cat "$state/capabilities")" \
+        --out-dir "$state"
 }
 
-# Secrets are read here and exported only for the `msb` process, so they live in
-# one short-lived environment and never in a file the guest can see.
-export_secrets() {
-    local state="$1" name source value
-    [ -s "$state/secret-files" ] || return 0
-    while IFS='=' read -r name source; do
-        [ -n "$name" ] || continue
-        if [ "$name" = "GITHUB_TOKEN" ] && [ -f "$CONFIG_ROOT/github-app.json" ]; then
-            # An App installation token expires in an hour; a PAT does not.
-            value="$("$SANDBOX_DIR/brokers/github/mint-token.sh")" \
-                || die "minting a GitHub App token failed"
-        else
-            [ -f "$source" ] || die "capability needs $source (see sandbox/README.md)"
-            value="$(tr -d '\r\n' < "$source")"
-        fi
-        export "$name=$value"
-    done < "$state/secret-files"
+# --- credentials -----------------------------------------------------------
+
+# Read on the host, exported only into the one subshell that becomes bwrap, and
+# never written to a file or an argument vector.
+mint_credential() {
+    local source="$1" app pat
+    case "$source" in
+        github)
+            app="$(config_file github-app.json)"
+            pat="$(config_file github-token)"
+            if [ -f "$app" ]; then
+                # An App installation token expires in an hour; a PAT does not.
+                "$SANDBOX_DIR/brokers/github/mint-token.sh" "$app" \
+                    || die "minting a GitHub App token failed"
+            elif [ -f "$pat" ]; then
+                tr -d '\r\n' < "$pat"
+            else
+                die "the github capability needs $app or $pat (see sandbox/README.md)"
+            fi
+            ;;
+        *) die "unknown credential source '$source'" ;;
+    esac
 }
 
-read_cli_args() {
-    MSB_ARGS=()
+# --- running a sandbox -----------------------------------------------------
+
+# Everything the host has to have running around the sandbox, torn down with it.
+CHILD_PIDS=()
+RUNTIME_DIR=""
+
+cleanup_sandbox() {
+    local pid
+    for pid in "${CHILD_PIDS[@]-}"; do
+        [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    done
+    [ -n "$RUNTIME_DIR" ] && rm -rf "$RUNTIME_DIR"
+    return 0
+}
+
+start_helper() {
+    local name="$1"; shift
+    mkdir -p "$LOG_ROOT"
+    "$@" >>"$LOG_ROOT/$name.log" 2>&1 &
+    local pid=$!
+    CHILD_PIDS+=("$pid")
+    # A helper that dies on start is the difference between "Claude Code cannot
+    # authenticate" and a one-line reason, so it is checked rather than hoped.
+    sleep 0.2
+    if ! kill -0 "$pid" 2>/dev/null; then
+        [ -n "${HELPER_MAY_FAIL:-}" ] && return 1
+        die "$name died on start — see $LOG_ROOT/$name.log"
+    fi
+    return 0
+}
+
+wait_for_socket() {
+    local path="$1" attempt
+    for attempt in $(seq 1 50); do
+        [ -S "$path" ] && return 0
+        sleep 0.1
+    done
+    die "$(basename "$path") never appeared — see $LOG_ROOT"
+}
+
+# Run a command in the sandbox. This is the whole of the lifecycle.
+sandbox_run() {
+    local branch="$1"; shift
+    known_branch "$branch"
+    require bwrap; require socat
+
+    RUNTIME_DIR="$RUNTIME_ROOT/$branch.$$"
+    mkdir -p "$RUNTIME_DIR"
+    chmod 700 "$RUNTIME_DIR"
+    trap cleanup_sandbox EXIT INT TERM
+
+    render "$branch"
+    local state; state="$(state_dir "$branch")"
+
+    # --- the plan: host-side helpers, and the relays inside ----------------
+    local -a inner_relays=() cred_exports=()
+    local cpus="" memory=""
+    local kind a b c
+    while read -r kind a b c; do
+        case "$kind" in
+            broker)
+                case "$a" in
+                    anthropic)
+                        [ -x "$BROKER_BIN" ] || die "broker not built — run ./devbox.sh build-broker"
+                        start_helper "$branch-anthropic" "$BROKER_BIN" \
+                            --listen-unix "$RUNTIME_DIR/$b" --sandbox "$branch" \
+                            --audit-log "$LOG_ROOT/audit.jsonl" ${DEVBOX_BROKER_ARGS:-}
+                        ;;
+                    prod)
+                        [ -x "$PROD_BROKER_BIN" ] || die "prod broker not built — run ./devbox.sh build-broker"
+                        local env_file="$PROD_ENV_FILE"
+                        case "$env_file" in /*) ;; *) env_file="$REPO_DIR/$env_file" ;; esac
+                        [ -f "$env_file" ] || die "prod-readonly needs $env_file — see docs/deployment.md"
+                        start_helper "$branch-prod" "$PROD_BROKER_BIN" \
+                            --listen-unix "$RUNTIME_DIR/$b" --sandbox "$branch" \
+                            --deploy-env "$env_file" --work-dir "$CACHE_ROOT/prod/$branch" \
+                            --audit-log "$LOG_ROOT/audit.jsonl" ${DEVBOX_PROD_BROKER_ARGS:-}
+                        ;;
+                esac
+                wait_for_socket "$RUNTIME_DIR/$b"
+                inner_relays+=("socat TCP-LISTEN:$c,fork,reuseaddr,bind=127.0.0.1 UNIX-CONNECT:/run/devbox/$b")
+                ;;
+            proxy)
+                [ -x "$PROXY_BIN" ] || die "proxy not built — run ./devbox.sh build-broker"
+                start_helper "$branch-proxy" "$PROXY_BIN" \
+                    --listen-unix "$RUNTIME_DIR/$a" --allow "$c" --sandbox "$branch" \
+                    --audit-log "$LOG_ROOT/audit.jsonl" ${DEVBOX_PROXY_ARGS:-}
+                wait_for_socket "$RUNTIME_DIR/$a"
+                inner_relays+=("socat TCP-LISTEN:$b,fork,reuseaddr,bind=127.0.0.1 UNIX-CONNECT:/run/devbox/$a")
+                ;;
+            publish)
+                # The other direction: the sandbox serves a socket, the host
+                # listens on a port and hands it connections. The host side is
+                # started even though the socket does not exist yet — socat
+                # connects per connection, so it simply refuses until the dev
+                # server is up.
+                inner_relays+=("socat UNIX-LISTEN:/run/devbox/publish-$c.sock,fork,unlink-early TCP:127.0.0.1:$c")
+                # Not fatal: a second shell on the same branch finds the port
+                # taken by the first, and that is a reason to say so, not to
+                # refuse to open a shell.
+                if HELPER_MAY_FAIL=1 start_helper "$branch-publish-$c" \
+                    socat "TCP-LISTEN:$b,fork,reuseaddr,bind=$a" \
+                    "UNIX-CONNECT:$RUNTIME_DIR/publish-$c.sock"; then
+                    info "publishing the dev server on $a:$b"
+                else
+                    info "warning: could not listen on $a:$b — see $LOG_ROOT/$branch-publish-$c.log"
+                fi
+                ;;
+            credential)
+                cred_exports+=("${a%%=*}=$(mint_credential "${a#*=}")")
+                ;;
+            limit)
+                case "$a" in cpus) cpus="$b" ;; memory) memory="$b" ;; esac
+                ;;
+        esac
+    done < "$state/plan"
+
+    # --- the environment ---------------------------------------------------
+    # A file rather than `--setenv`, because the GitHub token is in it and
+    # /proc/<pid>/cmdline is world-readable. Mode 0600 in a 0700 directory that
+    # only this sandbox has mounted.
+    local env_file="$RUNTIME_DIR/env"
+    ( umask 077; : > "$env_file" )
+    quote_into_env() {
+        # POSIX single-quote escaping: everything inside the quotes is literal
+        # except a quote itself, which closes, escapes and reopens. Unquoted on
+        # the right-hand side so the backslashes are the substitution's, not
+        # the string's.
+        local escaped=${2//\'/\'\\\'\'}
+        printf "export %s='%s'\n" "$1" "$escaped" >> "$env_file"
+    }
+    local name value
+    while IFS='=' read -r name value; do
+        [ -n "$name" ] && quote_into_env "$name" "$value"
+    done < "$state/env"
+    # The terminal's own variables: without them the TUI draws in ASCII and
+    # every accented character in the seed data comes out wrong.
+    for name in TERM COLORTERM LANG LC_ALL LC_CTYPE LC_TIME TZ; do
+        [ -n "${!name:-}" ] && quote_into_env "$name" "${!name}"
+    done
+    local cred
+    for cred in "${cred_exports[@]-}"; do
+        [ -n "$cred" ] && quote_into_env "${cred%%=*}" "${cred#*=}"
+    done
+
+    # --- the entrypoint ----------------------------------------------------
+    # The relays run inside the namespace, started before the command and
+    # reaped with it: bwrap is PID 1 in the sandbox's PID namespace, so when the
+    # command exits the namespace goes and takes every socat with it.
+    {
+        echo '#!/bin/bash'
+        echo '# Generated per invocation by devbox.sh. Not a file to edit.'
+        echo 'set -u'
+        echo '. /run/devbox/env'
+        local relay
+        for relay in "${inner_relays[@]-}"; do
+            [ -n "$relay" ] && echo "$relay >/dev/null 2>&1 &"
+        done
+        echo 'exec "$@"'
+    } > "$RUNTIME_DIR/entrypoint"
+    chmod 0755 "$RUNTIME_DIR/entrypoint"
+
+    local -a bwrap_args=()
     local line
     while IFS= read -r line; do
-        [ -n "$line" ] && MSB_ARGS+=("$line")
-    done < "$1/msb-args"
-}
+        [ -n "$line" ] && bwrap_args+=("$line")
+    done < "$state/bwrap-args"
 
-# --- brokers ---------------------------------------------------------------
-
-ensure_brokers() {
-    local branch="$1" state broker
-    state="$(state_dir "$branch")"
-    [ -s "$state/brokers" ] || return 0
-    while IFS= read -r broker; do
-        [ -n "$broker" ] || continue
-        case "$broker" in
-            anthropic) start_anthropic_broker "$branch" ;;
-            prod) start_prod_broker "$branch" ;;
-            *) die "unknown broker '$broker'" ;;
-        esac
-    done < "$state/brokers"
-}
-
-start_anthropic_broker() {
-    local branch="$1" state pid port
-    state="$(state_dir "$branch")"
-    port="$(claim_port "$branch" broker.port "$ANTHROPIC_PORT_BASE")"
-
-    if [ -f "$state/broker.pid" ] && kill -0 "$(cat "$state/broker.pid")" 2>/dev/null; then
-        return 0
+    # A systemd scope is how `cpus` and `memory` are enforced; without systemd
+    # they are advisory and the sandbox is bounded by the host instead. It runs
+    # outside the sandbox, with the host's own environment, which is why the
+    # sandbox's environment is a file and not this process's.
+    local -a scope=()
+    if [ -z "${DEVBOX_NO_SCOPE:-}" ] && command -v systemd-run >/dev/null 2>&1; then
+        scope=(systemd-run --user --scope --quiet --collect --unit "devbox-$branch-$$")
+        [ -n "$memory" ] && scope+=(-p "MemoryMax=$memory")
+        [ -n "$cpus" ] && scope+=(-p "CPUQuota=$((cpus * 100))%")
+        scope+=(--)
     fi
-    [ -x "$BROKER_BIN" ] || die "broker not built — run ./devbox.sh build-broker"
 
-    mkdir -p "$LOG_ROOT"
-    # The broker refuses to bind anything but loopback, and the token file is
-    # passed as a path rather than a value: /proc/<pid>/cmdline is world-readable
-    # and this is a port every process on the host can already open.
-    #
-    # setsid so closing the terminal does not take the broker — and with it
-    # every Claude Code session in the sandbox — down with it.
-    setsid "$BROKER_BIN" \
-        --listen "127.0.0.1:$port" \
-        --token-file "$state/broker.token" \
-        --sandbox "$branch" \
-        --audit-log "$LOG_ROOT/audit.jsonl" \
-        ${DEVBOX_BROKER_ARGS:-} \
-        >>"$LOG_ROOT/$branch-broker.log" 2>&1 &
-    pid=$!
-    echo "$pid" > "$state/broker.pid"
-    sleep 0.3
-    kill -0 "$pid" 2>/dev/null || die "broker died on start — see $LOG_ROOT/$branch-broker.log"
-    info "broker running on 127.0.0.1:$port (pid $pid)"
-}
-
-# The prod broker holds the Odroid SSH key and answers a fixed vocabulary —
-# snapshot, logs, status — never a command the guest supplies. It shares the
-# sandbox's token with the Anthropic broker but claims its own port, so a
-# capability set that grants one does not reach the other.
-start_prod_broker() {
-    local branch="$1" state pid port env_file
-    state="$(state_dir "$branch")"
-    port="$(claim_port "$branch" prod.port "$PROD_PORT_BASE")"
-
-    if [ -f "$state/prod.pid" ] && kill -0 "$(cat "$state/prod.pid")" 2>/dev/null; then
-        return 0
-    fi
-    [ -x "$PROD_BROKER_BIN" ] || die "prod broker not built — run ./devbox.sh build-broker"
-
-    env_file="$PROD_ENV_FILE"
-    case "$env_file" in /*) ;; *) env_file="$REPO_DIR/$env_file" ;; esac
-    [ -f "$env_file" ] || die "prod-readonly needs $env_file — see docs/deployment.md"
-
-    mkdir -p "$LOG_ROOT"
-    # Same shape as the Anthropic broker: loopback only, the token passed as a
-    # path rather than a value, and setsid so closing the terminal does not
-    # take it down mid-snapshot.
-    setsid "$PROD_BROKER_BIN" \
-        --listen "127.0.0.1:$port" \
-        --token-file "$state/broker.token" \
-        --sandbox "$branch" \
-        --deploy-env "$env_file" \
-        --work-dir "$CACHE_ROOT/prod/$branch" \
-        --audit-log "$LOG_ROOT/audit.jsonl" \
-        ${DEVBOX_PROD_BROKER_ARGS:-} \
-        >>"$LOG_ROOT/$branch-prod-broker.log" 2>&1 &
-    pid=$!
-    echo "$pid" > "$state/prod.pid"
-    sleep 0.3
-    kill -0 "$pid" 2>/dev/null || die "prod broker died on start — see $LOG_ROOT/$branch-prod-broker.log"
-    info "prod broker running on 127.0.0.1:$port (pid $pid), reading $(basename "$env_file")"
-}
-
-stop_brokers() {
-    local state="$1" pid_file
-    for pid_file in "$state/broker.pid" "$state/prod.pid"; do
-        [ -f "$pid_file" ] || continue
-        kill "$(cat "$pid_file")" 2>/dev/null || true
-        rm -f "$pid_file"
-    done
-}
-
-# Guest scripts run from the mounted clone rather than over `msb exec` stdin:
-# whether exec forwards stdin is a property of msb we would rather not depend on,
-# and the clone is already there. The copy is removed afterwards so it never
-# shows up as an uncommitted change.
-run_guest_script() {
-    local branch="$1" script="$2"; shift 2
-    local clone name target
-    clone="$(clone_dir "$branch")"
-    name="$(sandbox_name "$branch")"
-    target=".devbox-$(basename "$script")"
-    cp "$script" "$clone/$target"
-    chmod +x "$clone/$target"
     local status=0
-    msb_exec "$name" bash "/workspace/$target" "$@" || status=$?
-    rm -f "$clone/$target"
+    "${scope[@]}" bwrap "${bwrap_args[@]}" -- \
+        /bin/bash /run/devbox/entrypoint "$@" || status=$?
     return $status
 }
 
@@ -310,7 +317,7 @@ cmd_create() {
     done
     [ -n "$branch" ] || die "usage: devbox.sh create <branch> [--with caps] [--base ref]"
     check_branch "$branch"
-    require git; require msb
+    require git; require bwrap; require socat
 
     local clone state resume=0
     clone="$(clone_dir "$branch")"
@@ -324,44 +331,37 @@ cmd_create() {
     fi
 
     if [ "$resume" -eq 0 ]; then
-    git -C "$REPO_DIR" fetch --prune origin
-    # --no-hardlinks is not hygiene: with hardlinks the clone's objects are the
-    # same inodes as this repository's, and a guest that rewrites one corrupts
-    # the host's copy.
-    git clone --no-hardlinks --branch "$base" "$REPO_DIR" "$clone"
-    git -C "$clone" checkout -b "$branch"
+        git -C "$REPO_DIR" fetch --prune origin
+        # --no-hardlinks is not hygiene: with hardlinks the clone's objects are
+        # the same inodes as this repository's, and a sandbox that rewrites one
+        # corrupts the host's copy.
+        git clone --no-hardlinks --branch "$base" "$REPO_DIR" "$clone"
+        git -C "$clone" checkout -b "$branch"
 
-    # Point at GitHub over HTTPS: header substitution only works on HTTP, and
-    # there is no SSH key in the VM by design.
-    local origin
-    origin="$(git -C "$REPO_DIR" remote get-url origin)"
-    origin="${origin/git@github.com:/https://github.com/}"
-    git -C "$clone" remote set-url origin "$origin"
-    echo ".devbox-*" >> "$clone/.git/info/exclude"
-    git -C "$clone" config user.name "$(git -C "$REPO_DIR" config user.name)"
-    git -C "$clone" config user.email "$(git -C "$REPO_DIR" config user.email)"
+        # Point at GitHub over HTTPS: there is no SSH key in the sandbox by
+        # design, and the egress proxy only speaks CONNECT to port 443.
+        local origin
+        origin="$(git -C "$REPO_DIR" remote get-url origin)"
+        origin="${origin/git@github.com:/https://github.com/}"
+        git -C "$clone" remote set-url origin "$origin"
+        git -C "$clone" config user.name "$(git -C "$REPO_DIR" config user.name)"
+        git -C "$clone" config user.email "$(git -C "$REPO_DIR" config user.email)"
 
-    # Permissions granted inside the sandbox live in the clone; carry the
-    # existing ones in so the first session is not a wall of prompts.
-    if [ -f "$REPO_DIR/.claude/settings.local.json" ]; then
-        mkdir -p "$clone/.claude"
-        cp "$REPO_DIR/.claude/settings.local.json" "$clone/.claude/settings.local.json"
-    fi
+        # Permissions granted inside the sandbox live in the clone; carry the
+        # existing ones in so the first session is not a wall of prompts.
+        if [ -f "$REPO_DIR/.claude/settings.local.json" ]; then
+            mkdir -p "$clone/.claude"
+            cp "$REPO_DIR/.claude/settings.local.json" "$clone/.claude/settings.local.json"
+        fi
     fi
 
     mkdir -p "$state"
     echo "$caps" > "$state/capabilities"
     echo "$profile" > "$state/profile"
     render "$branch"
-    ensure_brokers "$branch"
-
-    read_cli_args "$state"
-    export_secrets "$state"
-    msb_create "$(sandbox_name "$branch")" "${MSB_ARGS[@]}"
 
     info "running first-boot"
-    run_guest_script "$branch" "$SANDBOX_DIR/bootstrap/first-boot.sh"
-    cmd_up "$branch"
+    sandbox_run "$branch" bash /opt/devbox/bootstrap/first-boot.sh
 
     echo
     info "sandbox ready:  ./devbox.sh claude $branch"
@@ -369,74 +369,10 @@ cmd_create() {
     info "config:         ./devbox.sh config $branch"
 }
 
-cmd_up() {
-    local branch="$1"
-    known_branch "$branch"
-    local name state
-    name="$(sandbox_name "$branch")"
-    state="$(state_dir "$branch")"
-
-    render "$branch"
-    ensure_brokers "$branch"
-    if ! msb_running "$name"; then
-        read_cli_args "$state"
-        export_secrets "$state"
-        msb_create "$name" "${MSB_ARGS[@]}"
-    fi
-
-    local attempt
-    for attempt in 1 2 3 4 5 6 7 8 9 10; do
-        msb_ping "$name" && break
-        sleep 1
-    done
-    # Nothing to set up for TLS: msb installs its interception CA in the guest
-    # and points NODE_EXTRA_CA_CERTS, SSL_CERT_FILE and CURL_CA_BUNDLE at it.
-    #
-    # A broker the guest cannot reach looks exactly like a Claude Code auth
-    # problem from inside the sandbox, so check rather than hope — over the same
-    # host alias, port and token the guest itself was given, so the check fails
-    # for exactly the reasons the real thing would.
-    # One attempt, never retried: each aborted exec costs the sandbox its exec
-    # channel, so a failed check must not turn into four more.
-    local broker port_file port token
-    token="$(cat "$state/broker.token" 2>/dev/null || true)"
-    if [ -n "$token" ]; then
-        # Both brokers answer /_broker/health cheaply — the prod one
-        # deliberately does not touch the Odroid to do it, so `up` still works
-        # off the LAN.
-        while read -r broker port_file; do
-            grep -qx "$broker" "$state/brokers" 2>/dev/null || continue
-            port="$(cat "$state/$port_file" 2>/dev/null || true)"
-            [ -n "$port" ] || continue
-            msb_exec_quiet "$name" curl -sf --max-time 5 -o /dev/null \
-                -H "Authorization: Bearer $token" \
-                "http://$HOST_ALIAS:$port/_broker/health" >/dev/null 2>&1 \
-                || info "warning: the $broker broker is not reachable from the sandbox"
-        done <<'BROKERS'
-anthropic broker.port
-prod prod.port
-BROKERS
-    fi
-}
-
-cmd_stop() {
-    local branch="$1"
-    known_branch "$branch"
-    msb_stop "$(sandbox_name "$branch")" || true
-    stop_brokers "$(state_dir "$branch")"
-    info "stopped $branch"
-}
-
-cmd_shell()  { known_branch "$1"; cmd_up "$1" >/dev/null; msb_exec "$(sandbox_name "$1")" bash -l; }
-cmd_claude() { local b="$1"; shift; known_branch "$b"; cmd_up "$b" >/dev/null; msb_exec "$(sandbox_name "$b")" claude "$@"; }
-cmd_exec()   { local b="$1"; shift; known_branch "$b"; cmd_up "$b" >/dev/null; msb_exec "$(sandbox_name "$b")" "$@"; }
-
-cmd_seed() {
-    local branch="$1"; shift
-    known_branch "$branch"
-    cmd_up "$branch" >/dev/null
-    run_guest_script "$branch" "$SANDBOX_DIR/bootstrap/seed.sh" "$@"
-}
+cmd_shell()  { sandbox_run "$1" bash -l; }
+cmd_claude() { local b="$1"; shift; sandbox_run "$b" claude "$@"; }
+cmd_exec()   { local b="$1"; shift; sandbox_run "$b" "$@"; }
+cmd_seed()   { local b="$1"; shift; sandbox_run "$b" bash /opt/devbox/bootstrap/seed.sh "$@"; }
 
 cmd_grant() {
     local branch="$1" cap="$2"
@@ -451,43 +387,38 @@ cmd_grant() {
     # leaving the sandbox claiming a capability its config never got.
     if ! render "$branch"; then
         echo "$caps" > "$state/capabilities"
-        render "$branch"
         die "did not grant $cap"
     fi
-    info "granted $cap — restarting the sandbox to apply it"
-    cmd_stop "$branch" >/dev/null
-    cmd_up "$branch"
+    info "granted $cap — it applies to the next command you run in $branch"
 }
 
 cmd_revoke() {
     local branch="$1" cap="$2"
     known_branch "$branch"
-    local state caps
+    local state kept="" item existing
     state="$(state_dir "$branch")"
-    local kept="" item existing
     IFS=',' read -r -a existing <<< "$(cat "$state/capabilities")"
     for item in "${existing[@]}"; do
         { [ -z "$item" ] || [ "$item" = "$cap" ]; } && continue
         kept="${kept:+$kept,}$item"
     done
-    caps="$kept"
-    echo "$caps" > "$state/capabilities"
+    echo "$kept" > "$state/capabilities"
     render "$branch"
-    info "revoked $cap — restarting the sandbox to apply it"
-    cmd_stop "$branch" >/dev/null
-    cmd_up "$branch"
+    info "revoked $cap — it applies to the next command you run in $branch"
 }
 
 cmd_list() {
     [ -d "$STATE_ROOT" ] || { info "no sandboxes"; return 0; }
-    printf '%-24s %-10s %-8s %s\n' BRANCH STATE SIZE CAPABILITIES
-    local dir branch state size
+    printf '%-24s %-8s %-8s %s\n' BRANCH LIVE SIZE CAPABILITIES
+    local dir branch size live
     for dir in "$STATE_ROOT"/*/; do
         [ -d "$dir" ] || continue
         branch="$(basename "$dir")"
-        if msb_running "$(sandbox_name "$branch")"; then state=running; else state=stopped; fi
+        # "Live" is a count of running commands, not a state: nothing persists
+        # between them.
+        live="$(find "$RUNTIME_ROOT" -maxdepth 1 -name "$branch.[0-9]*" 2>/dev/null | wc -l)"
         size="$(du -sh "$CACHE_ROOT/target/$branch" 2>/dev/null | cut -f1)"
-        printf '%-24s %-10s %-8s %s\n' "$branch" "$state" "${size:--}" "$(cat "$dir/capabilities")"
+        printf '%-24s %-8s %-8s %s\n' "$branch" "$live" "${size:--}" "$(cat "$dir/capabilities")"
     done
 }
 
@@ -543,12 +474,8 @@ cmd_remove() {
             && info "merged .claude/settings.local.json"
     fi
 
-    msb_rm "$(sandbox_name "$branch")" 2>/dev/null || true
-    stop_brokers "$state"
-    # The state directory holds the broker token and the claimed ports; removing
-    # it is what frees them for the next sandbox.
     rm -rf "$clone" "$state" "$CACHE_ROOT/target/$branch" "$CACHE_ROOT/claude/$branch" \
-        "$CACHE_ROOT/prod/$branch"
+        "$CACHE_ROOT/cargo-home/$branch" "$CACHE_ROOT/prod/$branch"
 
     git -C "$REPO_DIR" fetch --prune origin >/dev/null 2>&1 || true
     if git -C "$REPO_DIR" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
@@ -562,38 +489,74 @@ cmd_remove() {
 
 cmd_build_broker() {
     require cargo
-    (cd "$SANDBOX_DIR/brokers/anthropic" && cargo build --release)
-    info "built $BROKER_BIN"
-    (cd "$SANDBOX_DIR/brokers/prod" && cargo build --release)
-    info "built $PROD_BROKER_BIN"
-}
-
-cmd_build_image() {
-    require docker; require msb
-    docker build -t myapps-dev:latest "$SANDBOX_DIR/image"
-    # msb keeps its own image cache; a tag in docker's is invisible to it.
-    docker save myapps-dev:latest | msb load -t myapps-dev:latest
-    if [ "${1:-}" = "--browser" ]; then
-        docker build -t myapps-dev-browser:latest \
-            -f "$SANDBOX_DIR/image/Dockerfile.browser" "$SANDBOX_DIR/image"
-        docker save myapps-dev-browser:latest | msb load -t myapps-dev-browser:latest
-    fi
-    info "loaded into msb: $(msb image list 2>/dev/null | grep -c myapps-dev) image(s)"
+    local dir
+    for dir in anthropic prod proxy; do
+        (cd "$SANDBOX_DIR/brokers/$dir" && cargo build --release --quiet)
+        info "built brokers/$dir"
+    done
 }
 
 cmd_config() {
     local branch="$1"
     known_branch "$branch"
     render "$branch"
-    echo "msb create --name $(sandbox_name "$branch") \\"
-    # The args file is one token per line so nothing has to be re-quoted;
-    # pair each flag with its value for reading.
-    awk '''
+    local state; state="$(state_dir "$branch")"
+    echo "# bwrap command line — RUNTIME_DIR is per invocation, shown here as .config"
+    echo "bwrap"
+    # The args file is one token per line so nothing has to be re-quoted; pair
+    # each flag with its values for reading.
+    awk '
         /^-/  { if (flag != "") print "  " flag; flag = $0; next }
-              { if (flag != "") { print "  " flag " " $0; flag = "" }
-                else print "  " $0 }
+              { if (flag != "") { flag = flag " " $0 } else print "  " $0 }
         END   { if (flag != "") print "  " flag }
-    ''' "$(state_dir "$branch")/msb-args"
+    ' "$state/bwrap-args"
+    echo
+    echo "# host-side plan"
+    sed 's/^/  /' "$state/plan"
+    echo
+    echo "# environment (credentials are fetched at run time and are not here)"
+    sed 's/^/  /' "$state/env"
+}
+
+# What the sandbox must *not* be able to do. A mount list is a thing you can
+# get wrong silently, so it is tested rather than reviewed: one stray --bind
+# and this is what notices.
+cmd_selftest() {
+    local branch="$1"
+    known_branch "$branch"
+    info "running the self-test in $branch"
+    sandbox_run "$branch" bash -c '
+        fail=0
+        check() { # description, "should_fail" command...
+            local what="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+                echo "  LEAK  $what"
+                fail=1
+            else
+                echo "  ok    $what"
+            fi
+        }
+        allow() {
+            local what="$1"; shift
+            if "$@" >/dev/null 2>&1; then echo "  ok    $what"
+            else echo "  BROKE $what"; fail=1; fi
+        }
+        echo "denied:"
+        check "~/.ssh is not readable"            ls "$HOME/.ssh"
+        check "no Claude credentials"             test -f "$HOME/.claude/.credentials.json"
+        check "the host checkout is not visible"  test -e "'"$REPO_DIR"'/.env"
+        check "the host cache is not visible"     test -e "'"$CACHE_ROOT"'"
+        check "no route off the machine"          curl -sS --max-time 5 https://example.com
+        check "the proxy refuses an unlisted host" curl -sS --max-time 10 --proxy "${HTTPS_PROXY:-http://127.0.0.1:3128}" https://example.com
+        check "no DNS resolver"                   getent hosts github.com
+        echo "granted:"
+        allow "the clone is writable"             test -w /workspace
+        allow "a private PID namespace"           test "$(ps -o comm= -p 1)" != systemd
+        if [ -n "${HTTPS_PROXY:-}" ]; then
+            allow "an allowed host is reachable"  curl -sS --max-time 20 -o /dev/null https://static.crates.io/
+        fi
+        exit $fail
+    '
 }
 
 cmd_doctor() {
@@ -603,47 +566,57 @@ cmd_doctor() {
         else printf '  MISS  %s — %s\n' "$1" "$3"; ok=1; fi
     }
     echo "host:"
-    check "msb"            "command -v msb"            "install microsandbox: https://docs.microsandbox.dev"
-    check "KVM"            "test -r /dev/kvm -a -w /dev/kvm" "add yourself to the kvm group"
-    check "git"            "command -v git"            "install git"
-    check "jq"             "command -v jq"             "install jq"
-    check "docker"         "command -v docker"         "needed only to build the guest image"
+    check "bwrap"    "command -v bwrap"  "install bubblewrap"
+    check "socat"    "command -v socat"  "install socat"
+    # The lib symlinks are not optional in this probe: without them execvp
+    # cannot find the dynamic loader and reports ENOENT, which reads exactly
+    # like "user namespaces are disabled" and is not.
+    check "unprivileged user namespaces" \
+        "bwrap --unshare-user --unshare-net --tmpfs / --ro-bind /usr /usr \
+            --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib /lib64 \
+            --ro-bind /etc/ld.so.cache /etc/ld.so.cache /bin/true" \
+        "your kernel or distro has them disabled; the sandbox cannot be built without them"
+    check "git"      "command -v git"    "install git"
+    check "jq"       "command -v jq"     "install jq"
+    check "curl"     "command -v curl"   "install curl"
     # The prod broker rebuilds and scrubs a snapshot with the host's sqlite3
     # rather than linking a second copy of SQLite into itself.
-    check "sqlite3"        "command -v sqlite3"        "needed by the prod broker to scrub a snapshot"
+    check "sqlite3"  "command -v sqlite3" "needed by the prod broker to scrub a snapshot"
+    check "cargo"    "command -v cargo"  "the sandbox uses the host's toolchain, read-only"
+    check "claude"   "command -v claude" "the sandbox uses the host's Claude Code, read-only"
+    check "playwright browsers" \
+        "test -d '${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright'" \
+        "npx playwright install chromium — only the browser capability needs it"
+    echo "kernel:"
+    # bwrap could take the controlling terminal away with --new-session, at the
+    # cost of job control and Claude Code's TUI. It does not, because the
+    # syscall that would justify it is off by default since Linux 6.2.
+    if [ -r /proc/sys/dev/tty/legacy_tiocsti ]; then
+        if [ "$(cat /proc/sys/dev/tty/legacy_tiocsti)" = "0" ]; then
+            printf '  ok    TIOCSTI is disabled\n'
+        else
+            printf '  WARN  TIOCSTI is enabled — a sandbox could inject into your terminal;\n'
+            printf '        set dev.tty.legacy_tiocsti=0\n'
+            ok=1
+        fi
+    else
+        printf '  ok    no TIOCSTI on this kernel\n'
+    fi
     echo "artifacts:"
-    check "broker binary"  "test -x '$BROKER_BIN'"     "./devbox.sh build-broker"
-    check "prod broker"    "test -x '$PROD_BROKER_BIN'" "./devbox.sh build-broker"
-    check "guest image"    "msb image list | grep -q myapps-dev" "./devbox.sh build-image"
+    check "anthropic broker" "test -x '$BROKER_BIN'"      "./devbox.sh build-broker"
+    check "prod broker"      "test -x '$PROD_BROKER_BIN'" "./devbox.sh build-broker"
+    check "egress proxy"     "test -x '$PROXY_BIN'"       "./devbox.sh build-broker"
     echo "credentials (host-side, never in a sandbox):"
     check "claude login"   "test -f '$HOME/.claude/.credentials.json'" "run 'claude' on the host once"
-    check "github token"   "test -f '$CONFIG_ROOT/github-token' -o -f '$CONFIG_ROOT/github-app.json'" \
-                           "put a fine-grained PAT in $CONFIG_ROOT/github-token (chmod 600)"
+    check "github token"   "test -f '$(config_file github-token)' -o -f '$(config_file github-app.json)'" \
+                           "put a fine-grained PAT in $(config_file github-token) (chmod 600)"
+    if [ -f "$(config_file github-token)" ] && [ ! -f "$(config_file github-app.json)" ]; then
+        printf '  note  a PAT does not expire, and the github capability puts it in the\n'
+        printf '        sandbox. A GitHub App mints an hour-long token instead — see\n'
+        printf '        sandbox/brokers/github/mint-token.sh\n'
+    fi
     check "prod deploy env" "test -f '$REPO_DIR/$PROD_ENV_FILE' -o -f '$PROD_ENV_FILE'" \
                            "prod-readonly reads $PROD_ENV_FILE (see docs/deployment.md)"
-    local dir branch broker port_file port
-    if [ -d "$STATE_ROOT" ] && command -v curl >/dev/null; then
-        echo "brokers:"
-        for dir in "$STATE_ROOT"/*/; do
-            [ -d "$dir" ] || continue
-            branch="$(basename "$dir")"
-            [ -s "$dir/broker.token" ] || continue
-            # A port is claimed at render whether or not the capability that
-            # uses it was granted, so report only the brokers this sandbox
-            # actually asked for.
-            while read -r broker port_file; do
-                grep -qx "$broker" "$dir/brokers" 2>/dev/null || continue
-                port="$(cat "$dir/$port_file" 2>/dev/null || true)"
-                [ -n "$port" ] || continue
-                printf '  %-30s %s\n' "$branch $broker:$port" \
-                    "$(curl -s --max-time 5 -H "Authorization: Bearer $(cat "$dir/broker.token")" \
-                        "http://127.0.0.1:$port/_broker/health" || echo unreachable)"
-            done <<'BROKERS'
-anthropic broker.port
-prod prod.port
-BROKERS
-        done
-    fi
     return $ok
 }
 
@@ -652,21 +625,22 @@ usage() {
 Usage: ./devbox.sh <command>
 
   create <branch> [--with caps] [--base ref] [--profile name]
-                          clone, render the config, boot the sandbox
-  up <branch>             start the sandbox and its brokers
-  stop <branch>           stop both
+                          clone, render the config, run first-boot
   shell <branch>          a shell in the sandbox
   claude <branch> [args]  Claude Code in the sandbox
   exec <branch> -- cmd    run one command in the sandbox
   seed <branch> [user]    build, create a dev user, seed data
   grant|revoke <branch> <capability>
-  list                    sandboxes, state, disk, capabilities
+  list                    sandboxes, live commands, disk, capabilities
   capabilities            what each capability grants
+  selftest <branch>       prove the sandbox cannot reach what it must not
   remove <branch> [--force]
-  build-broker            build the host-side brokers (anthropic, prod)
-  build-image [--browser] build the guest image(s) and load them into msb
-  config <branch>         print the exact msb command line for a sandbox
+  build-broker            build the host-side brokers and the egress proxy
+  config <branch>         print the exact bwrap command line and host-side plan
   doctor                  check the host is ready
+
+A sandbox lives for as long as the command running in it. There is nothing to
+start and nothing to stop.
 USAGE
     exit 1
 }
@@ -675,8 +649,6 @@ USAGE
 command="$1"; shift
 case "$command" in
     create)       cmd_create "$@" ;;
-    up)           cmd_up "${1:?branch}" ;;
-    stop)         cmd_stop "${1:?branch}" ;;
     shell)        cmd_shell "${1:?branch}" ;;
     claude)       cmd_claude "$@" ;;
     exec)         b="${1:?branch}"; shift; [ "${1:-}" = "--" ] && shift; cmd_exec "$b" "$@" ;;
@@ -685,9 +657,9 @@ case "$command" in
     revoke)       cmd_revoke "${1:?branch}" "${2:?capability}" ;;
     list)         cmd_list ;;
     capabilities) cmd_capabilities ;;
+    selftest)     cmd_selftest "${1:?branch}" ;;
     remove)       cmd_remove "$@" ;;
     build-broker) cmd_build_broker ;;
-    build-image)  cmd_build_image "$@" ;;
     config)       cmd_config "${1:?branch}" ;;
     doctor)       cmd_doctor ;;
     *)            usage ;;

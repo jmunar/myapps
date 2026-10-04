@@ -3,7 +3,7 @@
 [workspace]
 
 [package]
-name = "msb-broker-prod"
+name = "devbox-broker-prod"
 version = "0.1.0"
 edition = "2024"
 description = "Host-side prod broker: read-only snapshots and logs from the Odroid, behind a verb-limited API"

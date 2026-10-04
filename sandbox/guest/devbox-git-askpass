@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#
+# git asks for credentials through this.
+#
+# The token is in the sandbox's environment, unlike every other credential
+# here: injecting it from outside would need TLS interception and the egress
+# proxy deliberately has none. What bounds it instead is its scope and its
+# lifetime — see capabilities/github.sh.
+case "$1" in
+    *[Uu]sername*) echo "x-access-token" ;;
+    *) echo "${GH_TOKEN:-}" ;;
+esac

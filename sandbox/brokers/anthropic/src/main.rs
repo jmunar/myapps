@@ -1,23 +1,23 @@
 //! The Anthropic credential broker.
 //!
-//! One process per sandbox, listening on one host loopback port. The guest
-//! reaches it at `host.microsandbox.internal` because its capability set asked
-//! for `allow@host:tcp:<port>`, and nothing on the LAN can reach it at all.
+//! One process per sandbox invocation, listening on a Unix socket in that
+//! sandbox's runtime directory. `devbox.sh` bind-mounts that one directory into
+//! the sandbox and a `socat` inside relays `127.0.0.1:8080` to the socket, so
+//! `ANTHROPIC_BASE_URL` can stay an ordinary HTTP URL.
 //!
-//! Loopback is not authorisation, though: every other process on the host, and
-//! every other sandbox granted the `host` group, can open the same port. So the
-//! sandbox presents a bearer token, generated on the host at `create` and
-//! handed to it as `ANTHROPIC_AUTH_TOKEN`. Losing that token costs model tokens
-//! on the subscription; it does not expose the credential, which the broker
-//! substitutes on the way out and never returns.
+//! There is no bearer token, because the socket does what a token used to:
+//! *which* sandbox can reach this broker is decided by the mount table, and a
+//! sandbox that was not given the directory has no way to name the socket. The
+//! directory is mode 0700 and the socket 0600, so the boundary is the same one
+//! the rest of the host already trusts.
 //!
-//! What the guest sends as `Authorization` is checked, then discarded before
-//! the request leaves the host. It never learns the real credential, only that
-//! requests work.
+//! Whatever the guest sends as `Authorization` is discarded before the request
+//! leaves the host. It never learns the real credential, only that requests
+//! work.
 
 mod credentials;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{Request, State};
@@ -26,17 +26,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use clap::Parser;
 use credentials::{RefreshMode, Source};
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-
-/// Claude Code's connectivity probe arrives without the bearer token — it is
-/// sent before the client applies `ANTHROPIC_AUTH_TOKEN` — so requiring one
-/// here would 401 at the start of every session. It is forwarded anyway: it
-/// carries no request body, and all an unauthenticated caller learns from it is
-/// whether the host's own Claude login is still valid.
-const UNAUTHENTICATED: &[&str] = &["/api/hello"];
 
 /// Headers that belong to one hop and must not be forwarded, plus every way a
 /// caller could try to supply its own credential.
@@ -58,20 +50,15 @@ const STRIPPED: &[&str] = &[
 
 #[derive(Parser)]
 #[command(
-    name = "msb-broker-anthropic",
+    name = "devbox-broker-anthropic",
     about = "Host-side Anthropic credential broker"
 )]
 struct Args {
-    /// Address to listen on. One port per sandbox, and loopback only: msb's
-    /// `host` network group reaches a host loopback port from inside a guest,
-    /// so there is nothing to gain from binding any wider.
-    #[arg(long, default_value = "127.0.0.1:8787")]
-    listen: SocketAddr,
-
-    /// File holding the bearer token the sandbox must present. Required: a TCP
-    /// port has no equivalent of a socket path's implicit authorisation.
+    /// Unix socket to listen on. Not a TCP port: a port is open to every
+    /// process on the host and needs a token to tell sandboxes apart, while a
+    /// socket in a directory only one sandbox has mounted needs nothing.
     #[arg(long)]
-    token_file: PathBuf,
+    listen_unix: PathBuf,
 
     /// Sandbox name, recorded in the audit log.
     #[arg(long, default_value = "unknown")]
@@ -127,7 +114,6 @@ struct Args {
 
 struct AppState {
     source: Source,
-    token: String,
     client: reqwest::Client,
     upstream: String,
     allow_paths: Vec<String>,
@@ -149,45 +135,6 @@ fn expand_tilde(path: &str) -> PathBuf {
     }
 }
 
-/// Read the sandbox's bearer token. Kept in a file rather than an argument
-/// because `/proc/<pid>/cmdline` is world-readable and this port is on the
-/// host every other process shares.
-fn read_token(path: &Path) -> Result<String> {
-    let token = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?
-        .trim()
-        .to_string();
-    if token.is_empty() {
-        bail!(
-            "{} is empty — the broker will not run without a token",
-            path.display()
-        );
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(path)?.permissions().mode();
-        if mode & 0o077 != 0 {
-            eprintln!(
-                "broker: warning: {} is readable beyond its owner (mode {:o})",
-                path.display(),
-                mode & 0o777
-            );
-        }
-    }
-    Ok(token)
-}
-
-/// Length is not secret here — the token is a fixed-width hex string — but the
-/// comparison still runs to the end so a wrong guess leaks nothing by timing.
-fn secret_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
-}
-
 fn error(status: StatusCode, message: &str) -> Response {
     // Shaped like an Anthropic error so the client surfaces the text rather
     // than "unexpected response".
@@ -199,21 +146,6 @@ fn error(status: StatusCode, message: &str) -> Response {
 }
 
 impl AppState {
-    /// Claude Code sends `ANTHROPIC_AUTH_TOKEN` as `Authorization: Bearer`;
-    /// `x-api-key` is accepted so a plain `curl` health check has a second way
-    /// in. Both are in STRIPPED, so neither reaches the upstream.
-    fn authorized(&self, headers: &HeaderMap, path: &str) -> bool {
-        if UNAUTHENTICATED.contains(&path) {
-            return true;
-        }
-        let presented = headers
-            .get("authorization")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.strip_prefix("Bearer "))
-            .or_else(|| headers.get("x-api-key").and_then(|v| v.to_str().ok()));
-        presented.is_some_and(|token| secret_eq(token, &self.token))
-    }
-
     fn over_limit(&self) -> bool {
         let Some(max) = self.max_per_hour else {
             return false;
@@ -244,23 +176,7 @@ impl AppState {
     }
 }
 
-fn unauthorized(state: &AppState, path: &str) -> Response {
-    // Audited: on a host port, a request without the token is someone else's
-    // process or another sandbox, and that is worth a line.
-    state.audit(serde_json::json!({
-        "ts": chrono::Utc::now().to_rfc3339(),
-        "sandbox": state.sandbox, "path": path, "outcome": "unauthorized",
-    }));
-    error(
-        StatusCode::UNAUTHORIZED,
-        "this broker belongs to another sandbox (bad or missing bearer token)",
-    )
-}
-
-async fn health(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if !state.authorized(&headers, "/_broker/health") {
-        return unauthorized(&state, "/_broker/health");
-    }
+async fn health(State(state): State<Arc<AppState>>) -> Response {
     match state.source.current().await {
         Ok(credential) => axum::Json(serde_json::json!({
             "status": "ok",
@@ -277,10 +193,6 @@ async fn proxy(State(state): State<Arc<AppState>>, request: Request) -> Response
     let started = Instant::now();
     let (parts, body) = request.into_parts();
     let path = parts.uri.path().to_string();
-
-    if !state.authorized(&parts.headers, &path) {
-        return unauthorized(&state, &path);
-    }
 
     let query = parts
         .uri
@@ -411,6 +323,24 @@ async fn proxy(State(state): State<Arc<AppState>>, request: Request) -> Response
         })
 }
 
+/// Bind the sandbox's socket, clearing a path a crash left behind — otherwise
+/// every later start fails with EADDRINUSE on a socket nothing is listening on.
+fn bind_socket(path: &Path) -> Result<tokio::net::UnixListener> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    let _ = std::fs::remove_file(path);
+    let listener = tokio::net::UnixListener::bind(path)
+        .with_context(|| format!("binding {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(listener)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -433,22 +363,10 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Refused rather than flagged: the only reason to bind wider than loopback
-    // is to hand the subscription to the LAN, and msb does not need it.
-    if !args.listen.ip().is_loopback() {
-        bail!(
-            "refusing to listen on {} — the broker binds loopback only; the guest \
-             reaches it through msb's `host` network group",
-            args.listen
-        );
-    }
-    let token = read_token(&args.token_file)?;
-
     let state = Arc::new(AppState {
         source,
-        token,
         client: reqwest::Client::builder()
-            .user_agent(concat!("msb-broker-anthropic/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("devbox-broker-anthropic/", env!("CARGO_PKG_VERSION")))
             .build()
             .context("building the upstream client")?,
         upstream: args.upstream.trim_end_matches('/').to_string(),
@@ -461,21 +379,21 @@ async fn main() -> Result<()> {
         recent: Mutex::new(Vec::new()),
     });
 
-    let listener = tokio::net::TcpListener::bind(args.listen)
-        .await
-        .with_context(|| format!("binding {}", args.listen))?;
+    let listener = bind_socket(&args.listen_unix)?;
 
     let app = Router::new()
         .route("/_broker/health", get(health))
         .fallback(proxy)
         .with_state(state);
 
-    eprintln!("broker: listening on {}", args.listen);
+    eprintln!("broker: listening on {}", args.listen_unix.display());
 
-    axum::serve(listener, app)
+    let result = axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await
-        .context("serving")
+        .context("serving");
+    let _ = std::fs::remove_file(&args.listen_unix);
+    result
 }

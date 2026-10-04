@@ -161,9 +161,12 @@ release job if the version is not higher than the latest tag.
 
 ## Workflows
 
-- `./devbox.sh create <branch>` — develop in a microVM with no credentials in
-  it: a clone, the toolchain and Claude Code inside, every secret brokered from
-  the host. `sandbox/README.md`; `./devbox.sh doctor` first.
+- `./devbox.sh create <branch>` — develop in a bubblewrap sandbox with no
+  credentials in it: a clone plus the host's own toolchain, read-only, in
+  namespaces with no network, every secret brokered from the host. It lives
+  only as long as the command running in it — there is nothing to start or
+  stop. `sandbox/README.md`; `./devbox.sh doctor` first, and
+  `./devbox.sh selftest <branch>` after touching what it mounts.
   `./devbox.sh grant <branch> prod-readonly` then gives the sandbox
   `devbox-prod snapshot|logs|status` — the real database, scrubbed of every
   credential, and prod's journal, through a host broker that holds the SSH key
