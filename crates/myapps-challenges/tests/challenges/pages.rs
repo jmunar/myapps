@@ -121,6 +121,111 @@ async fn hiding_is_per_user() {
     assert!(!body.contains("Hidden datasets"));
 }
 
+#[tokio::test]
+async fn hiding_an_unknown_dataset_changes_nothing() {
+    let app = app().await;
+    login(&app).await;
+
+    let fragment = app
+        .server
+        .post("/challenges/datasets/u-math/hidden")
+        .add_header("hx-request", "true")
+        .form(&serde_json::json!({ "hidden": "1" }))
+        .await
+        .text();
+    assert!(fragment.starts_with(r#"<div id="challenges-picker">"#));
+    assert!(fragment.contains("--dataset ugphysics"));
+    assert!(fragment.contains("--dataset hendrycks-math"));
+    assert!(!fragment.contains("Hidden datasets"));
+
+    let response = app
+        .server
+        .post("/challenges/datasets/u-math/hidden")
+        .form(&serde_json::json!({ "hidden": "1" }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+    assert_eq!(response.header("location"), "/challenges");
+
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM challenges_hidden_datasets")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+}
+
+#[tokio::test]
+async fn hiding_requires_authentication() {
+    let app = app().await;
+    let response = app
+        .server
+        .post("/challenges/datasets/ugphysics/hidden")
+        .form(&serde_json::json!({ "hidden": "1" }))
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+    assert_ne!(response.header("location"), "/challenges");
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM challenges_hidden_datasets")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+}
+
+#[tokio::test]
+async fn a_hidden_dataset_can_still_be_practised() {
+    let app = app().await;
+    login(&app).await;
+    let id = insert_problem(&app.pool, "ugphysics", "Optics", 1, "still here").await;
+    app.server
+        .post("/challenges/datasets/ugphysics/hidden")
+        .form(&serde_json::json!({ "hidden": "1" }))
+        .expect_failure()
+        .await;
+
+    let body = app
+        .server
+        .get("/challenges/practice/ugphysics")
+        .await
+        .text();
+    assert!(body.contains("still here"));
+    assert!(body.contains(&format!(r#"name="problem" value="{id}""#)));
+}
+
+#[tokio::test]
+async fn picker_labels_render_in_spanish() {
+    let app = app().await;
+    login(&app).await;
+    insert_problem(&app.pool, "ugphysics", "Optics", 1, "p").await;
+    app.server
+        .post("/settings/language")
+        .form(&serde_json::json!({ "language": "es", "redirect": "/challenges" }))
+        .expect_failure()
+        .await;
+
+    app.server.get("/challenges/practice/ugphysics").await;
+    let fragment = app
+        .server
+        .post("/challenges/datasets/hendrycks-math/hidden")
+        .add_header("hx-request", "true")
+        .form(&serde_json::json!({ "hidden": "1" }))
+        .await
+        .text();
+    assert!(fragment.contains(">Continuar<"));
+    assert!(fragment.contains(">Ocultar<"));
+    assert!(fragment.contains("Conjuntos ocultos"));
+    assert!(fragment.contains(">Mostrar<"));
+    assert!(!fragment.contains("Hidden datasets"));
+
+    app.server
+        .post("/challenges/datasets/ugphysics/hidden")
+        .form(&serde_json::json!({ "hidden": "1" }))
+        .expect_failure()
+        .await;
+    let body = app.server.get("/challenges").await.text();
+    assert!(body.contains("Todos los conjuntos están ocultos"));
+}
+
 // ── Practice ────────────────────────────────────────────────
 
 #[tokio::test]
@@ -288,6 +393,69 @@ async fn a_plain_form_post_redirects_back_to_the_practice_page() {
         "/challenges/practice/ugphysics"
     );
     assert_ne!(current(&app.pool, user_id, "ugphysics").await, Some(shown));
+}
+
+#[tokio::test]
+async fn a_plain_skip_redirects_back_to_the_practice_page() {
+    let app = app().await;
+    let user_id = login(&app).await;
+    insert_problem(&app.pool, "ugphysics", "Optics", 1, "p1").await;
+    insert_problem(&app.pool, "ugphysics", "Optics", 1, "p2").await;
+    app.server.get("/challenges/practice/ugphysics").await;
+    let shown = current(&app.pool, user_id, "ugphysics").await.unwrap();
+
+    let response = app
+        .server
+        .post("/challenges/practice/ugphysics/skip")
+        .expect_failure()
+        .await;
+    assert_eq!(response.status_code(), 303);
+    assert_eq!(
+        response.header("location"),
+        "/challenges/practice/ugphysics"
+    );
+    assert_ne!(current(&app.pool, user_id, "ugphysics").await, Some(shown));
+}
+
+#[tokio::test]
+async fn skipping_an_empty_dataset_tells_htmx_to_navigate() {
+    let app = app().await;
+    login(&app).await;
+    let response = app
+        .server
+        .post("/challenges/practice/ugphysics/skip")
+        .add_header("hx-request", "true")
+        .await;
+    assert_eq!(
+        response.header("hx-redirect"),
+        "/challenges/practice/ugphysics"
+    );
+    assert!(response.text().is_empty());
+}
+
+#[tokio::test]
+async fn a_wrong_answer_that_drops_a_level_says_so_above_the_next_problem() {
+    let app = app().await;
+    let user_id = login(&app).await;
+    insert_problem(&app.pool, "ugphysics", "Optics", 1, "p1").await;
+    insert_problem(&app.pool, "ugphysics", "Optics", 2, "p2").await;
+    sqlx::query(
+        "INSERT INTO challenges_progress (user_id, dataset, subject, level, streak, fast_start)
+         VALUES (?, 'ugphysics', 'Optics', 2, 0, 0)",
+    )
+    .bind(user_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    app.server.get("/challenges/practice/ugphysics").await;
+    let shown = current(&app.pool, user_id, "ugphysics").await.unwrap();
+
+    let fragment = mark(&app, "ugphysics", shown, false).await.text();
+    assert!(fragment.contains("Level down"));
+    assert!(fragment.contains("challenges-level-change challenges-down"));
+    assert!(fragment.contains("Optics: Level 2 → 1 of 3"));
+    assert!(!fragment.contains("Level up"));
+    assert!(fragment.find("Level down") < fragment.find("challenges-problem"));
 }
 
 #[tokio::test]

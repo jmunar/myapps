@@ -945,3 +945,73 @@ async fn edit_mode_renders_what_the_order_script_looks_for() {
     assert!(edit.contains("data-launcher-handle"));
     assert!(edit.contains(r#"<button type="button" class="launcher-handle""#));
 }
+
+#[tokio::test]
+async fn done_fragment_keeps_the_saved_order() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+    app.server
+        .post("/launcher/order")
+        .form(&serde_json::json!({ "order": "notes,mindflow" }))
+        .await;
+
+    let fragment = app.server.get("/launcher/grid").await.text();
+    assert!(!fragment.contains("<html"));
+    let order = card_order(&fragment);
+    assert_eq!(position(&order, "/notes"), 0);
+    assert_eq!(position(&order, "/mindflow"), 1);
+    assert!(position(&order, "/leanfin") > 1);
+}
+
+#[tokio::test]
+async fn a_hidden_app_keeps_its_place_in_edit_mode_only() {
+    let app = harness::spawn_app().await;
+    app.login_as("test", "pass").await;
+    app.server
+        .post("/launcher/order")
+        .form(&serde_json::json!({ "order": "notes,mindflow,leanfin" }))
+        .await;
+    app.server
+        .post("/launcher/visibility")
+        .form(&serde_json::json!({ "app_key": "mindflow", "visible": "0" }))
+        .await;
+
+    let body = app.server.get("/").await.text();
+    let order = card_order(&body);
+    assert!(!order.iter().any(|h| h.starts_with("/mindflow")));
+    assert_eq!(position(&order, "/notes"), 0);
+    assert_eq!(position(&order, "/leanfin"), 1);
+
+    // Edit mode still lists it, dimmed, between its neighbours, so dragging
+    // the others around does not lose its place.
+    let edit = app.server.get("/launcher/edit").await.text();
+    let notes = edit.find(r#"data-launcher-key="notes""#).unwrap();
+    let mindflow = edit
+        .find(r#"class="launcher-card launcher-card-edit hidden" id="card-mindflow" data-launcher-key="mindflow""#)
+        .unwrap();
+    let leanfin = edit.find(r#"data-launcher-key="leanfin""#).unwrap();
+    assert!(notes < mindflow && mindflow < leanfin);
+}
+
+/// The class `launcher-order.js` puts on the card being dragged is styled in
+/// core.css, and the handle opts out of touch scrolling there; both halves are
+/// strings nothing else ties together.
+#[tokio::test]
+async fn core_css_styles_what_the_order_script_writes() {
+    let script = include_str!("../static/launcher-order.js");
+    assert!(script.contains("classList.add('launcher-dragging')"));
+    assert!(script.contains("classList.remove('launcher-dragging')"));
+
+    let app = harness::spawn_app().await;
+    let css = app.server.get("/static/core.css").await.text();
+    assert!(css.contains(".launcher-card-edit.launcher-dragging {"));
+    let handle = css
+        .split(".launcher-handle {")
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .expect("core.css no longer styles .launcher-handle");
+    assert!(
+        handle.contains("touch-action: none"),
+        "a vertical drag on the handle would scroll the page instead"
+    );
+}
