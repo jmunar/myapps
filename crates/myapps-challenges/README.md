@@ -48,13 +48,21 @@ render. Re-running an import updates problems in place and keeps their ids.
   levels by distance from yours; once a subject is exhausted, the problem seen
   longest ago comes back.
 
-*Skip* draws another problem without recording anything.
+Once drawn, a problem stays yours until you mark it or skip it: each dataset
+has one practice URL that always shows its problem in progress, across reloads
+and server restarts. Marking and *Skip* swap the next problem into the page
+rather than navigating, so the browser's back and forward buttons leave the
+practice page instead of stepping through problems. *Skip* draws another
+problem without recording anything. A subject with nothing left but the problem
+you just finished hands over to another subject rather than repeating it.
 
 ## Features
 
-- Dataset picker with problem counts and your overall accuracy
-- Problem page with the answer, the worked solution and the right/wrong
+- Dataset picker with problem counts and your overall accuracy; *Continue*
+  when a problem is in progress; datasets you hide move to a list below it
+- Practice page with the answer, the worked solution and the right/wrong
   buttons behind *Show solution*; LaTeX typeset by KaTeX
-- A level-change notice when an answer moves you up or down
+- A level-change notice above the next problem when an answer moves you up or down
 - Stats: accuracy and current level per subject, and accuracy per level
-- Command bar: `next_problem` (optionally per dataset), `stats`
+- Command bar: `next_problem` (opens the problem in progress, optionally per
+  dataset), `stats`

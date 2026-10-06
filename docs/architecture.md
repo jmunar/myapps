@@ -127,9 +127,11 @@ myapps/
 After login, the top-level router serves:
 
 - `/` — App launcher (grid of visible apps + external app shortcuts, configurable per user)
-- `/launcher/edit` — Edit mode: toggle app visibility (HTMX partial)
+- `/launcher/edit` — Edit mode: drag to reorder, toggle app visibility (HTMX partial)
 - `/launcher/grid` — Normal mode grid fragment (HTMX partial)
 - `POST /launcher/visibility` — Set app visibility preference (HTMX partial)
+- `POST /launcher/order` — Save the card order (`order=key,key,…`), posted by
+  `static/launcher-order.js` after a drag; 204
 - `POST /settings/language` — Set user language preference (redirects back)
 - `/manifest.json` — PWA manifest (dynamic, base_path-aware)
 - `/sw.js` — Service worker (dynamic, base_path injected, push handlers)
@@ -263,14 +265,23 @@ After login, the top-level router serves:
   the background on start, for any dataset not yet imported (or by hand with
   `myapps import --app challenges --dataset <key>`).
   Maths is typeset client-side by KaTeX, vendored under `static/katex/`.
-  - `/challenges/` — Dataset picker (UGPhysics, Hendrycks MATH)
-  - `POST /challenges/draw` — Draw a problem: a uniformly random subject,
-    then a level near yours in it, unseen problems first; redirects to it
-  - `/challenges/problems/{id}` — Problem, with the answer, worked solution
-    and the right/wrong buttons behind a `<details>`
-  - `POST /challenges/problems/{id}/attempt` — Record a self-marked attempt
-    and move the per-subject level (2-up/1-down); shows a level change, or
-    draws the next problem
+  - `/challenges/` — Dataset picker (UGPhysics, Hendrycks MATH), minus the
+    datasets the user hid, which are listed below it with a Show button
+  - `POST /challenges/datasets/{key}/hidden` — Hide or show a dataset
+    (`challenges_hidden_datasets`); returns the picker fragment to htmx
+  - `/challenges/practice/{key}` — The problem in progress in that dataset
+    (`challenges_current`), drawing one if there is none: a uniformly random
+    subject, then a level near yours in it, unseen problems first. One URL per
+    dataset, `Cache-Control: no-store`, so reloads, restarts and the back
+    button all come back to the same problem
+  - `POST /challenges/practice/{key}/attempt` — Record a self-marked attempt
+    on the current problem, move the per-subject level (2-up/1-down) and draw
+    the next; a stale problem id records nothing. htmx swaps the next problem
+    (with any level-change notice) into the page, so no history entry is made
+  - `POST /challenges/practice/{key}/skip` — Replace the current problem
+    without recording anything; swapped in the same way
+  - `/challenges/problems/{id}` — Old per-problem links: redirect to the
+    problem's practice page
   - `/challenges/stats` — Accuracy and current level per subject and per level
 
 ## Database Schema
@@ -315,6 +326,17 @@ App-specific table schemas live alongside their migrations in each crate's
 | visible | INTEGER | 1 = shown, 0 = hidden, default 1               |
 
 Missing rows default to visible — existing users see no change.
+
+### user_app_order
+
+| Column   | Type    | Notes                                    |
+|----------|---------|------------------------------------------|
+| user_id  | INTEGER | FK → users, part of PK                   |
+| app_key  | TEXT    | Internal or external app key, part of PK |
+| position | INTEGER | 0 = first card                           |
+
+Replaced wholesale on each save. Apps with no row follow the saved ones in
+registry order, internal before external.
 
 ### user_settings
 

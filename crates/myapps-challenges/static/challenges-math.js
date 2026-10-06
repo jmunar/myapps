@@ -4,7 +4,8 @@
 // before DOMContentLoaded, so waiting for that event is enough. The text was
 // HTML-escaped on the server; auto-render reads text nodes, so it sees the
 // original LaTeX. A formula KaTeX cannot parse stays as red source instead of
-// stopping the rest of the page.
+// stopping the rest of the page. Marking or skipping swaps the next problem in
+// with htmx, so whatever a swap brings in is typeset too.
 
 (function() {
     // Passing `delimiters` replaces auto-render's defaults, so everything the
@@ -29,9 +30,9 @@
         { left: '$', right: '$', display: false }
     );
 
-    function typeset() {
+    function typeset(root) {
         if (typeof renderMathInElement !== 'function') return;
-        var els = document.querySelectorAll('[data-challenges-math]');
+        var els = (root || document).querySelectorAll('[data-challenges-math]');
         for (var i = 0; i < els.length; i++) {
             renderMathInElement(els[i], {
                 delimiters: DELIMITERS,
@@ -40,8 +41,11 @@
         }
     }
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', typeset);
+        document.addEventListener('DOMContentLoaded', function() { typeset(); });
     } else {
         typeset();
     }
+    document.addEventListener('htmx:afterSwap', function(e) {
+        typeset(e.detail.target);
+    });
 })();
