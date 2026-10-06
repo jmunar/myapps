@@ -52,7 +52,10 @@ bare elements and an element selector there outranks a class here:
 `form { display: flex }` silently beats the UA's `[hidden] { display: none }`, so
 a `hidden` form stays open. Check what core.css already says about an element
 before styling it, and use `:has()` or a second class when you need to outrank
-it. App class names are not reserved either: two apps can define the same
+it. Override the `:hover` state too: `button[type="submit"]:hover` outranks
+two classes, so a restyled submit button flashes accent green under a finger
+(the tap leaves it hovered) unless a three-class `:hover` rule wins it back.
+App class names are not reserved either: two apps can define the same
 class and the later one in the concatenation order (`all_app_instances`) wins
 silently, in whichever direction hurts. There are no collisions left today, and
 this should stay empty (per file first, or it just finds each rule twice):

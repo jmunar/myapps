@@ -6,6 +6,13 @@
     gap: 1rem;
 }
 
+.challenges-dataset-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
 .challenges-dataset h2 {
     margin-bottom: 0.25rem;
 }
@@ -21,8 +28,35 @@
 }
 
 /* core.css makes every form a column; these are one button wide. */
-.challenges-draw {
+.challenges-visibility,
+.challenges-skip {
     align-items: flex-start;
+}
+
+.challenges-hidden-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin: 2rem 0 0.5rem;
+}
+
+.challenges-hidden {
+    list-style: none;
+    padding: 0;
+}
+
+.challenges-hidden li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+}
+
+.challenges-hidden li + li {
+    border-top: 1px solid var(--border-light);
 }
 
 /* Problem and solution text: third-party LaTeX in prose, typeset by KaTeX.
@@ -89,10 +123,23 @@
     flex: 1 1 10rem;
 }
 
-.challenges-draw .btn-secondary {
+.challenges-skip .btn-secondary,
+.challenges-visibility .btn-secondary {
     background: var(--bg-input);
     color: var(--text);
     border: 1px solid var(--border);
+}
+
+/* Three classes: core.css's `button[type="submit"]:hover` outranks two. */
+.challenges-skip .btn-secondary:hover,
+.challenges-visibility .btn-secondary:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.challenges-visibility .btn-secondary {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
 }
 
 .challenges-footer {
@@ -105,15 +152,11 @@
 }
 
 .challenges-level-change {
-    max-width: 30rem;
+    margin-bottom: 1rem;
 }
 
 .challenges-level-change h2 {
     margin-bottom: 0.25rem;
-}
-
-.challenges-level-change p {
-    margin-bottom: 1rem;
 }
 
 .challenges-up h2 {

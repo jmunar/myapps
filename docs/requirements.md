@@ -22,6 +22,9 @@ visibility into spending patterns.
   their launcher via an inline edit mode (gear icon). Hidden apps are stored
   per-user; defaults to all visible. Edit mode shows all apps with hidden
   ones dimmed/dashed.
+- **App order** — in the same edit mode each card has a drag handle (touch,
+  mouse, or arrow keys on the focused handle); the order is saved per user as
+  soon as a card is dropped.
 - **Deployable app subset** — the `DEPLOY_APPS` environment variable
   (comma-separated app keys) limits which apps are mounted, shown in the
   launcher, and have background workers started. When unset, all apps are

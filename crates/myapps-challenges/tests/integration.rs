@@ -49,21 +49,28 @@ pub async fn insert_problem(
     .unwrap()
 }
 
-/// The problem id a 303 to `/challenges/problems/{id}` points at.
-pub fn problem_id(response: &axum_test::TestResponse) -> i64 {
-    let location = response.header("location");
-    let location = location.to_str().unwrap();
-    location
-        .strip_prefix("/challenges/problems/")
-        .unwrap_or_else(|| panic!("unexpected redirect: {location}"))
-        .parse()
-        .unwrap()
+/// The problem in progress in `dataset`, straight from the table.
+pub async fn current(pool: &SqlitePool, user_id: i64, dataset: &str) -> Option<i64> {
+    sqlx::query_scalar(
+        "SELECT problem_id FROM challenges_current WHERE user_id = ? AND dataset = ?",
+    )
+    .bind(user_id)
+    .bind(dataset)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
 }
 
-pub async fn draw(app: &TestApp, dataset: &str) -> axum_test::TestResponse {
+/// Mark `problem` in `dataset` the way the htmx form does.
+pub async fn mark(
+    app: &TestApp,
+    dataset: &str,
+    problem: i64,
+    correct: bool,
+) -> axum_test::TestResponse {
     app.server
-        .post("/challenges/draw")
-        .form(&serde_json::json!({ "dataset": dataset }))
-        .expect_failure()
+        .post(&format!("/challenges/practice/{dataset}/attempt"))
+        .add_header("hx-request", "true")
+        .form(&serde_json::json!({ "problem": problem, "correct": u8::from(correct) }))
         .await
 }
