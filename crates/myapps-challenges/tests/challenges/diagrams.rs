@@ -1,4 +1,4 @@
-use crate::{app, insert_problem, login};
+use crate::{app, current, insert_problem, login, mark};
 use myapps_challenges::diagram;
 
 const SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L1 1"/></svg>"#;
@@ -103,4 +103,85 @@ async fn diagrams_require_authentication() {
         .expect_failure()
         .await;
     assert_eq!(response.status_code(), 303);
+}
+
+#[tokio::test]
+async fn text_around_a_diagram_is_still_escaped() {
+    let app = app().await;
+    login(&app).await;
+    let hash = store(&app.pool, "dot((0,0));").await;
+    insert_problem(
+        &app.pool,
+        "hendrycks-math",
+        "Geometry",
+        1,
+        "<b>Before</b> [asy]dot((0,0));[/asy] <img src=x onerror=alert(1)> [asy]open",
+    )
+    .await;
+
+    let body = app
+        .server
+        .get("/challenges/practice/hendrycks-math")
+        .await
+        .text();
+    assert!(body.contains(&format!(
+        r#"&lt;b&gt;Before&lt;/b&gt; <img class="challenges-diagram" src="/challenges/diagrams/{hash}" alt="Diagram"> &lt;img src=x onerror=alert(1)&gt; [asy]open"#
+    )));
+    assert!(!body.contains("<b>Before</b>"));
+    assert!(!body.contains("<img src=x"));
+}
+
+#[tokio::test]
+async fn the_next_problem_swapped_in_after_marking_shows_spanish_diagrams() {
+    let app = app().await;
+    let user_id = login(&app).await;
+    let hash = store(&app.pool, "draw(unitsquare);").await;
+    let first = insert_problem(
+        &app.pool,
+        "hendrycks-math",
+        "Geometry",
+        1,
+        "[asy]draw(unitsquare);[/asy]",
+    )
+    .await;
+    let second = insert_problem(
+        &app.pool,
+        "hendrycks-math",
+        "Geometry",
+        1,
+        "[asy]draw(unitsquare);[/asy]",
+    )
+    .await;
+    for id in [first, second] {
+        sqlx::query("UPDATE challenges_problems SET solution = ? WHERE id = ?")
+            .bind("[asy]label(\"$x$\");[/asy]")
+            .bind(id)
+            .execute(&app.pool)
+            .await
+            .unwrap();
+    }
+    app.server
+        .post("/settings/language")
+        .form(&serde_json::json!({ "language": "es", "redirect": "/challenges" }))
+        .expect_failure()
+        .await;
+
+    app.server.get("/challenges/practice/hendrycks-math").await;
+    let shown = current(&app.pool, user_id, "hendrycks-math").await.unwrap();
+    let other = if shown == first { second } else { first };
+
+    let fragment = mark(&app, "hendrycks-math", shown, false).await.text();
+    assert!(fragment.contains(&format!(r#"name="problem" value="{other}""#)));
+    assert!(!fragment.contains("<html"));
+    assert!(fragment.contains(&format!(
+        r#"<img class="challenges-diagram" src="/challenges/diagrams/{hash}" alt="Diagrama">"#
+    )));
+    assert!(
+        fragment.contains(
+            r#"<span class="challenges-diagram-missing">(diagrama no disponible)</span>"#
+        )
+    );
+    assert!(!fragment.contains("[asy]"));
+    assert!(!fragment.contains("alt=\"Diagram\""));
+    assert!(!fragment.contains("(diagram not available)"));
 }

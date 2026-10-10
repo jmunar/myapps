@@ -267,8 +267,6 @@ async fn set_hidden(
 
 // ── Practice ────────────────────────────────────────────────
 
-/// Escape third-party text and mark it for KaTeX. `white-space: pre-wrap` on
-/// the class keeps the dataset's line breaks.
 /// `text` typeset like `math`, with each `[asy]` block swapped for its
 /// rendered diagram, or for a placeholder where there is none. The Asymptote
 /// source never reaches the page: KaTeX would read its `$` labels as maths.
@@ -297,6 +295,8 @@ fn text_with_diagrams(
     format!(r#"<div class="challenges-text" data-challenges-math>{body}</div>"#)
 }
 
+/// Escape third-party text and mark it for KaTeX. `white-space: pre-wrap` on
+/// the class keeps the dataset's line breaks.
 fn math(text: &str) -> String {
     format!(
         r#"<div class="challenges-text" data-challenges-math>{}</div>"#,
