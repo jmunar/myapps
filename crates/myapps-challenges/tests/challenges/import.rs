@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{app, current, login};
-use myapps_challenges::bundle::{self, Problem};
+use myapps_challenges::bundle::{self, Diagram, Problem};
 use myapps_challenges::dataset::Dataset;
+use myapps_challenges::diagram;
 use myapps_challenges::ops;
 use myapps_challenges::services::import;
 use rand::SeedableRng;
@@ -58,6 +59,22 @@ async fn write(path: &Path, dataset: Dataset, problems: &[Problem]) {
     writer.insert(problems).await.unwrap();
     writer.finish().await.unwrap();
 }
+
+async fn write_with_diagrams(
+    path: &Path,
+    dataset: Dataset,
+    problems: &[Problem],
+    diagrams: &[Diagram],
+) {
+    let writer = bundle::Writer::create(path, dataset, "https://example.org/ds", "MIT", "test")
+        .await
+        .unwrap();
+    writer.insert(problems).await.unwrap();
+    writer.insert_diagrams(diagrams).await.unwrap();
+    writer.finish().await.unwrap();
+}
+
+const SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L1 1"/></svg>"#;
 
 async fn load(pool: &SqlitePool, path: &Path) -> anyhow::Result<()> {
     import::run(pool, path.to_str().unwrap()).await
@@ -316,4 +333,122 @@ async fn a_real_load_retires_the_seed_samples() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn diagrams_load_with_the_problems_that_use_them() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let source = "draw((0,0)--(1,1));";
+    let hash = diagram::hash(source);
+    let path = scratch.path("math.sqlite");
+    write_with_diagrams(
+        &path,
+        Dataset::HendrycksMath,
+        &[problem(
+            "a",
+            "Geometry",
+            1,
+            &format!("[asy]{source}[/asy] Find the area."),
+        )],
+        &[Diagram {
+            hash: hash.clone(),
+            svg: SVG.into(),
+        }],
+    )
+    .await;
+    load(&app.pool, &path).await.unwrap();
+
+    let svg = ops::diagram_svg(&app.pool, &hash).await.unwrap();
+    assert_eq!(svg.as_deref(), Some(SVG));
+}
+
+#[tokio::test]
+async fn a_problem_without_its_diagram_or_an_active_svg_is_refused() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let source = "draw((0,0)--(1,1));";
+    let text = format!("[asy]{source}[/asy] Find the area.");
+
+    let missing = scratch.path("missing.sqlite");
+    write_with_diagrams(
+        &missing,
+        Dataset::HendrycksMath,
+        &[problem("a", "Geometry", 1, &text)],
+        &[],
+    )
+    .await;
+    let err = load(&app.pool, &missing).await.unwrap_err();
+    assert!(
+        format!("{err:#}").contains("has a diagram the bundle does not"),
+        "{err:#}"
+    );
+
+    let active = scratch.path("active.sqlite");
+    write_with_diagrams(
+        &active,
+        Dataset::HendrycksMath,
+        &[problem("a", "Geometry", 1, &text)],
+        &[Diagram {
+            hash: diagram::hash(source),
+            svg: r#"<svg><script>alert(1)</script></svg>"#.into(),
+        }],
+    )
+    .await;
+    let err = load(&app.pool, &active).await.unwrap_err();
+    assert!(format!("{err:#}").contains("not a plain SVG"), "{err:#}");
+
+    // A solution may lose its illustration; the problem still loads.
+    let mut in_solution = problem("b", "Geometry", 1, "B");
+    in_solution.solution = format!("See: [asy]{source}[/asy]");
+    let fine = scratch.path("fine.sqlite");
+    write_with_diagrams(&fine, Dataset::HendrycksMath, &[in_solution], &[]).await;
+    load(&app.pool, &fine).await.unwrap();
+
+    let diagrams: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM challenges_diagrams")
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+    assert_eq!(diagrams, 0);
+}
+
+/// A bundle prepared before diagrams existed: format 1, no `diagrams` table.
+#[tokio::test]
+async fn a_format_1_bundle_loads_as_one_without_diagrams() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let path = scratch.path("old.sqlite");
+    let mut p = problem("a", "Optics", 1, "A");
+    p.solution = "See: [asy]draw((0,0)--(1,1));[/asy]".into();
+    write(&path, Dataset::Ugphysics, &[p]).await;
+    let file = sqlx::SqlitePool::connect(&format!("sqlite:{}", path.display()))
+        .await
+        .unwrap();
+    sqlx::raw_sql("DROP TABLE diagrams; UPDATE manifest SET format = 1;")
+        .execute(&file)
+        .await
+        .unwrap();
+    file.close().await;
+
+    load(&app.pool, &path).await.unwrap();
+    assert_eq!(rows(&app.pool, "ugphysics").await.len(), 1);
+
+    // Older than that is still refused.
+    let older = scratch.path("older.sqlite");
+    write(
+        &older,
+        Dataset::Ugphysics,
+        &[problem("a", "Optics", 1, "A")],
+    )
+    .await;
+    let file = sqlx::SqlitePool::connect(&format!("sqlite:{}", older.display()))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE manifest SET format = 0")
+        .execute(&file)
+        .await
+        .unwrap();
+    file.close().await;
+    let err = load(&app.pool, &older).await.unwrap_err();
+    assert!(format!("{err:#}").contains("bundle format 0"), "{err:#}");
 }

@@ -259,6 +259,35 @@ pub async fn record_attempt(
     }))
 }
 
+// ── Diagrams ────────────────────────────────────────────────
+
+/// The rendered SVG for a diagram hash, if the catalogue has it.
+pub async fn diagram_svg(pool: &SqlitePool, hash: &str) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT svg FROM challenges_diagrams WHERE hash = ?")
+        .bind(hash)
+        .fetch_optional(pool)
+        .await
+}
+
+/// Which of `hashes` the catalogue has a rendering for.
+pub async fn rendered_diagrams(
+    pool: &SqlitePool,
+    hashes: &[String],
+) -> Result<std::collections::HashSet<String>, sqlx::Error> {
+    let mut found = std::collections::HashSet::new();
+    for hash in hashes {
+        let present: Option<i64> =
+            sqlx::query_scalar("SELECT 1 FROM challenges_diagrams WHERE hash = ?")
+                .bind(hash)
+                .fetch_optional(pool)
+                .await?;
+        if present.is_some() {
+            found.insert(hash.clone());
+        }
+    }
+    Ok(found)
+}
+
 // ── The current problem ────────────────────────────────────
 
 /// The problem you are working on in `dataset`, if any.

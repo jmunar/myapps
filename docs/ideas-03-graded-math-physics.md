@@ -64,7 +64,9 @@ workstation, and the server does nothing but load its output.
 
 - **One SQLite file per dataset** (`src/bundle.rs`): self-contained, readable
   with tools sqlx already brings, inspectable with `sqlite3`. Its format is
-  versioned, and the server refuses a format it was not built for.
+  versioned; the server refuses a newer format than its own, and reads older
+  ones it still knows (format 1 is format 2 without diagrams), so a bundle
+  need not be prepared again for a change that does not concern it.
 - **The prep tool is a separate crate** (`myapps-challenges-prep`), never
   built for the server, so its dependencies cost the Odroid nothing; it shares
   the bundle types with the app, so the two sides cannot drift.
@@ -74,6 +76,18 @@ workstation, and the server does nothing but load its output.
 - **Features will differ per dataset**, each from its own fixed taxonomy, and
   are meant to be stored as generic `(problem, kind, value)` tags so one query
   answers "where do I fail" for any dataset.
+- **Diagrams are content-addressed.** Each `[asy]` block is rendered to SVG
+  and stored by the SHA-256 of its source, so the problem text itself names
+  its diagrams, identical ones are stored once (2,606 blocks, 2,493 distinct),
+  and the page needs no mapping table. Rendering runs `asy` in a bubblewrap
+  sandbox with no network and no `/home`, since a block could otherwise read
+  a file into its SVG; the SVG is checked for active content on both sides,
+  shown only through `<img>`, and served with a sandboxing CSP. AoPS's
+  `olympiad` and `cse5` modules, which most geometry blocks rely on, are not
+  ours to redistribute, so they live in a local modules directory; without
+  them about 40% of the geometry fails. A block that sets no size gets
+  `size(180)`, as Asymptote's default draws a 10-unit triangle at the height
+  of its own labels.
 - **No import on `serve`.** One way to fill the catalogue, rather than a second,
   featureless one.
 
@@ -437,7 +451,8 @@ In rough order of value:
   the OpenStax answer keys.
 - **Daily problem**: a `cron` push notification with the day's draw.
 - **Subject filter**: restrict a session to chosen subjects.
-- Hendrycks `[asy]` diagrams: render Asymptote offline to SVG at import time.
+- ~~Hendrycks `[asy]` diagrams~~: rendered to SVG during preparation; see
+  the decision below.
 
 ## Sources
 

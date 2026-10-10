@@ -14,6 +14,7 @@ use sqlx::{Sqlite, SqlitePool, Transaction};
 
 use crate::bundle::{self, Manifest};
 use crate::dataset::Dataset;
+use crate::diagram;
 
 /// Rows read from the bundle at a time.
 const PAGE: i64 = 500;
@@ -29,6 +30,42 @@ pub async fn run(pool: &SqlitePool, path: &str) -> Result<()> {
     );
 
     let mut tx = pool.begin().await?;
+
+    // Diagrams first, so every problem's can be checked as it goes in.
+    let expected_diagrams = bundle.diagram_count().await?;
+    let mut diagrams = 0;
+    let mut after = String::new();
+    loop {
+        let page = bundle.diagrams_after(&after, PAGE).await?;
+        let Some(last) = page.last() else { break };
+        after = last.hash.clone();
+        for d in &page {
+            ensure!(
+                diagram::is_hash(&d.hash),
+                "{path}: diagram '{}' is not a hash",
+                d.hash
+            );
+            ensure!(
+                diagram::is_safe_svg(&d.svg),
+                "{path}: diagram {} is not a plain SVG drawing",
+                d.hash
+            );
+            // Same hash, same source: a newer render of it replaces the old.
+            sqlx::query(
+                "INSERT INTO challenges_diagrams (hash, svg) VALUES (?, ?)
+                 ON CONFLICT (hash) DO UPDATE SET svg = excluded.svg",
+            )
+            .bind(&d.hash)
+            .bind(&d.svg)
+            .execute(&mut *tx)
+            .await?;
+        }
+        diagrams += page.len() as i64;
+    }
+    ensure!(
+        diagrams == expected_diagrams,
+        "{path}: read {diagrams} of its {expected_diagrams} diagrams"
+    );
 
     // Whatever is still in here once every bundle row has been seen is retired.
     let mut unseen: HashSet<String> = sqlx::query_scalar(
@@ -48,6 +85,19 @@ pub async fn run(pool: &SqlitePool, path: &str) -> Result<()> {
         after = last.source_key.clone();
         for p in &page {
             validate(dataset, p).with_context(|| format!("{path}: problem '{}'", p.source_key))?;
+            // Unanswerable without it; a solution's is only an illustration.
+            for hash in diagram::hashes(&p.problem) {
+                let present: Option<i64> =
+                    sqlx::query_scalar("SELECT 1 FROM challenges_diagrams WHERE hash = ?")
+                        .bind(&hash)
+                        .fetch_optional(&mut *tx)
+                        .await?;
+                ensure!(
+                    present.is_some(),
+                    "{path}: problem '{}' has a diagram the bundle does not ({hash})",
+                    p.source_key
+                );
+            }
             upsert(&mut tx, dataset, &bundle.manifest, p).await?;
             unseen.remove(&p.source_key);
         }
@@ -89,7 +139,8 @@ pub async fn run(pool: &SqlitePool, path: &str) -> Result<()> {
     tx.commit().await?;
 
     tracing::info!(
-        "{}: {loaded} problems loaded, {} retired (bundle prepared {} by {})",
+        "{}: {loaded} problems and {diagrams} diagrams loaded, {} retired \
+         (bundle prepared {} by {})",
         dataset.name(),
         unseen.len(),
         bundle.manifest.prepared_at,

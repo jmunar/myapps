@@ -1,5 +1,6 @@
 pub mod bundle;
 pub mod dataset;
+pub mod diagram;
 pub mod i18n;
 pub mod ops;
 mod pages;

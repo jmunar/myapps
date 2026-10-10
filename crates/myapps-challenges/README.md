@@ -39,9 +39,18 @@ problems it no longer has: they are never drawn again, but stay for the
 history, and come back if a later bundle has them. The load is one
 transaction that validates every row first, so a bad bundle changes nothing.
 
+**Diagrams.** Hendrycks MATH draws its figures in Asymptote (`[asy]…[/asy]`
+in the text), which a browser cannot render. The preparation renders each
+block to SVG and ships it in the bundle, named by the SHA-256 of its source
+([`src/diagram.rs`](src/diagram.rs), shared by both sides); the page swaps each
+block for an `<img>` served from `/challenges/diagrams/{hash}`, or for a
+placeholder where the solution's diagram did not render. About 98.5% of the
+2,493 distinct blocks render; most of the rest need AoPS's `TrigMacros`, which
+is not published anywhere.
+
 Left out during preparation: UGPhysics problems without a `level`; Hendrycks
-problems tagged `Level ?` or drawn with Asymptote (`[asy]`), which a browser
-cannot render.
+problems tagged `Level ?`, or whose problem text has a diagram that failed to
+render (18 of them).
 
 ## How the next problem is chosen
 

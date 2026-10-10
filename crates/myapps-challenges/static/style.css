@@ -69,6 +69,20 @@
     line-height: 1.6;
 }
 
+/* Rendered Asymptote diagrams sit on their own line, at their drawn size
+   but never wider than the card. */
+.challenges-diagram {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0.75rem auto;
+}
+
+.challenges-diagram-missing {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 .challenges-text .katex-display {
     overflow-x: auto;
     overflow-y: hidden;

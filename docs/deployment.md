@@ -544,12 +544,15 @@ Challenges serves problems from a catalogue that migrations create empty, and
 the server never fills it by itself: datasets are prepared on a workstation and
 loaded as a bundle, one SQLite file per dataset. The preparation does
 everything too heavy or too slow for the Odroid (fetching from the Hugging Face
-datasets-server today; rendering diagrams and extracting features later), so
-the server only copies rows.
+datasets-server, rendering Asymptote diagrams to SVG; extracting features
+later), so the server only copies rows.
 
-Prepare a bundle on the workstation (about 5 minutes for UGPhysics and 8 for
-Hendrycks MATH, since the datasets-server is paced to stay under its rate
-limit):
+Prepare a bundle on the workstation. The first run takes about 5 minutes for
+UGPhysics and 8 for Hendrycks MATH, since the datasets-server is paced to stay
+under its rate limit; fetched pages are cached, so later runs take seconds.
+Hendrycks MATH also needs Asymptote, bubblewrap and two AoPS modules on the
+workstation; see
+[`myapps-challenges-prep`](../crates/myapps-challenges-prep/README.md).
 
 ```bash
 cargo run --release -p myapps-challenges-prep -- ugphysics        # writes ugphysics.sqlite
@@ -576,10 +579,14 @@ retired the same way by the first real bundle. Nothing deletes catalogue rows.
 
 The load is one transaction, and changes nothing if any row fails validation (a
 difficulty outside the dataset's levels, an empty subject or text), if the
-bundle is empty, or if its format is not the one this build reads — prepare it
-again with the `myapps-challenges-prep` from the same commit as the deployed
-binary. The last bundle loaded per dataset, with when and by what it was
-prepared, is in `challenges_imports`.
+bundle is empty, if a problem's text names a diagram the bundle does not have
+or a diagram is not a plain SVG drawing, or if its format is one this build
+cannot read. A build reads its own format and the older ones listed in
+`bundle.rs` (format 1, from before diagrams, loads as a bundle with no
+diagrams); a newer one means preparing again with the `myapps-challenges-prep`
+from the same commit as the deployed binary. So deploy first, then load. The
+last bundle loaded per dataset, with when and by what it was prepared, is in
+`challenges_imports`.
 
 ## Backups and Rollback
 

@@ -8,7 +8,6 @@ use myapps_challenges::dataset::Dataset;
 #[derive(Debug, PartialEq)]
 pub enum Skip {
     NoLevel,
-    Diagram,
     Malformed,
 }
 
@@ -105,11 +104,8 @@ pub fn map_row(
             })
         }
         Dataset::HendrycksMath => {
-            // Asymptote diagrams cannot be drawn in the browser, and the
-            // problem is not answerable without them.
-            if problem.contains("[asy]") {
-                return Err(Skip::Diagram);
-            }
+            // Any `[asy]` diagrams stay in the text; `render_diagrams` draws
+            // them, and drops the problem if its own cannot be drawn.
             Ok(Problem {
                 source_key: format!("{config}/{split}/{row_idx}"),
                 subject: non_empty("type").unwrap_or_else(|| config.to_string()),
@@ -264,15 +260,13 @@ mod tests {
     }
 
     #[test]
-    fn skips_hendrycks_diagrams_and_unknown_levels() {
+    fn keeps_hendrycks_diagrams_and_skips_unknown_levels() {
         let diagram = json!({
             "problem": "[asy]draw((0,0)--(1,1));[/asy] Find the area.",
             "level": "Level 2", "type": "Geometry", "solution": "\\boxed{1}",
         });
-        assert_eq!(
-            map_row(Dataset::HendrycksMath, "geometry", "train", 0, &diagram),
-            Err(Skip::Diagram)
-        );
+        let p = map_row(Dataset::HendrycksMath, "geometry", "train", 0, &diagram).unwrap();
+        assert!(p.problem.starts_with("[asy]"));
         let unknown = json!({
             "problem": "p", "level": "Level ?", "type": "Geometry", "solution": "s",
         });

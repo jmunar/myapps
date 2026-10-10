@@ -1,4 +1,5 @@
 mod challenges {
+    pub mod diagrams;
     pub mod draw;
     pub mod import;
     pub mod pages;
