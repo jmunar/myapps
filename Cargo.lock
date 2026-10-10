@@ -2124,12 +2124,26 @@ dependencies = [
  "myapps-core",
  "myapps-test-harness",
  "rand 0.9.5",
- "reqwest",
  "serde",
  "serde_json",
  "sqlx",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "myapps-challenges-prep"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "myapps-challenges",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

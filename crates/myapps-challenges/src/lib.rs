@@ -1,3 +1,4 @@
+pub mod bundle;
 pub mod dataset;
 pub mod i18n;
 pub mod ops;
@@ -100,13 +101,5 @@ impl App for ChallengesApp {
         what: &'a str,
     ) -> Option<myapps_core::registry::BoxFuture<'a, anyhow::Result<()>>> {
         Some(Box::pin(services::import::run(pool, what)))
-    }
-
-    fn on_serve(
-        &self,
-        pool: sqlx::SqlitePool,
-        _config: std::sync::Arc<myapps_core::config::Config>,
-    ) {
-        tokio::spawn(services::import::auto(pool));
     }
 }

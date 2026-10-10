@@ -45,15 +45,37 @@ Differences from the plan below, found while building it:
   dataset with no problems at all, so a demo user (and the README screenshots)
   have something to draw without network access. A real import is never mixed
   with them.
-- **`serve` imports on its own.** On start, a background task imports every
-  dataset with no row in `challenges_imports` (written when an import runs to
-  the end) and no seed samples. Nobody has to remember the CLI after a deploy;
-  an interrupted import resumes on the next start; demo and screenshot
-  databases never download. The CLI stays for refreshing by hand.
+- **Datasets are prepared offline and loaded as bundles.** `serve` first
+  imported on its own, straight from the datasets-server. That was replaced
+  once diagrams and extracted features made preparation too heavy for the
+  Odroid: `myapps-challenges-prep` now writes one SQLite bundle per dataset on
+  a workstation, and the server only loads it (see the decision below).
 - **The stats table has four columns** (subject, level, correct / attempts,
   accuracy), so it fits a phone as a two-line card.
 
 ## Decisions
+
+### Datasets are prepared offline, as one bundle per dataset
+
+Rendering Asymptote diagrams and extracting features (concepts, techniques,
+problem type) per problem are both too heavy for a 4 GB box shared with
+whisper.cpp and llama.cpp, so preparation is a separate stage run on a
+workstation, and the server does nothing but load its output.
+
+- **One SQLite file per dataset** (`src/bundle.rs`): self-contained, readable
+  with tools sqlx already brings, inspectable with `sqlite3`. Its format is
+  versioned, and the server refuses a format it was not built for.
+- **The prep tool is a separate crate** (`myapps-challenges-prep`), never
+  built for the server, so its dependencies cost the Odroid nothing; it shares
+  the bundle types with the app, so the two sides cannot drift.
+- **A bundle is the whole dataset.** Problems are keyed by `(dataset,
+  source_key)`, never by server row id; ones a bundle drops are retired, never
+  deleted, because attempts reference them.
+- **Features will differ per dataset**, each from its own fixed taxonomy, and
+  are meant to be stored as generic `(problem, kind, value)` tags so one query
+  answers "where do I fail" for any dataset.
+- **No import on `serve`.** One way to fill the catalogue, rather than a second,
+  featureless one.
 
 ### Datasets: UGPhysics and Hendrycks MATH, not U-MATH
 

@@ -11,7 +11,9 @@ Each app is a crate under `crates/` implementing the `App` trait from
 `myapps_core::registry`; `crates/myapps-core/` holds everything shared (auth,
 config, db, layout, i18n, components, command bar, services). Apps never depend
 on each other. `src/main.rs` just registers them and delegates to
-`myapps_core::cli`.
+`myapps_core::cli`. `crates/myapps-challenges-prep/` is not an app but a
+workstation tool that prepares Challenges dataset bundles; it is never built
+for or deployed to the server, so heavy work and dependencies belong there.
 
 `cargo run -- --help` lists the CLI subcommands; the `Makefile` lists the build,
 deploy and version targets. `make check` is exactly what CI runs.

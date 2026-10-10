@@ -15,8 +15,10 @@ async fn picker_says_how_to_import_an_empty_dataset() {
     let body = app.server.get("/challenges").await.text();
     assert!(body.contains("UGPhysics"));
     assert!(body.contains("Hendrycks MATH"));
-    assert!(body.contains("myapps import --app challenges --dataset ugphysics"));
-    assert!(body.contains("myapps import --app challenges --dataset hendrycks-math"));
+    assert!(body.contains("myapps-challenges-prep ugphysics"));
+    assert!(body.contains("myapps import --app challenges --dataset ugphysics.sqlite"));
+    assert!(body.contains("myapps-challenges-prep hendrycks-math"));
+    assert!(body.contains("myapps import --app challenges --dataset hendrycks-math.sqlite"));
     assert!(!body.contains(r#"href="/challenges/practice/"#));
 }
 
