@@ -101,7 +101,8 @@ myapps/
 │   │   ├── migrations/
 │   │   ├── static/            # style.css + challenges-math.js (KaTeX typesetting)
 │   │   ├── tests/
-│   │   └── src/
+│   │   └── src/               # bundle.rs: the prepared-dataset format
+│   ├── myapps-challenges-prep/ # Workstation tool: prepares dataset bundles (never deployed)
 │   └── myapps-test-harness/ # Shared test utilities (spawn_app, spawn_app_with, Options, TestApp)
 ├── tests/                   # Root integration tests
 │   ├── harness/mod.rs       # Platform spawners over myapps-test-harness (all apps registered)
@@ -261,9 +262,10 @@ After login, the top-level router serves:
   - `POST /file_clipboard/settings` — Set the deletion period (1–365 days)
 
 - `/challenges/` — Challenges sub-app (nested router). Problems come from a
-  shared catalogue (`challenges_problems`, no `user_id`) that `serve` fills in
-  the background on start, for any dataset not yet imported (or by hand with
-  `myapps import --app challenges --dataset <key>`).
+  shared catalogue (`challenges_problems`, no `user_id`) loaded from bundles
+  that `myapps-challenges-prep` writes on a workstation, with `myapps import
+  --app challenges --dataset <file>`; problems a newer bundle drops are retired
+  (`retired_at`), never deleted.
   Maths is typeset client-side by KaTeX, vendored under `static/katex/`.
   - `/challenges/` — Dataset picker (UGPhysics, Hendrycks MATH), minus the
     datasets the user hid, which are listed below it with a Show button
