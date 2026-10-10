@@ -134,32 +134,6 @@ async fn command_bar_next_problem_opens_the_practice_page() {
 }
 
 #[tokio::test]
-async fn serve_imports_only_datasets_never_imported_and_not_seeded() {
-    use myapps_challenges::services::import::needs_import;
-
-    let app = app().await;
-    assert!(needs_import(&app.pool, Dataset::Ugphysics).await.unwrap());
-
-    // An interrupted import leaves problems but no completion row: retry.
-    insert_problem(&app.pool, "ugphysics", "Optics", 1, "partial").await;
-    assert!(needs_import(&app.pool, Dataset::Ugphysics).await.unwrap());
-
-    sqlx::query("INSERT INTO challenges_imports (dataset, problems) VALUES ('ugphysics', 1)")
-        .execute(&app.pool)
-        .await
-        .unwrap();
-    assert!(!needs_import(&app.pool, Dataset::Ugphysics).await.unwrap());
-
-    // A seeded (demo) database never starts downloading.
-    app.seed_and_login(&myapps_challenges::ChallengesApp).await;
-    assert!(
-        !needs_import(&app.pool, Dataset::HendrycksMath)
-            .await
-            .unwrap()
-    );
-}
-
-#[tokio::test]
 async fn a_one_problem_subject_hands_over_to_the_others() {
     let app = app().await;
     let user_id = login(&app).await;

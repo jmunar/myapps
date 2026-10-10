@@ -95,7 +95,7 @@ pub trait App: Send + Sync {
     }
 
     /// Load or refresh a shared catalogue, invoked by `myapps import`. `what`
-    /// names the thing to import (e.g. a dataset key); its meaning is up to the
+    /// names the thing to import (e.g. a bundle file); its meaning is up to the
     /// app. Returns `None` if the app has nothing to import.
     fn import<'a>(
         &'a self,

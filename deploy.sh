@@ -20,6 +20,7 @@ Commands:
   restart                  Restart the service on the server
   logs                     Tail the server logs
   status                   Show service status
+  import-dataset <file>    Upload a Challenges bundle (myapps-challenges-prep) and load it
 
 Set DEPLOY_SERVER in the environment to override the config file's value —
 needed for 'setup', which requires more sudo than the deploy user is granted:
@@ -144,6 +145,20 @@ restart() {
     ssh_server "sudo systemctl restart $DEPLOY_SERVICE_NAME"
     echo "▸ Done. Checking status..."
     ssh_server "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME"
+}
+
+# Upload a Challenges dataset bundle and load it with `myapps import`. The
+# bundle replaces its dataset: problems missing from it are retired. The load
+# runs through ssh_server rather than a piped script, so the terminal is there
+# for sudo should it ask for a password.
+import_dataset() {
+    local bundle="${1:?Usage: $0 <env> import-dataset <bundle.sqlite>}"
+    [[ -f "$bundle" ]] || { echo "Error: bundle not found: $bundle"; exit 1; }
+    local remote="/tmp/myapps-bundle-$(basename "$bundle")"
+    echo "▸ Uploading $bundle to $SERVER..."
+    scp $SSH_MUX_OPTS -P "$SSH_PORT" "$bundle" "$SERVER:$remote"
+    echo "▸ Loading it..."
+    ssh_server "chmod 644 '$remote' && sudo -u myapps $DEPLOY_REMOTE_DIR/myapps import --app challenges --dataset '$remote'; status=\$?; rm -f '$remote'; exit \$status"
 }
 
 # Write the systemd unit and reload systemd. Setup only.
@@ -399,5 +414,6 @@ case "${COMMAND}" in
     restart) restart ;;
     logs)    ssh_server "sudo journalctl -u $DEPLOY_SERVICE_NAME -f --no-pager" ;;
     status)  ssh_server "sudo systemctl --no-pager status $DEPLOY_SERVICE_NAME" ;;
+    import-dataset) import_dataset "$EXTRA_ARG" ;;
     *)       usage ;;
 esac

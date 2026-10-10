@@ -22,20 +22,26 @@ The design, and the research behind the dataset choice, is in
 | [UGPhysics](https://huggingface.co/datasets/UGPhysics/ugphysics) (English) | 5,314 in 13 subjects | 3, from its skill type: Knowledge Recall → Laws Application → Derivation / Practical | CC BY-NC-SA 4.0 |
 | [Hendrycks MATH](https://huggingface.co/datasets/EleutherAI/hendrycks_math) | 11,372 in 7 subjects | 5, as published | MIT |
 
-Neither ships in the binary or the repo. When `serve` starts, it imports every
-dataset that has never finished importing, in the background (a few minutes
-each). Completion is recorded in `challenges_imports`, so an interrupted import
-resumes on the next start and a finished one is not repeated. A database the
-seed filled with sample problems is left alone. To refresh by hand:
+Neither ships in the binary or the repo. Each is prepared on a workstation by
+[`myapps-challenges-prep`](../myapps-challenges-prep), which fetches it, maps
+its rows and writes a **bundle**: one SQLite file per dataset, in the format
+defined (and versioned) in [`src/bundle.rs`](src/bundle.rs). The server only
+loads bundles; it never fetches or computes anything itself.
 
 ```sh
-myapps import --app challenges --dataset ugphysics
-myapps import --app challenges --dataset hendrycks-math
+cargo run --release -p myapps-challenges-prep -- hendrycks-math   # → hendrycks-math.sqlite
+myapps import --app challenges --dataset hendrycks-math.sqlite    # or: ./deploy.sh prod import-dataset …
 ```
 
-Left out at import: UGPhysics problems without a `level`; Hendrycks problems
-tagged `Level ?` or drawn with Asymptote (`[asy]`), which a browser cannot
-render. Re-running an import updates problems in place and keeps their ids.
+A bundle is the whole dataset. Loading one upserts its problems on their key,
+so ids and the attempts that point at them survive a reload, and *retires* the
+problems it no longer has: they are never drawn again, but stay for the
+history, and come back if a later bundle has them. The load is one
+transaction that validates every row first, so a bad bundle changes nothing.
+
+Left out during preparation: UGPhysics problems without a `level`; Hendrycks
+problems tagged `Level ?` or drawn with Asymptote (`[asy]`), which a browser
+cannot render.
 
 ## How the next problem is chosen
 

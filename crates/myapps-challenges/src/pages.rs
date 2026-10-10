@@ -132,9 +132,10 @@ async fn picker(state: &AppState, user_id: i64, lang: Lang) -> String {
         };
         let action = if stats.problems == 0 {
             format!(
-                r#"<p class="text-secondary text-sm">{}<code>myapps import --app challenges --dataset {}</code></p>"#,
+                r#"<p class="text-secondary text-sm">{}<code>myapps-challenges-prep {key}</code>{}<code>myapps import --app challenges --dataset {key}.sqlite</code>.</p>"#,
                 t.not_imported,
-                dataset.key()
+                t.not_imported_load,
+                key = dataset.key()
             )
         } else {
             let in_progress = ops::current(&state.pool, user_id, dataset)

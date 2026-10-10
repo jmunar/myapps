@@ -1,0 +1,19 @@
+[package]
+name = "myapps-challenges-prep"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+# Runs on a workstation only: it is never built for or shipped to the server,
+# so what it depends on does not count against the Odroid's memory.
+
+[dependencies]
+myapps-challenges.workspace = true
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

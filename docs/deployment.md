@@ -257,6 +257,7 @@ Usage: `./deploy.sh <env> <command>`
 | `restart`                   | Restart the service                                      |
 | `logs`                      | Tail the service logs (journalctl)                       |
 | `status`                    | Show service status                                      |
+| `import-dataset <file>`     | Upload a Challenges dataset bundle and load it (see [Challenges problem datasets](#challenges-problem-datasets)) |
 
 Outside CI, `deploy.sh` multiplexes SSH (one TCP connection shared across the
 many ssh/scp/rsync calls) via `ControlMaster=auto` to avoid tripping sshd
@@ -539,32 +540,46 @@ Installed at `/etc/cron.d/myapps` by `setup`. Runs daily at 06:00:
 
 ## Challenges problem datasets
 
-Challenges serves problems from a catalogue that migrations create empty. The
-server fills it itself: on start, `serve` imports every dataset whose import
-has never completed, in a background task, from the Hugging Face
-datasets-server (outbound HTTPS to `datasets-server.huggingface.co`). The site
-is up meanwhile; each dataset's card offers *Start* as soon as its first
-problems land.
+Challenges serves problems from a catalogue that migrations create empty, and
+the server never fills it by itself: datasets are prepared on a workstation and
+loaded as a bundle, one SQLite file per dataset. The preparation does
+everything too heavy or too slow for the Odroid (fetching from the Hugging Face
+datasets-server today; rendering diagrams and extracting features later), so
+the server only copies rows.
 
-A full import takes about 5 minutes for UGPhysics and 8 for Hendrycks MATH:
-requests are paced, and the datasets-server answers 429 when they are not,
-which the import waits out. Progress and the final counts go to the journal
-(`./deploy.sh prod logs`). A completed import is recorded in
-`challenges_imports`, so later starts skip it. An interrupted one (a restart,
-no network) is not, and resumes on the next start.
-
-Two cases are deliberately left alone: a database where `seed` put its sample
-problems (screenshots, demo users) never starts downloading, and the CLI runs
-no `serve` hook. To refresh a dataset by hand:
+Prepare a bundle on the workstation (about 5 minutes for UGPhysics and 8 for
+Hendrycks MATH, since the datasets-server is paced to stay under its rate
+limit):
 
 ```bash
-ssh deploy@odroid.local 'sudo -u myapps /opt/myapps/myapps import --app challenges --dataset ugphysics'
-ssh deploy@odroid.local 'sudo -u myapps /opt/myapps/myapps import --app challenges --dataset hendrycks-math'
+cargo run --release -p myapps-challenges-prep -- ugphysics        # writes ugphysics.sqlite
+cargo run --release -p myapps-challenges-prep -- hendrycks-math   # writes hendrycks-math.sqlite
 ```
 
-Re-running an import is safe: it upserts on the problem's key within its
-dataset, so problem ids, and the attempt history that points at them, survive
-a refresh. Nothing deletes catalogue rows.
+Then upload and load it:
+
+```bash
+./deploy.sh prod import-dataset ugphysics.sqlite
+./deploy.sh prod import-dataset hendrycks-math.sqlite
+```
+
+which copies the file to `/tmp` on the server, runs `myapps import --app
+challenges --dataset <file>` as the service user, and removes it. The service
+keeps running throughout.
+
+A bundle is the whole of its dataset. The load upserts every problem in it on
+the problem's key, so problem ids, and the attempt history that points at them,
+survive a reload; a problem the bundle no longer has is *retired* — never drawn
+again, but kept for the attempts that reference it — and a later bundle that
+has it again brings it back under the same id. The seed's sample problems are
+retired the same way by the first real bundle. Nothing deletes catalogue rows.
+
+The load is one transaction, and changes nothing if any row fails validation (a
+difficulty outside the dataset's levels, an empty subject or text), if the
+bundle is empty, or if its format is not the one this build reads — prepare it
+again with the `myapps-challenges-prep` from the same commit as the deployed
+binary. The last bundle loaded per dataset, with when and by what it was
+prepared, is in `challenges_imports`.
 
 ## Backups and Rollback
 

@@ -42,7 +42,8 @@ pub async fn get_problem(pool: &SqlitePool, id: i64) -> Result<Option<Problem>, 
 
 pub async fn subjects(pool: &SqlitePool, dataset: Dataset) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
-        "SELECT DISTINCT subject FROM challenges_problems WHERE dataset = ? ORDER BY subject",
+        "SELECT DISTINCT subject FROM challenges_problems
+         WHERE dataset = ? AND retired_at IS NULL ORDER BY subject",
     )
     .bind(dataset.key())
     .fetch_all(pool)
@@ -121,6 +122,7 @@ async fn draw_in_subject(
         let id: Option<i64> = sqlx::query_scalar(
             "SELECT id FROM challenges_problems p
              WHERE dataset = ? AND subject = ? AND difficulty = ? AND id != ?
+               AND retired_at IS NULL
                AND NOT EXISTS (SELECT 1 FROM challenges_attempts a
                                WHERE a.user_id = ? AND a.problem_id = p.id)
              ORDER BY random() LIMIT 1",
@@ -141,7 +143,7 @@ async fn draw_in_subject(
     sqlx::query_scalar(
         "SELECT p.id FROM challenges_problems p
          JOIN challenges_attempts a ON a.problem_id = p.id AND a.user_id = ?
-         WHERE p.dataset = ? AND p.subject = ? AND p.id != ?
+         WHERE p.dataset = ? AND p.subject = ? AND p.id != ? AND p.retired_at IS NULL
          GROUP BY p.id ORDER BY MAX(a.id) ASC LIMIT 1",
     )
     .bind(user_id)
@@ -265,11 +267,13 @@ pub async fn current(
     user_id: i64,
     dataset: Dataset,
 ) -> Result<Option<i64>, sqlx::Error> {
-    // The join drops a row whose problem has gone or moved dataset, so it is
-    // replaced by a fresh draw rather than shown under the wrong heading.
+    // The join drops a row whose problem has been retired or moved dataset,
+    // so it is replaced by a fresh draw rather than shown under the wrong
+    // heading or kept after the bundle dropped it.
     sqlx::query_scalar(
         "SELECT c.problem_id FROM challenges_current c
          JOIN challenges_problems p ON p.id = c.problem_id AND p.dataset = c.dataset
+                                   AND p.retired_at IS NULL
          WHERE c.user_id = ? AND c.dataset = ?",
     )
     .bind(user_id)
@@ -422,11 +426,12 @@ pub async fn dataset_stats(
     user_id: i64,
     dataset: Dataset,
 ) -> Result<DatasetStats, sqlx::Error> {
-    let problems: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM challenges_problems WHERE dataset = ?")
-            .bind(dataset.key())
-            .fetch_one(pool)
-            .await?;
+    let problems: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM challenges_problems WHERE dataset = ? AND retired_at IS NULL",
+    )
+    .bind(dataset.key())
+    .fetch_one(pool)
+    .await?;
 
     let by_subject: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT p.subject, COUNT(*), SUM(a.correct) FROM challenges_attempts a
