@@ -8,9 +8,11 @@ use axum::{
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde::Deserialize;
+use std::collections::HashSet;
 
 use super::{challenges_nav, html_escape};
 use crate::dataset::Dataset;
+use crate::diagram::{self, Segment};
 use crate::i18n::{self, Translations};
 use crate::ops::{self, Outcome, Tally};
 use myapps_core::auth::UserId;
@@ -37,6 +39,7 @@ pub fn routes() -> Router<AppState> {
         .route("/practice/{key}/attempt", post(attempt))
         .route("/problems/{id}", get(problem))
         .route("/stats", get(stats))
+        .route("/diagrams/{hash}", get(diagram_svg))
 }
 
 fn subtitle(dataset: Dataset, t: &Translations) -> &'static str {
@@ -266,6 +269,34 @@ async fn set_hidden(
 
 /// Escape third-party text and mark it for KaTeX. `white-space: pre-wrap` on
 /// the class keeps the dataset's line breaks.
+/// `text` typeset like `math`, with each `[asy]` block swapped for its
+/// rendered diagram, or for a placeholder where there is none. The Asymptote
+/// source never reaches the page: KaTeX would read its `$` labels as maths.
+fn text_with_diagrams(
+    text: &str,
+    base: &str,
+    rendered: &HashSet<String>,
+    t: &Translations,
+) -> String {
+    let mut body = String::new();
+    for segment in diagram::split(text) {
+        match segment {
+            Segment::Text(s) => body.push_str(&html_escape(s)),
+            Segment::Diagram { hash, .. } if rendered.contains(&hash) => {
+                body.push_str(&format!(
+                    r#"<img class="challenges-diagram" src="{base}/challenges/diagrams/{hash}" alt="{alt}">"#,
+                    alt = t.diagram,
+                ));
+            }
+            Segment::Diagram { .. } => body.push_str(&format!(
+                r#"<span class="challenges-diagram-missing">{}</span>"#,
+                t.diagram_missing
+            )),
+        }
+    }
+    format!(r#"<div class="challenges-text" data-challenges-math>{body}</div>"#)
+}
+
 fn math(text: &str) -> String {
     format!(
         r#"<div class="challenges-text" data-challenges-math>{}</div>"#,
@@ -353,6 +384,14 @@ async fn problem_fragment(
         )
     };
     let url = practice_url(base, dataset);
+    let mut hashes = diagram::hashes(&p.problem);
+    hashes.extend(diagram::hashes(&p.solution));
+    let rendered = ops::rendered_diagrams(&state.pool, &hashes)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Challenges diagram query failed: {e:#}");
+            HashSet::new()
+        });
 
     Some(format!(
         r#"{notice}
@@ -393,10 +432,10 @@ async fn problem_fragment(
         of = t.of,
         max = dataset.max_level(),
         level_name = dataset.level_name(p.difficulty),
-        problem = math(&p.problem),
+        problem = text_with_diagrams(&p.problem, base, &rendered, t),
         show_solution = t.show_solution,
         solution_lbl = t.solution,
-        solution = math(&p.solution),
+        solution = text_with_diagrams(&p.solution, base, &rendered, t),
         how = t.how_did_it_go,
         right = t.got_it_right,
         wrong = t.got_it_wrong,
@@ -688,4 +727,37 @@ async fn stats(
         &state.config,
         lang,
     ))
+}
+
+/// A rendered diagram. Shown through `<img>`, where nothing in it runs; the
+/// CSP sandboxes it for anyone who opens the URL directly, since it is served
+/// on the session's origin. Content-addressed, so it never changes.
+async fn diagram_svg(State(state): State<AppState>, Path(hash): Path<String>) -> Response {
+    if !diagram::is_hash(&hash) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match ops::diagram_svg(&state.pool, &hash).await {
+        Ok(Some(svg)) => (
+            [
+                (header::CONTENT_TYPE, "image/svg+xml"),
+                (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+                (
+                    header::CONTENT_SECURITY_POLICY,
+                    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; \
+                     font-src data:; sandbox",
+                ),
+                (
+                    header::CACHE_CONTROL,
+                    "private, max-age=31536000, immutable",
+                ),
+            ],
+            svg,
+        )
+            .into_response(),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            tracing::error!("Challenges diagram query failed: {e:#}");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }

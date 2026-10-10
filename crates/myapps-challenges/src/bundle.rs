@@ -7,7 +7,8 @@
 //! server only ever copies rows out of it. This module is the contract between
 //! the two sides: the schema, the row types, and a writer and a reader that
 //! both go through them. A change to the schema bumps `FORMAT`, and the server
-//! refuses any bundle whose format it was not built for.
+//! refuses any bundle whose format it was not built for: anything newer, and
+//! anything older than `OLDEST_READABLE`.
 
 use std::path::{Path, PathBuf};
 
@@ -18,7 +19,15 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use crate::dataset::Dataset;
 
 /// The bundle schema version this build writes and reads.
-pub const FORMAT: i64 = 1;
+pub const FORMAT: i64 = 2;
+
+/// The oldest format this build still loads. Format 1 is format 2 without the
+/// `diagrams` table, so a bundle prepared before diagrams existed (UGPhysics
+/// has none) loads as one with no diagrams instead of being prepared again.
+pub const OLDEST_READABLE: i64 = 1;
+
+/// The first format with a `diagrams` table.
+const DIAGRAMS_SINCE: i64 = 2;
 
 const SCHEMA: &str = "
 CREATE TABLE manifest (
@@ -42,6 +51,14 @@ CREATE TABLE problems (
     answer        TEXT    NOT NULL,
     answer_type   TEXT,
     unit          TEXT
+);
+
+-- Rendered [asy] blocks, by crate::diagram::hash of their source. Every
+-- diagram in a problem's text is here; one in a solution may be missing (it
+-- failed to render) and is shown as a placeholder.
+CREATE TABLE diagrams (
+    hash  TEXT PRIMARY KEY,
+    svg   TEXT NOT NULL
 );
 ";
 
@@ -68,6 +85,13 @@ pub struct Problem {
     pub answer: String,
     pub answer_type: Option<String>,
     pub unit: Option<String>,
+}
+
+/// A rendered diagram.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct Diagram {
+    pub hash: String,
+    pub svg: String,
 }
 
 /// Writes a bundle to `<path>.partial` and renames it into place on `finish`,
@@ -156,6 +180,20 @@ impl Writer {
         Ok(())
     }
 
+    pub async fn insert_diagrams(&self, diagrams: &[Diagram]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        for d in diagrams {
+            sqlx::query("INSERT INTO diagrams (hash, svg) VALUES (?, ?)")
+                .bind(&d.hash)
+                .bind(&d.svg)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| format!("inserting diagram {}", d.hash))?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn finish(self) -> Result<()> {
         self.pool.close().await;
         std::fs::rename(&self.partial, &self.path)
@@ -190,10 +228,11 @@ impl Reader {
         .fetch_one(&pool)
         .await
         .with_context(|| format!("{} is not a Challenges bundle", path.display()))?;
-        if manifest.format != FORMAT {
+        if !(OLDEST_READABLE..=FORMAT).contains(&manifest.format) {
             bail!(
-                "{} is bundle format {}, but this build reads format {FORMAT}: \
-                 prepare it again with the matching myapps-challenges-prep",
+                "{} is bundle format {}, but this build reads formats \
+                 {OLDEST_READABLE} to {FORMAT}: prepare it again with the matching \
+                 myapps-challenges-prep",
                 path.display(),
                 manifest.format
             );
@@ -231,5 +270,28 @@ impl Reader {
         .bind(limit)
         .fetch_all(&self.pool)
         .await?)
+    }
+
+    pub async fn diagram_count(&self) -> Result<i64> {
+        if self.manifest.format < DIAGRAMS_SINCE {
+            return Ok(0);
+        }
+        Ok(sqlx::query_scalar("SELECT COUNT(*) FROM diagrams")
+            .fetch_one(&self.pool)
+            .await?)
+    }
+
+    /// Up to `limit` diagrams with a hash after `after`, in hash order.
+    pub async fn diagrams_after(&self, after: &str, limit: i64) -> Result<Vec<Diagram>> {
+        if self.manifest.format < DIAGRAMS_SINCE {
+            return Ok(Vec::new());
+        }
+        Ok(
+            sqlx::query_as("SELECT hash, svg FROM diagrams WHERE hash > ? ORDER BY hash LIMIT ?")
+                .bind(after)
+                .bind(limit)
+                .fetch_all(&self.pool)
+                .await?,
+        )
     }
 }

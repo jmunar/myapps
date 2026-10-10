@@ -285,6 +285,9 @@ After login, the top-level router serves:
   - `/challenges/problems/{id}` — Old per-problem links: redirect to the
     problem's practice page
   - `/challenges/stats` — Accuracy and current level per subject and per level
+  - `/challenges/diagrams/{hash}` — A rendered Asymptote diagram
+    (`challenges_diagrams`, keyed by the SHA-256 of its source), served as
+    `image/svg+xml` with a sandboxing CSP and cached as immutable
 
 ## Database Schema
 

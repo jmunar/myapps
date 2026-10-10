@@ -665,8 +665,13 @@ and records whether the user got it right. Design notes and dataset research:
 
 - **Two datasets** — UGPhysics (13 subjects, its `level` mapped to three tiers:
   knowledge recall, laws application, derivation/practical) and Hendrycks MATH
-  (7 subjects, levels 1–5). Problems with diagrams the page cannot show
-  (`[asy]`) or with no level are dropped during preparation.
+  (7 subjects, levels 1–5). Problems with no level are dropped during
+  preparation.
+- **Diagrams** — Hendrycks MATH's Asymptote (`[asy]`) figures are rendered to
+  SVG during preparation, in a sandbox, and shipped in the bundle by the hash
+  of their source; the page shows them as images (a placeholder where a
+  solution's did not render). Problems whose own figure fails to render are
+  dropped.
 - **Prepared offline, loaded on the server** — `myapps-challenges-prep <key>`
   runs on a workstation, reads the dataset from the Hugging Face
   datasets-server and writes a bundle: one SQLite file per dataset, with a
@@ -703,6 +708,6 @@ and records whether the user got it right. Design notes and dataset research:
   type) from a fixed taxonomy, computed during preparation, so stats can show
   where a user fails most.
 - **Learned difficulty** — Elo/IRT-style ratings updated on every attempt.
-- **More datasets** — U-MATH, PhysUniBench, SciBench; Hendrycks `[asy]`
-  diagrams; `tabular` tables, which KaTeX cannot render.
+- **More datasets** — U-MATH, PhysUniBench, SciBench; `tabular` tables, which
+  KaTeX cannot render.
 - **Subject filter** and a **daily problem** notification.
