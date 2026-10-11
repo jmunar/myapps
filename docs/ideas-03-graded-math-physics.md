@@ -407,15 +407,188 @@ In rough order of value:
   position (`algebra/test/12`), so an upstream reorder must leave a problem
   ungraded, not mis-graded. This also makes a page cache of the HF download
   (to spare a fresh dev database the ~13-minute import) a nice-to-have rather
-  than a need.
-- **Learned difficulty.** An Elo/IRT-style rating per problem and per
-  (user, subject), seeded from `difficulty`, updated on every attempt. This
-  replaces the dataset's own levels and is what lets U-MATH (no levels) in.
+  than a need. Which model and which ranking method: see
+  [Grader spike](#grader-spike-2026-10-04).
+- **Learned difficulty.** Treat the draw as a classification problem: predict
+  whether the user solves a problem, and serve problems the user is likely but
+  not certain to solve. This replaces the dataset's own levels and is what lets
+  U-MATH (no levels) in. The model is a logistic regression that keeps the
+  problem apart from the person (an item-response model with item features):
+
+  `P(solved) = σ(ability[user, dataset, subject] − w · x(problem))`
+
+  - `x(problem)` is the grader's output: its score plus the answers to a set
+    of concrete questions. The questions are a shared core (steps, technique,
+    insight, cases, computation), so datasets can pool what they learn, plus
+    extras per dataset, such as a physics ladder (recall → one law → combined
+    laws → advanced maths), units and answer type. They are extra columns in
+    `grades-v1.jsonl`, tagged with the rubric version, and computed on the
+    laptop, never on the Odroid.
+  - `w` says what makes a problem hard, which doesn't go stale. Share it
+    across a dataset, not per subject, start it from the grader's offline fit
+    and shrink it toward that fit (L2 to the prior). At one or two problems a
+    day there are tens of labels a month, so with little data this just ranks
+    by the grader's score.
+  - `ability` is what drifts as the user shakes off the rust, so the recency
+    weighting goes there and not on the whole regression. An Elo-style update
+    on every attempt does it; its step size is the one knob: large at first,
+    smaller once it settles. A new (dataset, subject) starts at the ability
+    implied by the staircase.
+  - Draw problems with predicted P(solved) around 0.6–0.8, aiming near 0.7
+    (where the staircase settles), with an upward lean like today's L+1. The
+    model only learns about problems it chooses to show, so it must sometimes
+    show a harder one.
+
+  Cheap enough for the Odroid: Newton's method over 10–20 features and a few
+  thousand attempts takes well under a millisecond, in about a hundred lines of
+  Rust with no new crate. Everything is refitted by replaying
+  `challenges_attempts`, so there is no learned state to store or migrate,
+  just as with `challenges_progress`. Things to watch:
+
+  - Self-marked labels are noisy (answer checking above fixes that), which is
+    one more reason to keep the model small and strongly regularised.
+  - A skip says something ("looks too hard", or "not today"). Record skips,
+    but never as failures.
+  - The data only covers problems near the user's level, because that's what
+    gets drawn. The model will tell those apart well and be unreliable far from
+    them, which is all the draw needs.
+  - Check it before switching: replay `challenges_attempts` in order,
+    predicting each attempt only from earlier ones, and compare log-loss and
+    calibration against the staircase. No new data needed.
 - **More datasets**: U-MATH, PhysUniBench (needs image storage), SciBench,
   the OpenStax answer keys.
 - **Daily problem**: a `cron` push notification with the day's draw.
 - **Subject filter**: restrict a session to chosen subjects.
 - Hendrycks `[asy]` diagrams: render Asymptote offline to SVG at import time.
+
+## Grader spike (2026-10-04)
+
+The plan for the problem grader was a relative one: a fast "System One" model
+(Laya or CLM-8B) compares pairs of problems ("which is harder?") and a ranking
+model turns the probabilities into a score per problem. Before building it, both
+models were installed locally and measured. They are fine for concrete questions
+and poor at "which is harder?". Better options, built on the same base model,
+are listed below.
+
+**How it was measured.** 570 Hendrycks MATH test problems (algebra, number
+theory, counting & probability, with no `[asy]`) were fetched from the
+datasets-server. Within those, 120 same-subject pairs of different human level
+make up 200 distinct problems. A verdict counts as correct when it agrees with
+the human `level`. "Corrected for order" means each pair was asked in both
+orders and the two probabilities averaged. With 120 pairs, differences of about
+4 points are noise. All of it ran on the dev laptop (Ryzen 5 7640HS, Radeon
+760M iGPU through Vulkan, 30 GB RAM). The Odroid is not involved, because the
+grader is a one-off run whose output is a file in the repo.
+
+### The two models
+
+| | Laya (`convaiinnovations/laya`) | CLM-8B (`Contrastive-LM/CLM-v0.1-8B`) |
+|---|---|---|
+| What it is | ModernBERT-large (421M) + decision head | Projection heads (19M, a 75 MB `.pt`) on a frozen Qwen3-8B encoder (last-token pooling) |
+| Install | `pip install laya` + CPU torch | `pip install --no-deps git+https://github.com/Contrastive-LM/CLM.git` + numpy, requests, torch. `--no-deps` skips vLLM, which needs CUDA |
+| Runs on | CPU only: PyTorch has no Vulkan backend, and ROCm does not officially support the 760M | Encoder: `llama-server -m Qwen3-8B-Q8_0.gguf --embeddings --pooling last -ngl 99 -c 4096 -ub 2048` (Vulkan), standing in for vLLM. Heads: CPU |
+| Memory | 2.9 GB RSS, 15 s to load | 8.7 GB of GPU-mapped RAM for the Q8_0 encoder |
+| Latency | ~200–260 ms per pairwise call; 2.4 s for seven questions | ~0.6 s per pairwise call; 0.3 s per embedding |
+| Limits | 512 tokens, about 320 of them for the input; reports truncation in `usage.truncated` | 2048 tokens, truncated silently |
+| Quantization | An int8 ONNX export exists (`scripts/export_onnx.py --quantize`); not tried | Q8_0 over Q4_K_M: Q4 rankings agree with Q8 only at ~0.9 and lose signal (0.37 → 0.29) |
+
+CLM's pipeline was checked on easy cases (billing vs technical tickets came out
+0.96 / 0.99, "2+3" easy vs Goldbach hard), so its weak results below are the
+model's, not the setup's.
+
+### Asking "which is harder?"
+
+| Method | Accuracy (corrected for order) | Spearman with level | Time per call | Notes |
+|---|---|---|---|---|
+| Laya, both problems in one prompt | 58% | — | 0.2 s | No better at larger level gaps; reworded prompts were no better |
+| CLM, both problems in one prompt | 36% | — | 0.6 s | Says "A" 86% of the time, never gives the same winner when the order is swapped |
+| CLM, problems as the candidates | 48% | 0.04 | 0.3 s | Chance |
+| CLM, one "how difficult?" question per problem | 67% | 0.37 | 0.3 s | |
+| *Problem length* | 72% | 0.43 | — | Beats every System One setup above |
+| Qwen3-8B Q4_K_M as a judge | 80% | — | 0.5 s | 72 / 83 / 88 / 100% at level gaps 1–4; says "A" 71% of the time |
+| Qwen3.5-9B Q4_K_M as a judge | 84% | — | 1.35 s | Same winner both ways round 72% of the time (8B: 57%) |
+| Qwen3.6-35B-A3B Q4_K_M as a judge | 82% | — | 1.9 s | Fully on the GPU, needs the GPU memory limit at 24 GB. 6.1 s with 14 expert layers on the CPU |
+
+The judges run through `llama-server`'s chat endpoint with thinking off
+(`chat_template_kwargs: {enable_thinking: false}`), `max_tokens: 1` and
+`top_logprobs`, and read P("A") / (P("A") + P("B")). The tokens `"A"` and
+`" A"` both mean A, so add their probabilities rather than letting one overwrite the other.
+The 35B is not more accurate than the 8B or 9B at 120 pairs, and costs about 4×
+the 8B's time.
+
+### Asking concrete questions instead (a rubric)
+
+A System One model can't judge difficulty, but it can answer concrete questions
+about a problem. Seven of them, asked per problem with and without its worked
+solution:
+
+- steps (1 / 2–3 / 4–6 / more than 6)
+- most advanced technique (arithmetic / school algebra or one formula / a
+  standard competition technique / a clever idea or an advanced theorem)
+- amount of computation (none / light / heavy)
+- needs a non-obvious insight?
+- splits into cases?
+- is the answer one formula with numbers plugged in? (counts against)
+- combines several conditions?
+
+Results on the same 200 problems:
+
+| Method | Spearman with level | Pairwise accuracy | Needs labels? |
+|---|---|---|---|
+| CLM + rubric, plain sum of standardised features | 0.57 | 71% | no |
+| CLM + rubric with the solution, plain sum | 0.59 | 71% | no |
+| CLM + rubric, learned weights (5-fold CV) | 0.58 | 74% | yes |
+| Laya + rubric with the solution, plain sum | 0.32 | 68% | no |
+| *Solution length* | 0.63 | 73% | no |
+| CLM rubric + problem and solution length, learned weights | 0.65 | 72–76% | yes |
+| Ridge regression on the Qwen3-8B embedding (5-fold CV) | 0.74 | 79–80% | yes |
+
+The rubric is what makes CLM usable: 0.37 → 0.57 with no training at all. Laya
+stays weak with or without it. Seven of Laya's 400 calls with the solution
+included were truncated. The embedding regression is the best single signal,
+and it holds up across subjects: trained on two and tested on the third, it
+reaches 0.57–0.74 against 0.39–0.41 for length. But it learns the Hendrycks
+levels, so whether it carries over to physics is untested.
+
+The technique ladder above is maths. Physics needs its own wording, roughly
+UGPhysics' own `level` ladder: recall a definition → apply one law → combine
+laws → derive with advanced maths. Checking the rubric against UGPhysics' three
+tiers is the next cheap test.
+
+### Pairing and ranking
+
+Simulated with 1,000 problems and judge noise fitted to the measured Qwen3-8B
+accuracy for each level gap. Ranking with Bradley-Terry fitted on the soft
+probabilities, with one global term for position bias:
+
+| Judge calls per problem | 2 | 5 | 10 | 20 |
+|---|---|---|---|---|
+| Random pairs | 0.65 | 0.86 | 0.93 | 0.97 |
+| Random pairs + prior from the level | 0.91 | 0.93 | 0.95 | 0.97 |
+
+(Spearman with the true difficulty.) Pairing neighbours in the current ranking
+(Swiss-style) was no better than random pairs. The simulation assumes the
+judge's mistakes are random; a systematic bias such as "longer looks harder"
+survives any pairing scheme.
+
+### What to build
+
+1. **A cheap first score per problem**: the embedding regression where human
+   levels exist (Hendrycks), CLM with the rubric's plain sum elsewhere (no labels
+   needed), and solution length in both. One encoder pass per problem: about
+   80 min for all ~16.7k, or ~8 h with the seven rubric questions.
+2. **Refine with a judge**: Qwen3-8B (speed) or Qwen3.5-9B (consistency), each
+   pair asked in both orders, 5–10 random comparisons per problem **within
+   (dataset, subject)**. The selector levels are per subject anyway. That is
+   ~23 h with the 8B or ~63 h with the 9B, single stream.
+3. **Bradley-Terry with a Gaussian prior** centred on step 1's score, using the
+   soft probabilities. Write the scores to `grades-v1.jsonl` as above.
+4. **Keep ~100 hand-checked pairs** as a check on the final ranking.
+
+Running more than one model at once on the laptop can exhaust its RAM. With the
+GPU allowed 24 GB of shared memory and no swap, the Q8_0 encoder, a Laya process
+and an unrelated GPU job together set off the OOM killer. Run one model
+at a time, and make long runs save progress as they go.
 
 ## Sources
 
