@@ -434,16 +434,22 @@ In rough order of value:
   live only in a database — databases are disposable, and prod migrates with no
   backup — so the grader writes a versioned file in the repo, e.g.
   `crates/myapps-challenges/data/grades-v1.jsonl`, one row per problem:
-  `dataset`, `source_key`, a hash of the problem text, the estimate, the model
-  and the run. No problem text, so it is small (under 1 MB), reviewable, ships
-  with the binary and sidesteps UGPhysics' NC-SA licence. The import applies it
-  after the catalogue, into a table of its own (`challenges_grades`) rather than
-  over `difficulty`, which the upsert rewrites and which is worth keeping to
-  compare against. The text hash matters: a Hendrycks `source_key` is a row
-  position (`algebra/test/12`), so an upstream reorder must leave a problem
-  ungraded, not mis-graded. This also makes a page cache of the HF download
-  (to spare a fresh dev database the ~13-minute import) a nice-to-have rather
-  than a need. Which model and which ranking method: see
+  `dataset`, `source_key`, a hash of the problem text, the estimate, the
+  answers to the dataset's concrete questions (see *Learned difficulty*), the
+  model and the run. No problem text, so it is small (a few MB at most),
+  reviewable, and sidesteps UGPhysics' NC-SA licence. The grader runs on the
+  workstation, like the rest of preparation: `myapps-challenges-prep` reads the
+  file and writes the grades into the bundle as `(problem, kind, value)` tags
+  (the generic shape the bundle decision anticipates; a new table, so a bundle
+  format bump), and the server loads them into a table of their own rather than
+  over `difficulty`, which is worth keeping to compare against. The file, not
+  the prep cache, is the record: the cache under `~/.cache` is disposable, and
+  a judge run takes about a day. The text hash matters: a Hendrycks
+  `source_key` is a row position (`algebra/test/12`), so an upstream reorder
+  must leave a problem ungraded, not mis-graded. The judge and the embeddings
+  are plain HTTP calls to `llama-server`, so they can be a prep stage in Rust;
+  the CLM heads and Laya are PyTorch, so those parts stay a Python script that
+  writes the file. Which model and which ranking method: see
   [Grader spike](#grader-spike-2026-10-04).
 - **Learned difficulty.** Treat the draw as a classification problem: predict
   whether the user solves a problem, and serve problems the user is likely but
@@ -457,9 +463,10 @@ In rough order of value:
     of concrete questions. The questions are a shared core (steps, technique,
     insight, cases, computation), so datasets can pool what they learn, plus
     extras per dataset, such as a physics ladder (recall → one law → combined
-    laws → advanced maths), units and answer type. They are extra columns in
-    `grades-v1.jsonl`, tagged with the rubric version, and computed on the
-    laptop, never on the Odroid.
+    laws → advanced maths), units and answer type. They are recorded in
+    `grades-v1.jsonl` with the rubric version, reach the server as bundle tags
+    like the grade itself, and are computed on the workstation, never on the
+    Odroid. They are also the same tags that answer "where do I fail".
   - `w` says what makes a problem hard, which doesn't go stale. Share it
     across a dataset, not per subject, start it from the grader's offline fit
     and shrink it toward that fit (L2 to the prior). At one or two problems a
