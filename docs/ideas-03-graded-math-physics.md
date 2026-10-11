@@ -718,37 +718,49 @@ doesn't arise; the unweighted flag sum is for a dataset without levels.
 - **Tests**: bundle round-trip with tags, a format-2 bundle still loads, a
   reload replaces tags, a stale hash is skipped, an orphan tag is refused.
 
-**Step 2: `grade`, in stages.** Each caches under
-`~/.cache/myapps-challenges-prep/grade/<dataset>/<model>/`, appending as it goes,
-so a killed run resumes where it stopped; `--limit` and `--subject` make quick
-runs. All of it talks to one `llama-server` chat model that you start: prep prints
-the exact command and checks `/props` for the expected model before using it,
-so GPU memory stays under your control.
+**Step 2: `grade`, in stages** (built; see the
+[prep README](../crates/myapps-challenges-prep/README.md#grading)). Three
+subcommands against one `llama-server` chat model you start by hand; prep
+checks `/props` for the expected model. Every answer is appended to a cache
+under `~/.cache/myapps-challenges-prep/grade/<dataset>/<model>/`, keyed on the
+problem text's hash, so a killed run resumes.
 
-1. **`flags`**: the rubric for the dataset, in the layout above (full question
-   after the problem, problem only, one slot), about 10 h for everything. The
-   questions are a shared core plus extras per dataset, defined in the prep
-   crate with a rubric version. Physics needs its own technique ladder, checked
-   against UGPhysics' three tiers on a sample before the full run.
-2. **`prior`**: ridge from flags + log lengths to the level, per dataset,
-   **out-of-fold**, so no problem's score uses its own label. Nine-odd
-   features: a closed-form solve, no new crate.
-3. **`judge`**: seeded random pairs within (dataset, subject), 10 per problem,
-   each asked in both orders, every verdict appended to the cache as it comes.
-4. **`rank`**: Bradley-Terry on the soft probabilities, with one position-bias
-   term and a Gaussian prior centred on `prior`; a dense Newton fit per subject
-   (the largest has ~2.5k problems).
-5. **`write`**: the grades file, with tags `grade`, `grade_prior`, the flags,
-   `len_problem`, `len_solution`.
-6. **`report`**: Spearman with the level per subject, how often the judge picks
-   the same winner both ways round, and agreement with ~100 hand-checked pairs
-   in `grades/<dataset>-checks.jsonl`.
+1. **`flags`**: the rubric, in the layout above. The questions are the shared
+   core with the technique ladder per dataset (UGPhysics': recall → one law →
+   combined laws → advanced maths), under a rubric version.
+2. **`judge`**: seeded random pairs within (dataset, subject), 6 comparisons per
+   problem, each pair asked both ways round.
+3. **`rank`**: no model calls. Ridge from flags + log lengths to the level, per
+   dataset and **out-of-fold**; Bradley-Terry on the soft verdicts with a
+   position-bias term, a fitted scale and a Gaussian prior on that ridge score
+   (Newton with conjugate-gradient steps, since the Hessian is sparse); a report;
+   the grades file, with tags `grade`, `grade_prior` and `rubric.<question>`.
 
-Steps 1 and 2 are one PR. The real runs happen on the laptop, and only the
-grades files are committed. Still to decide: the judge. Qwen3-8B is ~23 h for
-both datasets at 80%; Qwen3.5-9B ~63 h at 84% and more consistent. The 8B
-first, then one subject re-judged with the 9B to see whether the ranking moves.
-Since the same server answers the flags, they and the judge then share a model.
+Tried on 300 problems per dataset, with 4 judge rounds:
+
+| | Hendrycks (7 subjects) | UGPhysics (3 tiers) |
+|---|---|---|
+| Prior (flags + lengths) vs level | 0.63 | 0.52 |
+| Grade after the judge vs level | 0.65 | 0.48 |
+| Judge, order-averaged, vs level | 80% | 72% |
+| Same winner both ways round | 36% | 51% |
+| Time per problem (flags) / per judge question | 2.4 s / 0.62 s | 2.6 s / 1.1 s |
+
+Hendrycks behaves as the spike said: the judge reproduces its 80%, and four
+rounds already improve on the prior. The judge says "A" about 80% of the time,
+which asking both ways round and the position term absorb. On UGPhysics the
+flags that work are technique (0.44) and steps (0.40); "direct",
+"constraints" and "casework" say almost nothing. There the judge pulls the grade
+*away* from the tiers (0.52 → 0.48), and the levels can't say who is right:
+UGPhysics' tiers are skill types, not measured difficulty, and a long
+one-law problem can be harder than a short derivation. Hand-checking pairs
+needs more physics than is to hand, so a check that needs no expert is the
+open item: how often a model actually solves each problem (UGPhysics and
+Hendrycks both have answers) is an empirical difficulty to rank against.
+
+The full run, at 6 rounds: flags ~8 h (Hendrycks, 12,498 problems) + ~4 h
+(UGPhysics, 5,314), judge ~13 h + ~10 h; about 35 h in all, with Qwen3-8B. The
+judge stays the 8B: the 9B would roughly treble the judge time.
 
 **Step 3, later PRs**: *Learned difficulty* above, starting with the replay
 evaluation against the staircase, then the selector. The flags are already its

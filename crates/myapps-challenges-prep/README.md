@@ -53,8 +53,8 @@ llama-server -m ~/Models/Qwen3-8B-Q4_K_M.gguf -ngl 99 -c 8192 --parallel 1 --por
 Then, per dataset, three stages:
 
 ```sh
-cargo run --release -p myapps-challenges-prep -- grade flags hendrycks-math   # ~2.3 s a problem
-cargo run --release -p myapps-challenges-prep -- grade judge hendrycks-math   # ~0.5 s a question, 10 per problem
+cargo run --release -p myapps-challenges-prep -- grade flags hendrycks-math   # ~2.4 s a problem
+cargo run --release -p myapps-challenges-prep -- grade judge hendrycks-math   # 0.6–1.1 s a question, 6 per problem
 cargo run --release -p myapps-challenges-prep -- grade rank hendrycks-math    # seconds; writes grades/hendrycks-math-v1.jsonl
 ```
 
@@ -62,7 +62,7 @@ cargo run --release -p myapps-challenges-prep -- grade rank hendrycks-math    # 
    (`src/grade/rubric.rs`), the problem first and the question after it, so the
    server's prompt cache processes each problem once.
 2. **`judge`** asks "which is harder?" of random pairs within a subject,
-   `--rounds` (10) comparisons per problem, each pair both ways round.
+   `--rounds` (6) comparisons per problem, each pair both ways round.
 3. **`rank`** fits a ridge regression from the flags and lengths to the
    dataset's levels, out-of-fold, as each problem's prior, then Bradley-Terry
    over the verdicts with the prior as a Gaussian (`--tau`, 1.0). It prints

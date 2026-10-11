@@ -51,7 +51,7 @@ pub struct Args {
     pub subject: Option<String>,
     /// Judge rounds: each pairs every problem in a subject with one other, so
     /// this is the number of comparisons per problem (judge, rank)
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 6)]
     pub rounds: usize,
     /// How far, in Bradley-Terry units, a grade may stray from its prior (rank)
     #[arg(long, default_value_t = 1.0)]
