@@ -13,8 +13,8 @@ cargo run --release -p myapps-challenges-prep -- hendrycks-math   # → hendryck
 
 Use the prep from the same commit as the deployed binary: the server refuses a
 bundle format newer than its own. It still loads older ones it knows how to
-read; a format-1 bundle, from before diagrams, loads as one with no diagrams,
-so a dataset without any (UGPhysics) need not be prepared again.
+read; each format only added a table (2: diagrams, 3: tags), so an older
+bundle loads as one with that table empty and need not be prepared again.
 
 ## Stages
 
@@ -29,7 +29,13 @@ so a dataset without any (UGPhysics) need not be prepared again.
    `--retry-failed` retries the cached failures.
 3. **Drop** the problems whose own text has a diagram that failed; a solution's
    failed diagram becomes a placeholder on the page instead.
-4. **Write** the bundle, as `<file>.partial` renamed into place at the end.
+4. **Attach grades** from the grader's output for the dataset,
+   `grades/<dataset>-v1.jsonl` in this crate (or `--grades <file>`), as the
+   bundle's tags. A row applies only while the problem's text still has the
+   SHA-256 it was graded with; the rest are counted as stale and logged, so an
+   upstream edit leaves a problem ungraded rather than mis-graded. No file
+   means the dataset is not graded yet, and the bundle has no tags.
+5. **Write** the bundle, as `<file>.partial` renamed into place at the end.
 
 ## Rendering setup (Hendrycks MATH only)
 

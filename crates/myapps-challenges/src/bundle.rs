@@ -2,8 +2,8 @@
 //! workstation by `myapps-challenges-prep` and loaded on the server by
 //! `myapps import --app challenges --dataset <file>`.
 //!
-//! Everything that is expensive to compute (fetching, cleaning, and later
-//! diagrams and extracted features) happens before the bundle exists, so the
+//! Everything that is expensive to compute (fetching, cleaning, diagrams, and
+//! the grader's scores and features) happens before the bundle exists, so the
 //! server only ever copies rows out of it. This module is the contract between
 //! the two sides: the schema, the row types, and a writer and a reader that
 //! both go through them. A change to the schema bumps `FORMAT`, and the server
@@ -19,15 +19,18 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use crate::dataset::Dataset;
 
 /// The bundle schema version this build writes and reads.
-pub const FORMAT: i64 = 2;
+pub const FORMAT: i64 = 3;
 
-/// The oldest format this build still loads. Format 1 is format 2 without the
-/// `diagrams` table, so a bundle prepared before diagrams existed (UGPhysics
-/// has none) loads as one with no diagrams instead of being prepared again.
+/// The oldest format this build still loads. Each format only adds a table to
+/// the one before (2: `diagrams`, 3: `tags`), so an older bundle loads as one
+/// with that table empty instead of being prepared again.
 pub const OLDEST_READABLE: i64 = 1;
 
 /// The first format with a `diagrams` table.
 const DIAGRAMS_SINCE: i64 = 2;
+
+/// The first format with a `tags` table.
+const TAGS_SINCE: i64 = 3;
 
 const SCHEMA: &str = "
 CREATE TABLE manifest (
@@ -59,6 +62,16 @@ CREATE TABLE problems (
 CREATE TABLE diagrams (
     hash  TEXT PRIMARY KEY,
     svg   TEXT NOT NULL
+);
+
+-- Numbers attached to a problem by the grader: its difficulty estimate and the
+-- answers to the dataset's rubric questions, one row per (problem, kind). No
+-- foreign key: the server checks every tag against the bundle's problems.
+CREATE TABLE tags (
+    source_key  TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    value       REAL NOT NULL,
+    PRIMARY KEY (source_key, kind)
 );
 ";
 
@@ -92,6 +105,14 @@ pub struct Problem {
 pub struct Diagram {
     pub hash: String,
     pub svg: String,
+}
+
+/// A number the grader attached to a problem.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct Tag {
+    pub source_key: String,
+    pub kind: String,
+    pub value: f64,
 }
 
 /// Writes a bundle to `<path>.partial` and renames it into place on `finish`,
@@ -189,6 +210,21 @@ impl Writer {
                 .execute(&mut *tx)
                 .await
                 .with_context(|| format!("inserting diagram {}", d.hash))?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn insert_tags(&self, tags: &[Tag]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        for t in tags {
+            sqlx::query("INSERT INTO tags (source_key, kind, value) VALUES (?, ?, ?)")
+                .bind(&t.source_key)
+                .bind(&t.kind)
+                .bind(t.value)
+                .execute(&mut *tx)
+                .await
+                .with_context(|| format!("inserting tag {} of {}", t.kind, t.source_key))?;
         }
         tx.commit().await?;
         Ok(())
@@ -293,5 +329,30 @@ impl Reader {
                 .fetch_all(&self.pool)
                 .await?,
         )
+    }
+
+    pub async fn tag_count(&self) -> Result<i64> {
+        if self.manifest.format < TAGS_SINCE {
+            return Ok(0);
+        }
+        Ok(sqlx::query_scalar("SELECT COUNT(*) FROM tags")
+            .fetch_one(&self.pool)
+            .await?)
+    }
+
+    /// Up to `limit` tags after `(source_key, kind)`, in that order.
+    pub async fn tags_after(&self, after: (&str, &str), limit: i64) -> Result<Vec<Tag>> {
+        if self.manifest.format < TAGS_SINCE {
+            return Ok(Vec::new());
+        }
+        Ok(sqlx::query_as(
+            "SELECT source_key, kind, value FROM tags WHERE (source_key, kind) > (?, ?)
+             ORDER BY source_key, kind LIMIT ?",
+        )
+        .bind(after.0)
+        .bind(after.1)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?)
     }
 }

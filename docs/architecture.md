@@ -265,7 +265,9 @@ After login, the top-level router serves:
   shared catalogue (`challenges_problems`, no `user_id`) loaded from bundles
   that `myapps-challenges-prep` writes on a workstation, with `myapps import
   --app challenges --dataset <file>`; problems a newer bundle drops are retired
-  (`retired_at`), never deleted.
+  (`retired_at`), never deleted. The grader's estimates and rubric answers come
+  in the same bundle as tags (`challenges_problem_tags`, one row per problem and
+  kind), replaced on every load; nothing reads them yet.
   Maths is typeset client-side by KaTeX, vendored under `static/katex/`.
   - `/challenges/` — Dataset picker (UGPhysics, Hendrycks MATH), minus the
     datasets the user hid, which are listed below it with a Show button

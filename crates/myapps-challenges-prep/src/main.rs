@@ -5,9 +5,11 @@
 //! the checks the server applies to it, are in `myapps_challenges::bundle`.
 //!
 //! The stages run in order: fetch and map every row, render the Asymptote
-//! diagrams they contain, drop the problems whose own diagram failed, write.
+//! diagrams they contain, drop the problems whose own diagram failed, attach
+//! the committed grades, write.
 
 mod fetch;
+mod grades;
 mod render;
 mod source;
 
@@ -17,7 +19,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 
-use myapps_challenges::bundle::{self, Diagram, Problem};
+use myapps_challenges::bundle::{self, Diagram, Problem, Tag};
 use myapps_challenges::dataset::Dataset;
 use myapps_challenges::diagram::{self, Segment};
 use source::Skip;
@@ -47,6 +49,10 @@ struct Cli {
     /// Render again the diagrams that failed on an earlier run
     #[arg(long)]
     retry_failed: bool,
+    /// The grader's output for this dataset
+    /// [default: grades/<dataset>-v1.jsonl in this crate, if it exists]
+    #[arg(long)]
+    grades: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -92,6 +98,7 @@ async fn main() -> Result<()> {
     let rows = fetch::Cache::new(cache.join("rows"), cli.refetch);
     let mut problems = fetch_all(dataset, &rows, &mut counts).await?;
     let diagrams = render_diagrams(&cli, &cache, &mut problems, &mut counts).await?;
+    let tags = attach_grades(&cli, dataset, &problems)?;
 
     let writer = bundle::Writer::create(
         &out,
@@ -105,14 +112,16 @@ async fn main() -> Result<()> {
         writer.insert(chunk).await?;
     }
     writer.insert_diagrams(&diagrams).await?;
+    writer.insert_tags(&tags).await?;
     writer.finish().await?;
 
     tracing::info!(
-        "{}: {} problems and {} diagrams written to {}; skipped {} without a level, \
-         {} whose diagram failed to render, {} malformed, {} truncated",
+        "{}: {} problems, {} diagrams and {} tags written to {}; skipped {} without a \
+         level, {} whose diagram failed to render, {} malformed, {} truncated",
         dataset.name(),
         problems.len(),
         diagrams.len(),
+        tags.len(),
         out.display(),
         counts.no_level,
         counts.diagram,
@@ -163,6 +172,46 @@ async fn fetch_all(
         tracing::info!("{}: {config}/{split} fetched", dataset.name());
     }
     Ok(problems)
+}
+
+/// The tags from the grades file, for the problems it still matches. A missing
+/// default file just means the dataset has not been graded; a missing file
+/// passed with `--grades` is an error.
+fn attach_grades(cli: &Cli, dataset: Dataset, problems: &[Problem]) -> Result<Vec<Tag>> {
+    let path = match &cli.grades {
+        Some(path) => path.clone(),
+        None => {
+            let path = grades::default_path(dataset);
+            if !path.exists() {
+                tracing::info!(
+                    "{}: not graded ({} not found)",
+                    dataset.name(),
+                    path.display()
+                );
+                return Ok(Vec::new());
+            }
+            path
+        }
+    };
+    let rows = grades::read(&path)?;
+    let m = grades::match_problems(problems, &rows);
+    tracing::info!(
+        "{}: {} of {} problems graded from {}",
+        dataset.name(),
+        m.graded,
+        problems.len(),
+        path.display()
+    );
+    if m.stale > 0 || m.unknown > 0 {
+        tracing::warn!(
+            "{}: {} grades skipped because the problem's text changed since, {} for problems \
+             this preparation does not have; grade them again",
+            dataset.name(),
+            m.stale,
+            m.unknown
+        );
+    }
+    Ok(m.tags)
 }
 
 /// Render every diagram in `problems`, drop the problems that cannot be shown
