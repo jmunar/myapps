@@ -555,8 +555,8 @@ workstation; see
 [`myapps-challenges-prep`](../crates/myapps-challenges-prep/README.md).
 
 ```bash
-cargo run --release -p myapps-challenges-prep -- ugphysics        # writes ugphysics.sqlite
-cargo run --release -p myapps-challenges-prep -- hendrycks-math   # writes hendrycks-math.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle ugphysics        # writes ugphysics.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle hendrycks-math   # writes hendrycks-math.sqlite
 ```
 
 Then upload and load it:

@@ -2139,6 +2139,7 @@ dependencies = [
  "anyhow",
  "clap",
  "myapps-challenges",
+ "rand 0.9.5",
  "reqwest",
  "serde",
  "serde_json",

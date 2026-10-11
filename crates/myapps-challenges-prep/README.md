@@ -7,8 +7,8 @@ to the server. The bundle format is defined in
 [`myapps-challenges/src/bundle.rs`](../myapps-challenges/src/bundle.rs).
 
 ```sh
-cargo run --release -p myapps-challenges-prep -- ugphysics        # → ugphysics.sqlite
-cargo run --release -p myapps-challenges-prep -- hendrycks-math   # → hendrycks-math.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle ugphysics        # → ugphysics.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle hendrycks-math   # → hendrycks-math.sqlite
 ```
 
 Use the prep from the same commit as the deployed binary: the server refuses a
@@ -37,7 +37,49 @@ bundle loads as one with that table empty and need not be prepared again.
    means the dataset is not graded yet, and the bundle has no tags.
 5. **Write** the bundle, as `<file>.partial` renamed into place at the end.
 
-## Rendering setup (Hendrycks MATH only)
+## Grading
+
+`grade` writes the grades file that `bundle` attaches: a difficulty estimate
+per problem, plus the answers to the dataset's rubric questions. The reasoning
+and measurements behind it are in
+[ideas-03, "Grader spike"](../../docs/ideas-03-graded-math-physics.md#grader-spike-2026-10-04).
+It talks to one `llama-server` chat model that you start yourself, alone on the
+GPU (two models at once have set off the OOM killer on the dev laptop):
+
+```sh
+llama-server -m ~/Models/Qwen3-8B-Q4_K_M.gguf -ngl 99 -c 8192 --parallel 1 --port 8091
+```
+
+Then, per dataset, three stages:
+
+```sh
+cargo run --release -p myapps-challenges-prep -- grade flags hendrycks-math   # ~2.3 s a problem
+cargo run --release -p myapps-challenges-prep -- grade judge hendrycks-math   # ~0.5 s a question, 10 per problem
+cargo run --release -p myapps-challenges-prep -- grade rank hendrycks-math    # seconds; writes grades/hendrycks-math-v1.jsonl
+```
+
+1. **`flags`** asks every problem the rubric's seven questions
+   (`src/grade/rubric.rs`), the problem first and the question after it, so the
+   server's prompt cache processes each problem once.
+2. **`judge`** asks "which is harder?" of random pairs within a subject,
+   `--rounds` (10) comparisons per problem, each pair both ways round.
+3. **`rank`** fits a ridge regression from the flags and lengths to the
+   dataset's levels, out-of-fold, as each problem's prior, then Bradley-Terry
+   over the verdicts with the prior as a Gaussian (`--tau`, 1.0). It prints
+   how prior and grade agree with the levels, per subject, and how consistent
+   the judge was, and writes the grades file. Hand-checked pairs in
+   `grades/<dataset>-checks.jsonl` (`{"harder": key, "easier": key}` per line)
+   are scored too.
+
+Answers are cached under `~/.cache/myapps-challenges-prep/grade/<dataset>/<model>/`
+one line at a time, keyed on the problem text's hash, so a killed run resumes
+where it stopped and an edited problem is asked again. `--limit N` (the same N
+problems every time) and `--subject` make quick runs; `rank` on such a run only
+reports, unless given `--out`. `--model` names the file the server must have
+loaded. Changing a rubric question means bumping `rubric::VERSION`, which
+starts its answers afresh.
+
+
 
 - **Asymptote and TeX**: `sudo pacman -S asymptote` (pulls in `texlive-basic`).
 - **bubblewrap**: every block runs in its own sandbox with no network, a
