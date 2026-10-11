@@ -22,6 +22,9 @@ visibility into spending patterns.
   their launcher via an inline edit mode (gear icon). Hidden apps are stored
   per-user; defaults to all visible. Edit mode shows all apps with hidden
   ones dimmed/dashed.
+- **App order** — in the same edit mode each card has a drag handle (touch,
+  mouse, or arrow keys on the focused handle); the order is saved per user as
+  soon as a card is dropped.
 - **Deployable app subset** — the `DEPLOY_APPS` environment variable
   (comma-separated app keys) limits which apps are mounted, shown in the
   launcher, and have background workers started. When unset, all apps are
@@ -662,14 +665,22 @@ and records whether the user got it right. Design notes and dataset research:
 
 - **Two datasets** — UGPhysics (13 subjects, its `level` mapped to three tiers:
   knowledge recall, laws application, derivation/practical) and Hendrycks MATH
-  (7 subjects, levels 1–5). Problems with diagrams the page cannot show
-  (`[asy]`) or with no level are dropped at import.
-- **Import at runtime** — `serve` imports, in the background, every dataset not
-  yet fully imported, from the Hugging Face datasets-server, paced to stay under
-  its rate limit and resumable after an interrupted run; `myapps import --app
-  challenges --dataset <key>` refreshes one by hand. The upsert keeps problem
-  ids, and with them the attempt history, stable across re-imports. Seeded
-  databases (sample problems) are skipped.
+  (7 subjects, levels 1–5). Problems with no level are dropped during
+  preparation.
+- **Diagrams** — Hendrycks MATH's Asymptote (`[asy]`) figures are rendered to
+  SVG during preparation, in a sandbox, and shipped in the bundle by the hash
+  of their source; the page shows them as images (a placeholder where a
+  solution's did not render). Problems whose own figure fails to render are
+  dropped.
+- **Prepared offline, loaded on the server** — `myapps-challenges-prep <key>`
+  runs on a workstation, reads the dataset from the Hugging Face
+  datasets-server and writes a bundle: one SQLite file per dataset, with a
+  versioned format. `myapps import --app challenges --dataset <file>` (or
+  `./deploy.sh <env> import-dataset <file>`) loads it in one transaction after
+  validating every row; the server never fetches or computes anything. A bundle
+  is the whole dataset: problems are upserted on their key, so ids and the
+  attempt history survive a reload, and problems it no longer has are retired
+  (never drawn, never deleted) until a later bundle brings them back.
 - **Problem selection** — a uniformly random subject, then a difficulty drawn
   around the user's level in that subject (L-1/L/L+1 weighted 15/60/25),
   preferring unseen problems, falling back to the nearest levels, then
@@ -691,9 +702,12 @@ and records whether the user got it right. Design notes and dataset research:
 
 - **Answer checking** — typed answers checked numerically or symbolically
   instead of self-marking.
-- **Graded difficulty** — a one-off grader's per-problem estimates, shipped as a
-  versioned file keyed by problem and text hash (see the design notes).
+- **Graded difficulty** — a one-off grader's per-problem estimates, computed
+  during preparation and shipped in the bundle (see the design notes).
+- **Extracted features** — per-dataset tags (concepts, techniques, problem
+  type) from a fixed taxonomy, computed during preparation, so stats can show
+  where a user fails most.
 - **Learned difficulty** — Elo/IRT-style ratings updated on every attempt.
-- **More datasets** — U-MATH, PhysUniBench, SciBench; Hendrycks `[asy]`
-  diagrams; `tabular` tables, which KaTeX cannot render.
+- **More datasets** — U-MATH, PhysUniBench, SciBench; `tabular` tables, which
+  KaTeX cannot render.
 - **Subject filter** and a **daily problem** notification.

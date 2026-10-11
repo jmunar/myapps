@@ -28,10 +28,12 @@ push notifications.
 ### Launcher
 
 After login you land on the app launcher, a grid of cards you can reorder and
-hide per-user.
+hide per-user: the gear opens an edit mode where each card has a drag handle
+and an eye toggle.
 
 <p align="center">
   <img src="docs/screenshots/launcher.png" width="270" alt="App launcher" />
+  <img src="docs/screenshots/launcher-edit.png" width="270" alt="App launcher – reorder and hide" />
 </p>
 
 ### LeanFin

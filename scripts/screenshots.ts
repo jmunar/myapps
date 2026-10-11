@@ -48,6 +48,12 @@ test.describe("README screenshots", () => {
     // ── Launcher ──
     await snap(page, "launcher");
 
+    // Edit mode: drag handles to reorder, eye toggles to hide.
+    await page.locator(".launcher-edit-btn").click();
+    await page.waitForSelector("[data-launcher-handle]");
+    await snap(page, "launcher-edit");
+    await page.locator(".launcher-done-btn").click();
+
     // ── LeanFin ──
     await page.goto(`${BASE_URL}/leanfin`);
     await snap(page, "leanfin-transactions");
@@ -158,8 +164,8 @@ test.describe("README screenshots", () => {
     await page.goto(`${BASE_URL}/challenges`);
     await snap(page, "challenges-picker");
 
-    await page.locator(".challenges-draw button").first().click();
-    await page.waitForURL(/\/challenges\/problems\/\d+$/);
+    await page.locator("a.challenges-start").first().click();
+    await page.waitForURL(/\/challenges\/practice\/[a-z-]+$/);
     await page.locator(".challenges-reveal > summary").click();
     // KaTeX typesets client-side; .katex only exists if the script ran.
     await expect(page.locator(".challenges-problem .katex").first()).toBeVisible();

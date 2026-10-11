@@ -2,6 +2,7 @@ use myapps_core::command::{
     CommandAction, CommandParam, CommandResult, ParamType, db_err, text_param,
 };
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -41,7 +42,8 @@ pub async fn get_problem(pool: &SqlitePool, id: i64) -> Result<Option<Problem>, 
 
 pub async fn subjects(pool: &SqlitePool, dataset: Dataset) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar(
-        "SELECT DISTINCT subject FROM challenges_problems WHERE dataset = ? ORDER BY subject",
+        "SELECT DISTINCT subject FROM challenges_problems
+         WHERE dataset = ? AND retired_at IS NULL ORDER BY subject",
     )
     .bind(dataset.key())
     .fetch_all(pool)
@@ -74,8 +76,10 @@ pub async fn progress(
 
 /// Pick the next problem: a uniformly random subject, then a level from the
 /// neighbourhood of yours in that subject, preferring problems you have never
-/// attempted. `exclude` keeps a skipped problem from coming straight back.
-/// `None` only when the dataset has not been imported.
+/// attempted. `exclude` keeps a skipped or just-answered problem from coming
+/// straight back: a subject with nothing else in it hands over to the others,
+/// in random order, and `exclude` itself is only returned when no subject has
+/// anything else. `None` only when the dataset has not been imported.
 pub async fn draw(
     pool: &SqlitePool,
     user_id: i64,
@@ -84,9 +88,32 @@ pub async fn draw(
     rng: &mut (impl Rng + Send),
 ) -> Result<Option<i64>, sqlx::Error> {
     let subjects = subjects(pool, dataset).await?;
-    let Some(subject) = selector::pick_subject(&subjects, rng) else {
+    let Some(first) = selector::pick_subject(&subjects, rng) else {
         return Ok(None);
     };
+    let mut others: Vec<&str> = subjects
+        .iter()
+        .map(String::as_str)
+        .filter(|s| *s != first)
+        .collect();
+    others.shuffle(rng);
+    for subject in std::iter::once(first).chain(others) {
+        if let Some(id) = draw_in_subject(pool, user_id, dataset, subject, exclude, rng).await? {
+            return Ok(Some(id));
+        }
+    }
+    Ok(exclude)
+}
+
+/// A problem in `subject` other than `exclude`, or `None` if it has no other.
+async fn draw_in_subject(
+    pool: &SqlitePool,
+    user_id: i64,
+    dataset: Dataset,
+    subject: &str,
+    exclude: Option<i64>,
+    rng: &mut (impl Rng + Send),
+) -> Result<Option<i64>, sqlx::Error> {
     let level = progress(pool, user_id, dataset, subject).await?.level;
     let target = selector::pick_level(level, dataset.max_level(), rng);
     let exclude = exclude.unwrap_or(-1);
@@ -95,6 +122,7 @@ pub async fn draw(
         let id: Option<i64> = sqlx::query_scalar(
             "SELECT id FROM challenges_problems p
              WHERE dataset = ? AND subject = ? AND difficulty = ? AND id != ?
+               AND retired_at IS NULL
                AND NOT EXISTS (SELECT 1 FROM challenges_attempts a
                                WHERE a.user_id = ? AND a.problem_id = p.id)
              ORDER BY random() LIMIT 1",
@@ -112,10 +140,10 @@ pub async fn draw(
     }
 
     // Every problem in the subject has been seen: repeat the one seen longest ago.
-    let id: Option<i64> = sqlx::query_scalar(
+    sqlx::query_scalar(
         "SELECT p.id FROM challenges_problems p
          JOIN challenges_attempts a ON a.problem_id = p.id AND a.user_id = ?
-         WHERE p.dataset = ? AND p.subject = ? AND p.id != ?
+         WHERE p.dataset = ? AND p.subject = ? AND p.id != ? AND p.retired_at IS NULL
          GROUP BY p.id ORDER BY MAX(a.id) ASC LIMIT 1",
     )
     .bind(user_id)
@@ -123,9 +151,7 @@ pub async fn draw(
     .bind(subject)
     .bind(exclude)
     .fetch_optional(pool)
-    .await?;
-    // A one-problem subject whose only problem was just skipped.
-    Ok(id.or((exclude != -1).then_some(exclude)))
+    .await
 }
 
 /// What marking a problem did to your level in its subject.
@@ -233,6 +259,162 @@ pub async fn record_attempt(
     }))
 }
 
+// ── Diagrams ────────────────────────────────────────────────
+
+/// The rendered SVG for a diagram hash, if the catalogue has it.
+pub async fn diagram_svg(pool: &SqlitePool, hash: &str) -> Result<Option<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT svg FROM challenges_diagrams WHERE hash = ?")
+        .bind(hash)
+        .fetch_optional(pool)
+        .await
+}
+
+/// Which of `hashes` the catalogue has a rendering for.
+pub async fn rendered_diagrams(
+    pool: &SqlitePool,
+    hashes: &[String],
+) -> Result<std::collections::HashSet<String>, sqlx::Error> {
+    let mut found = std::collections::HashSet::new();
+    for hash in hashes {
+        let present: Option<i64> =
+            sqlx::query_scalar("SELECT 1 FROM challenges_diagrams WHERE hash = ?")
+                .bind(hash)
+                .fetch_optional(pool)
+                .await?;
+        if present.is_some() {
+            found.insert(hash.clone());
+        }
+    }
+    Ok(found)
+}
+
+// ── The current problem ────────────────────────────────────
+
+/// The problem you are working on in `dataset`, if any.
+pub async fn current(
+    pool: &SqlitePool,
+    user_id: i64,
+    dataset: Dataset,
+) -> Result<Option<i64>, sqlx::Error> {
+    // The join drops a row whose problem has been retired or moved dataset,
+    // so it is replaced by a fresh draw rather than shown under the wrong
+    // heading or kept after the bundle dropped it.
+    sqlx::query_scalar(
+        "SELECT c.problem_id FROM challenges_current c
+         JOIN challenges_problems p ON p.id = c.problem_id AND p.dataset = c.dataset
+                                   AND p.retired_at IS NULL
+         WHERE c.user_id = ? AND c.dataset = ?",
+    )
+    .bind(user_id)
+    .bind(dataset.key())
+    .fetch_optional(pool)
+    .await
+}
+
+async fn set_current(
+    pool: &SqlitePool,
+    user_id: i64,
+    dataset: Dataset,
+    problem_id: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO challenges_current (user_id, dataset, problem_id) VALUES (?, ?, ?)
+         ON CONFLICT (user_id, dataset) DO UPDATE SET problem_id = excluded.problem_id",
+    )
+    .bind(user_id)
+    .bind(dataset.key())
+    .bind(problem_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The problem you are working on in `dataset`, drawing one if there is none.
+/// `None` only when the dataset has not been imported.
+pub async fn current_or_draw(
+    pool: &SqlitePool,
+    user_id: i64,
+    dataset: Dataset,
+    rng: &mut (impl Rng + Send),
+) -> Result<Option<i64>, sqlx::Error> {
+    if let Some(id) = current(pool, user_id, dataset).await? {
+        return Ok(Some(id));
+    }
+    let Some(id) = draw(pool, user_id, dataset, None, rng).await? else {
+        return Ok(None);
+    };
+    set_current(pool, user_id, dataset, id).await?;
+    Ok(Some(id))
+}
+
+/// Swap the current problem for another without recording anything.
+pub async fn skip(
+    pool: &SqlitePool,
+    user_id: i64,
+    dataset: Dataset,
+    rng: &mut (impl Rng + Send),
+) -> Result<Option<i64>, sqlx::Error> {
+    let exclude = current(pool, user_id, dataset).await?;
+    let Some(id) = draw(pool, user_id, dataset, exclude, rng).await? else {
+        return Ok(None);
+    };
+    set_current(pool, user_id, dataset, id).await?;
+    Ok(Some(id))
+}
+
+/// Mark the current problem in `dataset` and draw the next one. `None` when
+/// `problem_id` is not the current problem — a form from an older page, or a
+/// second tap after the first already moved on — and nothing is recorded.
+pub async fn mark(
+    pool: &SqlitePool,
+    user_id: i64,
+    dataset: Dataset,
+    problem_id: i64,
+    correct: bool,
+    rng: &mut (impl Rng + Send),
+) -> Result<Option<Outcome>, sqlx::Error> {
+    if current(pool, user_id, dataset).await? != Some(problem_id) {
+        return Ok(None);
+    }
+    let Some(outcome) = record_attempt(pool, user_id, problem_id, correct).await? else {
+        return Ok(None);
+    };
+    if let Some(next) = draw(pool, user_id, dataset, Some(problem_id), rng).await? {
+        set_current(pool, user_id, dataset, next).await?;
+    }
+    Ok(Some(outcome))
+}
+
+// ── Hidden datasets ─────────────────────────────────────────
+
+pub async fn hidden_datasets(pool: &SqlitePool, user_id: i64) -> Result<Vec<Dataset>, sqlx::Error> {
+    let keys: Vec<String> =
+        sqlx::query_scalar("SELECT dataset FROM challenges_hidden_datasets WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
+    Ok(keys.iter().filter_map(|k| Dataset::from_key(k)).collect())
+}
+
+pub async fn set_dataset_hidden(
+    pool: &SqlitePool,
+    user_id: i64,
+    dataset: Dataset,
+    hidden: bool,
+) -> Result<(), sqlx::Error> {
+    let sql = if hidden {
+        "INSERT OR IGNORE INTO challenges_hidden_datasets (user_id, dataset) VALUES (?, ?)"
+    } else {
+        "DELETE FROM challenges_hidden_datasets WHERE user_id = ? AND dataset = ?"
+    };
+    sqlx::query(sql)
+        .bind(user_id)
+        .bind(dataset.key())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// The dataset of your most recent attempt, so "next problem" continues where
 /// you left off.
 pub async fn last_dataset(pool: &SqlitePool, user_id: i64) -> Result<Option<Dataset>, sqlx::Error> {
@@ -273,11 +455,12 @@ pub async fn dataset_stats(
     user_id: i64,
     dataset: Dataset,
 ) -> Result<DatasetStats, sqlx::Error> {
-    let problems: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM challenges_problems WHERE dataset = ?")
-            .bind(dataset.key())
-            .fetch_one(pool)
-            .await?;
+    let problems: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM challenges_problems WHERE dataset = ? AND retired_at IS NULL",
+    )
+    .bind(dataset.key())
+    .fetch_one(pool)
+    .await?;
 
     let by_subject: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT p.subject, COUNT(*), SUM(a.correct) FROM challenges_attempts a
@@ -368,7 +551,7 @@ pub fn commands() -> Vec<CommandAction> {
         CommandAction {
             app: "challenges",
             name: "next_problem",
-            description: "Draw the next practice problem",
+            description: "Open the practice problem in progress, drawing one if there is none",
             params: DATASET_PARAM,
         },
         CommandAction {
@@ -411,12 +594,13 @@ pub async fn dispatch(
                     .unwrap_or(Dataset::Ugphysics),
             };
             let mut rng = StdRng::from_os_rng();
-            let id = draw(pool, user_id, dataset, None, &mut rng)
+            current_or_draw(pool, user_id, dataset, &mut rng)
                 .await
                 .map_err(db_err)?
                 .ok_or_else(|| format!("{} has not been imported yet.", dataset.name()))?;
             Ok(CommandResult::redirect(format!(
-                "{base_path}/challenges/problems/{id}"
+                "{base_path}/challenges/practice/{}",
+                dataset.key()
             )))
         }
         "stats" => Ok(CommandResult::redirect(format!(

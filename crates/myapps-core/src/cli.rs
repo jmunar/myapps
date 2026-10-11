@@ -71,7 +71,8 @@ pub enum Command {
         /// App key to import into (e.g. challenges)
         #[arg(long)]
         app: String,
-        /// What to import; the app defines the valid values (e.g. ugphysics)
+        /// What to import; the app defines the valid values (e.g. a dataset
+        /// bundle file for challenges)
         #[arg(long)]
         dataset: String,
     },
