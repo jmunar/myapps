@@ -754,13 +754,52 @@ flags that work are technique (0.44) and steps (0.40); "direct",
 *away* from the tiers (0.52 → 0.48), and the levels can't say who is right:
 UGPhysics' tiers are skill types, not measured difficulty, and a long
 one-law problem can be harder than a short derivation. Hand-checking pairs
-needs more physics than is to hand, so a check that needs no expert is the
-open item: how often a model actually solves each problem (UGPhysics and
-Hendrycks both have answers) is an empirical difficulty to rank against.
+needs more physics than is to hand, so the check is one that needs no expert:
+how often a model actually solves each problem (UGPhysics and Hendrycks both
+have answers) is an empirical difficulty to rank against (step 2b below).
 
 The full run, at 6 rounds: flags ~8 h (Hendrycks, 12,498 problems) + ~4 h
 (UGPhysics, 5,314), judge ~13 h + ~10 h; about 35 h in all, with Qwen3-8B. The
 judge stays the 8B: the 9B would roughly treble the judge time.
+
+The full run (finished 2026-10-13, committed as `grades/<dataset>-v1.jsonl`) against
+the levels:
+
+| | Hendrycks | UGPhysics |
+|---|---|---|
+| Prior vs level | 0.63 | 0.51 |
+| Grade vs level | 0.63 | 0.43 |
+| Judge, order-averaged, vs level | 77% | 69% |
+| Same winner both ways round | 31% | 48% |
+
+On Hendrycks the judge no longer adds to the prior at full scale; on UGPhysics
+it pulls further from the tiers than on the sample.
+
+**Step 2b: `solve`, the expert-free check** (built, not yet run). A stronger
+model attempts a sample of problems with its thinking on, and `rank` reports
+which of level, prior and grade best predicts where it fails, and how long it
+thought. The solver is **Qwen3.6-35B-A3B** (Q4_K_M, 20.6 GiB), picked on
+published scores and measured speed on the laptop (`llama-bench`, 2026-10-13,
+one model at a time):
+
+| Model | GPQA Diamond | AIME | Prompt / generation, tokens/s |
+|---|---|---|---|
+| Qwen3.6-35B-A3B Q4_K_M | 84.5–86 | 92.7–92.9 | 232 / 20.9 |
+| Gemma 4 26B-A4B Q4_K_M | 79–82 | 88.3 | 281 / 17.9 |
+| Nemotron 3.5 Lightning 30B-A3B IQ4_XS | 74–75 | 82.7 ('25) | 130 / 12.7 |
+| Qwen3.5-9B Q4_K_M | below Gemma 4 26B | | 232 / 12.7 |
+
+The 3B-active MoE writes faster than the dense 9B; the dense Qwen3.6-27B
+scores a little higher but would write at a quarter of the speed. Thinking is
+capped at 8,192 tokens by the server (`--reasoning-budget`), which forces an
+answer: at ~21 tokens/s a problem takes 2–7 minutes, so 200 UGPhysics problems
+(the first 200 of the sample, which already have flags and verdicts) take
+roughly 7–20 h. When UGPhysics was published, the best model, o1-mini, solved
+50%, so a 2026 35B should still fail enough problems to rank against. Answers come in
+seven types (numbers, expressions, equations, intervals, several at once), so
+an answer matching the reference by rule (same text, or a number within 1%) is
+right; anything else goes to the same model with thinking off, asked in one
+token whether the two are equivalent.
 
 **Step 3, later PRs**: *Learned difficulty* above, starting with the replay
 evaluation against the staircase, then the selector. The flags are already its

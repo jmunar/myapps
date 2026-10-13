@@ -71,6 +71,32 @@ cargo run --release -p myapps-challenges-prep -- grade rank hendrycks-math    # 
    `grades/<dataset>-checks.jsonl` (`{"harder": key, "easier": key}` per line)
    are scored too.
 
+### Checking the grades against a solver
+
+`solve` is not part of the grades but a check on them that needs no expert: a
+stronger model attempts a sample of the problems, and `rank` then reports
+which of the levels, the prior and the grade best predicts where it failed
+(and how long it had to think). The solver thinks before answering, which
+takes minutes a problem, so give it a sample, and a server of its own (no
+other model on the GPU):
+
+```sh
+llama-server -m ~/Models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf -ngl 99 -c 16384 --parallel 1 --port 8091 \
+  --reasoning-budget 8192 --reasoning-budget-message "Time is up, so I'll give my final answer now."
+cargo run --release -p myapps-challenges-prep -- grade solve ugphysics --limit 200   # ~2–7 min a problem
+cargo run --release -p myapps-challenges-prep -- grade rank ugphysics                # reports "Solved by …"
+```
+
+The solver writes its answer in `\boxed{}`; it counts as right when it matches
+the dataset's answer once spacing and sizing are ignored, or as a number to
+1%, and otherwise the same model, thinking off, is asked whether the two are
+equivalent (one token, as for the flags). Each attempt is kept with its
+answer, verdict, token count and reply in `solve.jsonl` under the solver's
+cache directory. `--solver` names its model file, `--attempts N` samples each
+problem N times with different seeds, for a solve rate rather than right or
+wrong. The first `--limit` problems are the same ones as the flags and judge
+sample runs used.
+
 Answers are cached under `~/.cache/myapps-challenges-prep/grade/<dataset>/<model>/`
 one line at a time, keyed on the problem text's hash, so a killed run resumes
 where it stopped and an edited problem is asked again. `--limit N` (the same N

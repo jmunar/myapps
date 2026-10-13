@@ -1,7 +1,8 @@
 //! Stage `rank`: no model calls. The prior is a ridge regression from the
 //! flags and lengths to the dataset's own levels, out-of-fold so no problem's
 //! prior saw its own level; Bradley-Terry over the judge's verdicts refines it.
-//! Reports how both agree with the levels, and writes the grades file.
+//! Reports how both agree with the levels, and with the solver's failures when
+//! `solve` has run, and writes the grades file.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -10,7 +11,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use super::stats::{self, Obs};
-use super::{flags, judge, rubric};
+use super::{flags, judge, rubric, solve};
 use crate::grades::{self, text_hash};
 use myapps_challenges::bundle::Problem;
 use myapps_challenges::dataset::Dataset;
@@ -22,6 +23,9 @@ pub struct Options<'a> {
     pub problems: &'a [&'a Problem],
     pub dir: &'a Path,
     pub model: &'a str,
+    /// Where `solve` cached the solver's attempts, and which model it was.
+    pub solver_dir: &'a Path,
+    pub solver: &'a str,
     pub rounds: usize,
     pub tau: f64,
     /// Where to write the grades; `None` only reports.
@@ -104,7 +108,7 @@ pub fn run(o: &Options) -> Result<()> {
 
     report(
         o, &graded, &level, &prior, &grade, &obs, &flag, lambda, &fit,
-    );
+    )?;
 
     if let Some(out) = o.out {
         let run = format!(
@@ -168,7 +172,7 @@ fn report(
     flag: &dyn Fn(&str) -> Vec<f64>,
     lambda: f64,
     fit: &stats::Fit,
-) {
+) -> Result<()> {
     let mass = graded.iter().map(|(_, _, r)| r.mass).sum::<f64>() / graded.len() as f64;
     println!(
         "\n{}: {} of {} problems have flags (mass on the letters {mass:.3}); {} verdicts",
@@ -250,6 +254,8 @@ fn report(
         );
     }
 
+    solved(o, graded, level, prior, grade)?;
+
     let checks_path =
         grades::default_path(o.dataset).with_file_name(format!("{}-checks.jsonl", o.dataset.key()));
     if let Ok(checks) = super::jsonl::read::<Check>(&checks_path)
@@ -276,4 +282,84 @@ fn report(
         );
     }
     println!();
+    Ok(())
+}
+
+/// How the solver did on the graded problems it attempted, and which of the
+/// level, the prior and the grade best predicts where it failed.
+fn solved(
+    o: &Options,
+    graded: &[(&Problem, String, &flags::Row)],
+    level: &[f64],
+    prior: &[f64],
+    grade: &[f64],
+) -> Result<()> {
+    let attempts = solve::load(o.solver_dir)?;
+    if attempts.is_empty() {
+        return Ok(());
+    }
+    let at: HashMap<(&str, &str), usize> = graded
+        .iter()
+        .enumerate()
+        .map(|(i, (p, hash, _))| ((p.source_key.as_str(), hash.as_str()), i))
+        .collect();
+    // Per graded problem: attempts, summed P(right), summed tokens.
+    let mut per: BTreeMap<usize, (f64, f64, f64)> = BTreeMap::new();
+    let (mut n, mut by_rule, mut over) = (0, 0, 0);
+    for a in &attempts {
+        let Some(&i) = at.get(&(a.source_key.as_str(), a.text_hash.as_str())) else {
+            continue;
+        };
+        let e = per.entry(i).or_default();
+        e.0 += 1.0;
+        e.1 += a.p_correct;
+        e.2 += a.tokens as f64;
+        n += 1;
+        by_rule += usize::from(a.checked_by == "rule");
+        over += usize::from(a.tokens >= u64::from(solve::THINKING));
+    }
+    if per.is_empty() {
+        return Ok(());
+    }
+    let idx: Vec<usize> = per.keys().copied().collect();
+    let fail: Vec<f64> = per.values().map(|(k, r, _)| 1.0 - r / k).collect();
+    let tokens: Vec<f64> = per.values().map(|(k, _, t)| t / k).collect();
+    let pick = |v: &[f64]| -> Vec<f64> { idx.iter().map(|&i| v[i]).collect() };
+    let (level, prior, grade) = (pick(level), pick(prior), pick(grade));
+
+    println!(
+        "\nSolved by {}: {} problems, {n} attempts; right {:.0}%, {:.0}% of answers matched \
+         by rule, {:.0}% took {} tokens or more (the thinking budget)",
+        o.solver,
+        idx.len(),
+        100.0 * (1.0 - fail.iter().sum::<f64>() / fail.len() as f64),
+        100.0 * by_rule as f64 / n as f64,
+        100.0 * over as f64 / n as f64,
+        solve::THINKING
+    );
+    let mut by_level: BTreeMap<i64, (usize, f64)> = BTreeMap::new();
+    for (l, f) in level.iter().zip(&fail) {
+        let e = by_level.entry(*l as i64).or_default();
+        e.0 += 1;
+        e.1 += 1.0 - f;
+    }
+    let line: Vec<String> = by_level
+        .iter()
+        .map(|(l, (k, r))| format!("{l}: {:.0}% of {k}", 100.0 * r / *k as f64))
+        .collect();
+    println!("  right by level: {}", line.join(", "));
+    println!(
+        "  Spearman with failing:         level {:+.2}  prior {:+.2}  grade {:+.2}  thinking tokens {:+.2}",
+        stats::spearman(&level, &fail),
+        stats::spearman(&prior, &fail),
+        stats::spearman(&grade, &fail),
+        stats::spearman(&tokens, &fail)
+    );
+    println!(
+        "  Spearman with thinking tokens: level {:+.2}  prior {:+.2}  grade {:+.2}",
+        stats::spearman(&level, &tokens),
+        stats::spearman(&prior, &tokens),
+        stats::spearman(&grade, &tokens)
+    );
+    Ok(())
 }

@@ -119,7 +119,7 @@ pub async fn run(
                 failed += 1;
             }
         }
-        progress("judge", n + 1, todo.len(), start);
+        progress("judge", n + 1, todo.len(), start, 50);
     }
     tracing::info!("judge: done, {failed} skipped");
     Ok(())

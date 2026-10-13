@@ -1,6 +1,7 @@
-//! The one model the grader talks to: a `llama-server` chat endpoint, asked
-//! for a single token and read through its top log-probabilities, so every
-//! answer is a probability over lettered options rather than sampled text.
+//! The model the grader talks to: a `llama-server` chat endpoint, asked for a
+//! single token and read through its top log-probabilities, so every answer is
+//! a probability over lettered options rather than sampled text. `solve` also
+//! lets it think and write a solution.
 
 use std::path::Path;
 use std::time::Duration;
@@ -18,8 +19,9 @@ pub struct Llm {
 impl Llm {
     /// Check that `base` is a llama-server with `model` loaded. The server is
     /// started by hand, so how much memory it takes stays the user's call;
-    /// this prints the command the spike used when there is none.
-    pub async fn connect(base: &str, model: &str) -> Result<Llm> {
+    /// when there is none, this prints the command to start one, with the
+    /// stage's own `options` (context size and the like).
+    pub async fn connect(base: &str, model: &str, options: &str) -> Result<Llm> {
         let base = base.trim_end_matches('/').to_string();
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(600))
@@ -28,7 +30,7 @@ impl Llm {
             Ok(response) => response.json().await.context("reading /props")?,
             Err(e) => bail!(
                 "no llama-server at {base} ({e}). Start one, alone on the GPU:\n  \
-                 llama-server -m ~/Models/{model} -ngl 99 -c 8192 --parallel 1 --port 8091"
+                 llama-server -m ~/Models/{model} -ngl 99 {options} --parallel 1 --port 8091"
             ),
         };
         let path = props["model_path"].as_str().unwrap_or_default();
@@ -78,6 +80,65 @@ impl Llm {
             .context("no top_logprobs in the reply")?;
         Ok(letter_probabilities(top, options))
     }
+
+    /// A thought-out reply, sampled with Qwen's settings for thinking mode
+    /// (greedy decoding makes it loop). `seed` makes a repeated attempt
+    /// differ from the first and still be reproducible. How long it may think
+    /// is the server's `--reasoning-budget`; `max_tokens` is the backstop.
+    pub async fn generate(
+        &self,
+        system: &str,
+        user: &str,
+        max_tokens: u32,
+        seed: u64,
+    ) -> Result<Reply> {
+        let body = json!({
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0,
+            "seed": seed,
+            "chat_template_kwargs": {"enable_thinking": true},
+        });
+        let response = self
+            .client
+            .post(format!("{}/v1/chat/completions", self.base))
+            .timeout(Duration::from_secs(3 * 3600))
+            .json(&body)
+            .send()
+            .await?;
+        let status = response.status();
+        let reply: Value = response.json().await?;
+        if !status.is_success() {
+            bail!("llama-server answered {status}: {reply}");
+        }
+        let choice = &reply["choices"][0];
+        Ok(Reply {
+            content: choice["message"]["content"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            finish: choice["finish_reason"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            tokens: reply["usage"]["completion_tokens"].as_u64().unwrap_or(0),
+        })
+    }
+}
+
+pub struct Reply {
+    /// The reply after the thinking, which the server keeps apart.
+    pub content: String,
+    /// "stop", or "length" when `max_tokens` cut it off.
+    pub finish: String,
+    /// Tokens generated, the thinking included.
+    pub tokens: u64,
 }
 
 /// "A" and " A" are the same answer: add them up rather than letting one

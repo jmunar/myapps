@@ -88,15 +88,15 @@ pub async fn run(llm: &Llm, dataset: Dataset, problems: &[&Problem], dir: &Path)
             values,
             mass: mass / questions.len() as f64,
         })?;
-        progress("flags", n + 1, todo.len(), start);
+        progress("flags", n + 1, todo.len(), start, 50);
     }
     tracing::info!("flags: done, {failed} skipped");
     Ok(())
 }
 
-/// A progress line every 50 items, with the time left at the rate so far.
-pub fn progress(stage: &str, done: usize, total: usize, start: Instant) {
-    if !done.is_multiple_of(50) && done != total {
+/// A progress line every `every` items, with the time left at the rate so far.
+pub fn progress(stage: &str, done: usize, total: usize, start: Instant, every: usize) {
+    if !done.is_multiple_of(every) && done != total {
         return;
     }
     let per = start.elapsed().as_secs_f64() / done as f64;
