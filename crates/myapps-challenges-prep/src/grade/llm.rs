@@ -44,6 +44,18 @@ impl Llm {
         Ok(Llm { client, base })
     }
 
+    /// Whether the server still answers: after a failed request, tells a
+    /// problem the server choked on from a server that is gone (killed for
+    /// memory, say), when carrying on would only skip everything left.
+    pub async fn alive(&self) -> bool {
+        self.client
+            .get(format!("{}/health", self.base))
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+            .is_ok_and(|r| r.status().is_success())
+    }
+
     /// The probability of each of the first `options` letters as the answer,
     /// normalised over them, and the probability mass they had before that
     /// (low means the model wanted to say something else).

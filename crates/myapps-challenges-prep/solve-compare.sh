@@ -24,10 +24,12 @@ GEMMA=gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
 LOG=${LOG:-$HOME/solve-compare.log}
 SERVER_LOG=${SERVER_LOG:-$HOME/solve-compare-server.log}
 
-# Must match solve::server_options (thinking budget and context).
-SOLVE_OPTS=(-c 16384 --reasoning-budget 8192
+# Must match solve::server_options. --cache-ram 0: the RAM prompt cache grew
+# until the OOM killer stopped the first run (README, "Checking the grades").
+SOLVE_OPTS=(-c 16384 --cache-ram 0 --reasoning-budget 8192
     --reasoning-budget-message "Time is up, so I'll give my final answer now.")
-CHECK_OPTS=(-c 16384)
+CHECK_OPTS=(-c 16384 --cache-ram 0)
+TRIES=${TRIES:-3}
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PREP=${PREP:-$ROOT/target/release/myapps-challenges-prep}
@@ -51,7 +53,10 @@ start_server() {
     shift
     stop_server
     log "starting llama-server with $model"
-    llama-server -m "$MODELS/$model" -ngl 99 --parallel 1 --port "$PORT" "$@" \
+    # In a scope of its own, so if the OOM killer picks it, systemd stops only
+    # the server, not this script's terminal with it (which is what happened).
+    systemd-run --user --scope --quiet -p OOMPolicy=continue \
+        llama-server -m "$MODELS/$model" -ngl 99 --parallel 1 --port "$PORT" "$@" \
         >>"$SERVER_LOG" 2>&1 &
     SERVER_PID=$!
     # Loading 16–21 GiB of weights takes a while; /health answers 200 when ready.
@@ -86,16 +91,36 @@ done
 log "building the prep tool"
 cargo build --release -q -p myapps-challenges-prep --manifest-path "$ROOT/Cargo.toml"
 
+# phase <model> <server options…> -- <grade args…>: a server for the model,
+# then the stage. A stage stops when its server dies; every stage resumes, so
+# the server is started again and the stage rerun, up to $TRIES times.
+phase() {
+    local model=$1
+    shift
+    local opts=()
+    while [[ $1 != -- ]]; do opts+=("$1"); shift; done
+    shift
+    for try in $(seq "$TRIES"); do
+        start_server "$model" "${opts[@]}"
+        if prep "$@"; then
+            return
+        fi
+        if kill -0 "$SERVER_PID" 2>/dev/null; then
+            log "grade $1 failed with the server still up; giving up"
+            exit 1
+        fi
+        log "llama-server died (try $try of $TRIES; OOM? journalctl -k | grep -i oom)"
+        SERVER_PID=
+    done
+    log "giving up after $TRIES tries"
+    exit 1
+}
+
 run() {
-    start_server "$QWEN" "${SOLVE_OPTS[@]}"
-    prep solve "$DATASET" --limit "$LIMIT"
-
-    start_server "$GEMMA" "${SOLVE_OPTS[@]}"
-    prep solve "$DATASET" --limit "$LIMIT" --solver "$GEMMA"
-
+    phase "$QWEN" "${SOLVE_OPTS[@]}" -- solve "$DATASET" --limit "$LIMIT"
+    phase "$GEMMA" "${SOLVE_OPTS[@]}" -- solve "$DATASET" --limit "$LIMIT" --solver "$GEMMA"
     # Qwen3.6 re-checks Gemma's answers, so both share a checker.
-    start_server "$QWEN" "${CHECK_OPTS[@]}"
-    prep check "$DATASET" --solver "$GEMMA"
+    phase "$QWEN" "${CHECK_OPTS[@]}" -- check "$DATASET" --solver "$GEMMA"
     stop_server
 
     log "=== Qwen3.6 ==="

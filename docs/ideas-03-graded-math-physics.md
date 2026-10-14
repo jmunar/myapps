@@ -812,6 +812,13 @@ two). Next, Gemma 4 26B-A4B on the same problems, said to do better under a
 tight budget; `check` re-judges its answers with Qwen3.6 so both share a
 checker.
 
+The first unattended run (2026-10-14) brought Qwen3.6 to 26 of 40 problems
+(78% right on average, 22 of 26 at the thinking budget, ~7.3 minutes each)
+before the OOM killer stopped it after 1 h 44 min: llama-server held 7.3 GB of
+RAM beside the 21.7 GB of weights, which matches its prompt cache in RAM
+(8 GiB by default) filling up with replies no later problem reuses. Servers
+for `solve` now run with `--cache-ram 0`.
+
 **Step 3, later PRs**: *Learned difficulty* above, starting with the replay
 evaluation against the staircase, then the selector. The flags are already its
 features.

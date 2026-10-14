@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
 use super::flags::progress;
@@ -35,10 +35,13 @@ pub const THINKING: u32 = 8192;
 const MAX_TOKENS: u32 = THINKING + 4096;
 
 /// What the server needs beyond the model: room for the problem and the
-/// reply, and the thinking budget.
+/// reply, the thinking budget, and no prompt cache in RAM. That cache
+/// (8 GiB by default) keeps each finished reply's state for reuse, which no
+/// later problem shares; on the 30 GB laptop, beside 21.7 GB of Qwen3.6, its
+/// growth set off the OOM killer after 14 problems.
 pub fn server_options() -> String {
     format!(
-        "-c 16384 --reasoning-budget {THINKING} \
+        "-c 16384 --cache-ram 0 --reasoning-budget {THINKING} \
          --reasoning-budget-message \"Time is up, so I'll give my final answer now.\""
     )
 }
@@ -159,6 +162,9 @@ pub async fn check_all(
                 p_correct,
             })?,
             Err(e) => {
+                if !llm.alive().await {
+                    bail!("llama-server stopped answering ({e:#}); run again to resume");
+                }
                 tracing::warn!("check: {} skipped: {e:#}", a.source_key);
                 failed += 1;
             }
@@ -247,6 +253,9 @@ pub async fn run(
                 out.push(&a)?;
             }
             Err(e) => {
+                if !llm.alive().await {
+                    bail!("llama-server stopped answering ({e:#}); run again to resume");
+                }
                 tracing::warn!("solve: {} skipped: {e:#}", p.source_key);
                 failed += 1;
             }

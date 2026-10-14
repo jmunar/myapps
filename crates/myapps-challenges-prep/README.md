@@ -81,7 +81,7 @@ takes minutes a problem, so give it a sample, and a server of its own (no
 other model on the GPU):
 
 ```sh
-llama-server -m ~/Models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf -ngl 99 -c 16384 --parallel 1 --port 8091 \
+llama-server -m ~/Models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf -ngl 99 -c 16384 --cache-ram 0 --parallel 1 --port 8091 \
   --reasoning-budget 8192 --reasoning-budget-message "Time is up, so I'll give my final answer now."
 cargo run --release -p myapps-challenges-prep -- grade solve ugphysics --limit 200   # ~2–7 min a problem
 cargo run --release -p myapps-challenges-prep -- grade rank ugphysics                # reports "Solved by …"
@@ -114,6 +114,14 @@ cargo run --release -p myapps-challenges-prep -- grade rank ugphysics --limit 30
 Gemma 4 on the first `LIMIT` (40) problems: it starts and stops each server
 itself, one model at a time, keeps the laptop awake, logs to
 `~/solve-compare.log`, and resumes when run again.
+
+`--cache-ram 0` matters: llama-server keeps every finished request's state in
+a RAM prompt cache of up to 8 GiB, which no later problem reuses, and beside
+Qwen3.6's 21.7 GB on the 30 GB laptop it grew until the OOM killer stopped the
+first run after 14 problems. The script also starts each server in a systemd
+scope of its own, so an OOM kill stops only the server, and then restarts it
+and resumes the stage (up to `TRIES`, 3); a stage whose server stops answering
+exits rather than skipping the problems left.
 
 Sampling follows each family's model card (Gemma: temperature 1.0, top-k 64;
 otherwise Qwen's 0.6, top-k 20).
