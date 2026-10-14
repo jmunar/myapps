@@ -110,6 +110,11 @@ cargo run --release -p myapps-challenges-prep -- grade check ugphysics --solver 
 cargo run --release -p myapps-challenges-prep -- grade rank ugphysics --limit 300 --solver gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
 ```
 
+`solve-compare.sh` in this crate does all of that unattended, Qwen3.6 then
+Gemma 4 on the first `LIMIT` (40) problems: it starts and stops each server
+itself, one model at a time, keeps the laptop awake, logs to
+`~/solve-compare.log`, and resumes when run again.
+
 Sampling follows each family's model card (Gemma: temperature 1.0, top-k 64;
 otherwise Qwen's 0.6, top-k 20).
 
