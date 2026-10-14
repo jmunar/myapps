@@ -10,6 +10,8 @@
 //!   ways round.
 //! - `solve` has a stronger model attempt a sample of the problems, as a
 //!   check on the grades that needs no expert; it is not part of them.
+//! - `check` has one model judge another solver's answers, so two solvers
+//!   are compared under the same checker.
 //! - `rank` makes no model calls: a ridge regression from the flags and
 //!   lengths to the dataset's levels gives each problem a prior, Bradley-Terry
 //!   over the verdicts refines it, and the result is reported, against the
@@ -53,6 +55,10 @@ pub struct Args {
     /// The model file `solve` needs loaded, and whose results `rank` reports
     #[arg(long, default_value = DEFAULT_SOLVER)]
     pub solver: String,
+    /// The model whose verdicts on the answers `rank` uses; `check` needs it
+    /// loaded, and asks it about the answers of `--solver`
+    #[arg(long, default_value = DEFAULT_SOLVER)]
+    pub checker: String,
     /// Only this many problems, the same ones every run (a stable shuffle)
     #[arg(long)]
     pub limit: Option<usize>,
@@ -80,6 +86,7 @@ pub enum Stage {
     Flags,
     Judge,
     Solve,
+    Check,
     Rank,
 }
 
@@ -114,7 +121,19 @@ pub async fn run(args: &Args, dataset: Dataset, all: &[Problem], cache: &Path) -
             std::fs::create_dir_all(&solver_dir)?;
             let llm =
                 llm::Llm::connect(&args.server, &args.solver, &solve::server_options()).await?;
-            solve::run(&llm, dataset, &problems, args.attempts, &solver_dir).await
+            solve::run(
+                &llm,
+                dataset,
+                &problems,
+                &args.solver,
+                args.attempts,
+                &solver_dir,
+            )
+            .await
+        }
+        Stage::Check => {
+            let llm = llm::Llm::connect(&args.server, &args.checker, "-c 8192").await?;
+            solve::check_all(&llm, dataset, &problems, &solver_dir, &args.checker).await
         }
         Stage::Rank => {
             let whole = args.limit.is_none() && args.subject.is_none();
@@ -130,6 +149,7 @@ pub async fn run(args: &Args, dataset: Dataset, all: &[Problem], cache: &Path) -
                 model: &args.model,
                 solver_dir: &solver_dir,
                 solver: &args.solver,
+                checker: &args.checker,
                 rounds: args.rounds,
                 tau: args.tau,
                 out: out.as_deref(),

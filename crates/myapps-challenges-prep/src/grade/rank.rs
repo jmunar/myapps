@@ -26,6 +26,8 @@ pub struct Options<'a> {
     /// Where `solve` cached the solver's attempts, and which model it was.
     pub solver_dir: &'a Path,
     pub solver: &'a str,
+    /// Whose verdicts on the solver's answers to use (see `solve::Check`).
+    pub checker: &'a str,
     pub rounds: usize,
     pub tau: f64,
     /// Where to write the grades; `None` only reports.
@@ -294,7 +296,7 @@ fn solved(
     prior: &[f64],
     grade: &[f64],
 ) -> Result<()> {
-    let attempts = solve::load(o.solver_dir)?;
+    let (attempts, own) = solve::load_checked(o.solver_dir, o.solver, o.checker)?;
     if attempts.is_empty() {
         return Ok(());
     }
@@ -337,6 +339,16 @@ fn solved(
         100.0 * over as f64 / n as f64,
         solve::THINKING
     );
+    if o.solver != o.checker {
+        println!(
+            "  answers checked by {}{}",
+            o.checker,
+            match own {
+                0 => String::new(),
+                n => format!(", except {n} still by the solver itself: run `grade check`"),
+            }
+        );
+    }
     let mut by_level: BTreeMap<i64, (usize, f64)> = BTreeMap::new();
     for (l, f) in level.iter().zip(&fail) {
         let e = by_level.entry(*l as i64).or_default();

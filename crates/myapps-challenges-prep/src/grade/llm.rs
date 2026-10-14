@@ -81,14 +81,16 @@ impl Llm {
         Ok(letter_probabilities(top, options))
     }
 
-    /// A thought-out reply, sampled with Qwen's settings for thinking mode
-    /// (greedy decoding makes it loop). `seed` makes a repeated attempt
-    /// differ from the first and still be reproducible. How long it may think
-    /// is the server's `--reasoning-budget`; `max_tokens` is the backstop.
+    /// A thought-out reply, sampled with the model's own settings for
+    /// thinking (greedy decoding makes it loop). `seed` makes a repeated
+    /// attempt differ from the first and still be reproducible. How long it
+    /// may think is the server's `--reasoning-budget`; `max_tokens` is the
+    /// backstop.
     pub async fn generate(
         &self,
         system: &str,
         user: &str,
+        sampling: Sampling,
         max_tokens: u32,
         seed: u64,
     ) -> Result<Reply> {
@@ -98,9 +100,9 @@ impl Llm {
                 {"role": "user", "content": user},
             ],
             "max_tokens": max_tokens,
-            "temperature": 0.6,
-            "top_p": 0.95,
-            "top_k": 20,
+            "temperature": sampling.temperature,
+            "top_p": sampling.top_p,
+            "top_k": sampling.top_k,
             "min_p": 0,
             "seed": seed,
             "chat_template_kwargs": {"enable_thinking": true},
@@ -129,6 +131,33 @@ impl Llm {
                 .to_string(),
             tokens: reply["usage"]["completion_tokens"].as_u64().unwrap_or(0),
         })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Sampling {
+    pub temperature: f64,
+    pub top_p: f64,
+    pub top_k: u32,
+}
+
+impl Sampling {
+    /// What each family's model card recommends for thinking: Gemma 4's, or
+    /// Qwen's (the precise-task temperature) for anything else.
+    pub fn for_model(model: &str) -> Sampling {
+        if model.to_ascii_lowercase().starts_with("gemma") {
+            Sampling {
+                temperature: 1.0,
+                top_p: 0.95,
+                top_k: 64,
+            }
+        } else {
+            Sampling {
+                temperature: 0.6,
+                top_p: 0.95,
+                top_k: 20,
+            }
+        }
     }
 }
 

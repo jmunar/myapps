@@ -801,6 +801,17 @@ an answer matching the reference by rule (same text, or a number within 1%) is
 right; anything else goes to the same model with thinking off, asked in one
 token whether the two are equivalent.
 
+First 12 problems (2026-10-14): 69% right (soft verdicts); 9 of 12 used the
+whole 8,192-token budget, and every one still gave an answer, so the forced
+answer works, but the budget is what binds: ~7.5 minutes a problem, ~25 h for
+200. Reading the twelve by hand, the checker's verdicts were right where they
+were confident (0.98, 0.00, 0.01), and in between (0.4–0.8) on answers that
+were right in another form (`3/8 g` as 3.675 m/s², a `c²` the reference left
+out) or only partly right (one member of a family of solutions, one case of
+two). Next, Gemma 4 26B-A4B on the same problems, said to do better under a
+tight budget; `check` re-judges its answers with Qwen3.6 so both share a
+checker.
+
 **Step 3, later PRs**: *Learned difficulty* above, starting with the replay
 evaluation against the staircase, then the selector. The flags are already its
 features.

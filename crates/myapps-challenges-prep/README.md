@@ -97,6 +97,22 @@ problem N times with different seeds, for a solve rate rather than right or
 wrong. The first `--limit` problems are the same ones as the flags and judge
 sample runs used.
 
+To compare another solver, run `solve` with its model loaded and `--solver`,
+then reload the server with the checker (Qwen3.6, `--checker`) and run
+`check`, which asks it about every answer the other solver checked itself;
+`rank --solver …` then uses the common checker's verdicts:
+
+```sh
+# server: llama-server -m ~/Models/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf … (same options as above)
+cargo run --release -p myapps-challenges-prep -- grade solve ugphysics --limit 40 --solver gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+# server: back to Qwen3.6
+cargo run --release -p myapps-challenges-prep -- grade check ugphysics --solver gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+cargo run --release -p myapps-challenges-prep -- grade rank ugphysics --limit 300 --solver gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+```
+
+Sampling follows each family's model card (Gemma: temperature 1.0, top-k 64;
+otherwise Qwen's 0.6, top-k 20).
+
 Answers are cached under `~/.cache/myapps-challenges-prep/grade/<dataset>/<model>/`
 one line at a time, keyed on the problem text's hash, so a killed run resumes
 where it stopped and an edited problem is asked again. `--limit N` (the same N

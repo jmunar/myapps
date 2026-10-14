@@ -7,9 +7,11 @@
 //! The solver thinks before answering, so this is minutes a problem rather
 //! than seconds: meant for a few hundred, with `--limit`. The check is the
 //! same model with its thinking off, one token, unless the answer already
-//! matches by rule.
+//! matches by rule. To compare two solvers, their answers want the same
+//! checker: stage `check` asks the checker model again about every answer one
+//! solver's own check settled, and `rank` reads those verdicts instead.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -18,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use super::flags::progress;
 use super::jsonl;
-use super::llm::Llm;
+use super::llm::{Llm, Sampling};
 use super::rubric;
 use crate::grades::text_hash;
 use crate::source::last_boxed;
@@ -53,7 +55,8 @@ pub struct Attempt {
     /// The probability the answer is right: 1 or 0 by rule, else the
     /// checker's P(yes).
     pub p_correct: f64,
-    /// "rule", "model", or "none" when there was no answer to check.
+    /// "rule", "model" (the solver itself, unless `check` has asked another
+    /// since), or "none" when there was no answer to check.
     pub checked_by: String,
     /// The server's finish reason; "length" means cut off by `max_tokens`.
     pub finish: String,
@@ -72,10 +75,105 @@ pub fn load(dir: &Path) -> Result<Vec<Attempt>> {
     jsonl::read(&path(dir))
 }
 
+/// Another model's verdict on an answer the solver checked itself.
+#[derive(Serialize, Deserialize)]
+pub struct Check {
+    pub source_key: String,
+    pub text_hash: String,
+    pub attempt: u64,
+    pub p_correct: f64,
+}
+
+fn checks_path(dir: &Path, checker: &str) -> PathBuf {
+    dir.join(format!(
+        "checks-{}.jsonl",
+        checker.trim_end_matches(".gguf")
+    ))
+}
+
+type AttemptKey = (String, String, u64);
+
+/// The attempts in `dir` (made by `solver`), with the verdicts of `checker`
+/// in place of the solver's own wherever `check` has asked it; and how many
+/// model-checked answers still carry the solver's own verdict.
+pub fn load_checked(dir: &Path, solver: &str, checker: &str) -> Result<(Vec<Attempt>, usize)> {
+    let mut attempts = load(dir)?;
+    if solver == checker {
+        return Ok((attempts, 0));
+    }
+    let checks: HashMap<AttemptKey, f64> = jsonl::read::<Check>(&checks_path(dir, checker))?
+        .into_iter()
+        .map(|c| ((c.source_key, c.text_hash, c.attempt), c.p_correct))
+        .collect();
+    let mut own = 0;
+    for a in attempts.iter_mut().filter(|a| a.checked_by == "model") {
+        match checks.get(&(a.source_key.clone(), a.text_hash.clone(), a.attempt)) {
+            Some(&p) => a.p_correct = p,
+            None => own += 1,
+        }
+    }
+    Ok((attempts, own))
+}
+
+/// Stage `check`: the loaded model (`checker`) judges every answer in `dir`
+/// that the solver checked itself and it has not judged yet.
+pub async fn check_all(
+    llm: &Llm,
+    dataset: Dataset,
+    problems: &[&Problem],
+    dir: &Path,
+    checker: &str,
+) -> Result<()> {
+    let by_key: HashMap<(&str, String), &Problem> = problems
+        .iter()
+        .map(|p| ((p.source_key.as_str(), text_hash(&p.problem)), *p))
+        .collect();
+    let path = checks_path(dir, checker);
+    let done: HashSet<AttemptKey> = jsonl::read::<Check>(&path)?
+        .into_iter()
+        .map(|c| (c.source_key, c.text_hash, c.attempt))
+        .collect();
+    let todo: Vec<(Attempt, &Problem)> = load(dir)?
+        .into_iter()
+        .filter(|a| a.checked_by == "model")
+        .filter(|a| !done.contains(&(a.source_key.clone(), a.text_hash.clone(), a.attempt)))
+        .filter_map(|a| {
+            let p = *by_key.get(&(a.source_key.as_str(), a.text_hash.clone()))?;
+            Some((a, p))
+        })
+        .collect();
+    tracing::info!(
+        "check: {} answers to check with {checker} ({})",
+        todo.len(),
+        path.display()
+    );
+    let mut out = jsonl::Appender::open(&path)?;
+    let (start, mut failed) = (Instant::now(), 0);
+    for (n, (a, p)) in todo.iter().enumerate() {
+        let answer = a.answer.as_deref().unwrap_or_default();
+        match check(llm, dataset, p, answer).await {
+            Ok(p_correct) => out.push(&Check {
+                source_key: a.source_key.clone(),
+                text_hash: a.text_hash.clone(),
+                attempt: a.attempt,
+                p_correct,
+            })?,
+            Err(e) => {
+                tracing::warn!("check: {} skipped: {e:#}", a.source_key);
+                failed += 1;
+            }
+        }
+        progress("check", n + 1, todo.len(), start, 50);
+    }
+    tracing::info!("check: done, {failed} skipped");
+    Ok(())
+}
+
 pub async fn run(
     llm: &Llm,
     dataset: Dataset,
     problems: &[&Problem],
+    solver: &str,
     attempts: u64,
     dir: &Path,
 ) -> Result<()> {
@@ -101,13 +199,14 @@ pub async fn run(
         "You are an expert in {}. Solve the problem, then give the final answer in \\boxed{{}}.",
         rubric::field(dataset)
     );
+    let sampling = Sampling::for_model(solver);
     let mut out = jsonl::Appender::open(&path(dir))?;
     let (start, mut failed, mut right) = (Instant::now(), 0, 0.0);
     for (n, (p, hash, attempt)) in todo.iter().enumerate() {
         let began = Instant::now();
         let result = async {
             let reply = llm
-                .generate(&system, &prompt(p), MAX_TOKENS, *attempt)
+                .generate(&system, &prompt(p), sampling, MAX_TOKENS, *attempt)
                 .await?;
             let answer = last_boxed(&reply.content).map(|a| a.trim().to_string());
             let (p_correct, checked_by) = match &answer {
@@ -204,11 +303,12 @@ fn reference(p: &Problem) -> &str {
     last_boxed(&p.answer).unwrap_or(&p.answer).trim()
 }
 
-/// Right without asking: the same text once spacing and sizing are gone, or
-/// the same number to 1%. Anything else, such as an equivalent expression or
-/// the same value in other units, goes to the checker.
+/// Right without asking: the same text once spacing and sizing are gone (and
+/// a choice's brackets or `\text{}`), or the same number to 1%. Anything
+/// else, such as an equivalent expression or the same value in other units,
+/// goes to the checker.
 fn by_rule(answer: &str, reference: &str) -> bool {
-    let (a, r) = (normalise(answer), normalise(reference));
+    let (a, r) = (choice(&normalise(answer)), choice(&normalise(reference)));
     if a == r {
         return true;
     }
@@ -234,6 +334,22 @@ fn normalise(s: &str) -> String {
     }
     s.retain(|c| !c.is_whitespace());
     s.trim_end_matches('.').to_string()
+}
+
+/// `(D)`, `\text{D}` or `\mathrm{D}` is the choice `D`.
+fn choice(s: &str) -> String {
+    let inner = s
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
+        .or_else(|| {
+            ["\\text{", "\\mathrm{"]
+                .iter()
+                .find_map(|w| s.strip_prefix(w)?.strip_suffix('}'))
+        });
+    match inner {
+        Some(c) if c.len() == 1 && c.chars().all(|c| c.is_ascii_alphabetic()) => c.to_string(),
+        _ => s.to_string(),
+    }
 }
 
 /// A plain number, possibly in scientific notation and followed by a unit in
@@ -289,6 +405,9 @@ mod tests {
         assert!(by_rule("0.786", "0.79"));
         assert!(by_rule("5.0 \\times 10^{3} \\text{ m}", "5000"));
         assert!(by_rule("Yes.", "Yes"));
+        assert!(by_rule("(D)", "D"));
+        assert!(by_rule("\\text{C}", "C"));
+        assert!(!by_rule("(x)", "(y)"));
         assert!(!by_rule("0.70", "0.79"));
         assert!(!by_rule("-5000", "5000"));
         assert!(!by_rule("\\frac{2}{4}", "\\frac{1}{2}"));
