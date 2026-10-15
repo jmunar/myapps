@@ -819,6 +819,49 @@ RAM beside the 21.7 GB of weights, which matches its prompt cache in RAM
 (8 GiB by default) filling up with replies no later problem reuses. Servers
 for `solve` now run with `--cache-ram 0`.
 
+**The comparison (2026-10-15, 40 UGPhysics problems each, both checked by
+Qwen3.6):**
+
+| | Qwen3.6-35B-A3B | Gemma 4 26B-A4B |
+|---|---|---|
+| Right (sum of P(right)) | 28.4 / 40 | 29.3 / 40 |
+| At the 8,192-token budget | 33 / 40 | 25 / 40 |
+| Time per problem | 430 s | 475 s |
+
+- **No winner.** At 0.5, the two disagree on 4 problems, 2 each way. Gemma
+  more often finishes under the budget, as hoped, but writes slower (18 vs 21
+  tokens/s), so it takes longer. Qwen3.6 stays the solver.
+- **One checker was needed.** Gemma judging its own answers gave 15.6 where
+  Qwen3.6 gave 17.3, with four verdicts apart by more than 0.3.
+- **The two fail the same problems** (Spearman +0.91 between their failures).
+  Of the 9 both failed, about a third look like flaws in the dataset, not
+  difficulty:
+  - GeometricalOptics/5269 needs a first lens the problem never gives;
+  - QuantumMechanics/5288's reference uses an area *A* the problem never
+    defines;
+  - AtomicPhysics/1357 was a checker miss (`n ≤ √2` against `(−∞, 1.41)`);
+  - two more are arguable (a nearest-neighbour shortcut in the reference;
+    a yes/no on spectrometer resolution).
+
+  An answer two solvers agree on that differs from the reference is a cheap
+  way to find bad problems for review.
+- **As a difficulty check**, combining both models' failures and their
+  thinking tokens over the 40 problems:
+
+  | | Spearman with failures | Spearman with thinking tokens |
+  |---|---|---|
+  | Level | +0.20 | +0.43 |
+  | Prior | +0.17 | +0.43 |
+  | Grade | +0.33 | +0.45 |
+  | Steps flag | +0.36 | |
+
+  This leans towards the judge's grade over the tiers, the reverse of how
+  they agree with the levels. But only 13 problems had any failure: the 90%
+  bootstrap interval on grade minus level is −0.23 to +0.48, so it settles
+  nothing yet. Thinking tokens track every ranking better than right/wrong
+  does (+0.45 with failure). At the budget, though, they are capped, so they
+  measure least where the problems are hardest.
+
 **Step 3, later PRs**: *Learned difficulty* above, starting with the replay
 evaluation against the staircase, then the selector. The flags are already its
 features.
