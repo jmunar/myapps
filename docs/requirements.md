@@ -672,7 +672,7 @@ and records whether the user got it right. Design notes and dataset research:
   of their source; the page shows them as images (a placeholder where a
   solution's did not render). Problems whose own figure fails to render are
   dropped.
-- **Prepared offline, loaded on the server** — `myapps-challenges-prep <key>`
+- **Prepared offline, loaded on the server** — `myapps-challenges-prep bundle <key>`
   runs on a workstation, reads the dataset from the Hugging Face
   datasets-server and writes a bundle: one SQLite file per dataset, with a
   versioned format. `myapps import --app challenges --dataset <file>` (or
@@ -692,6 +692,11 @@ and records whether the user got it right. Design notes and dataset research:
   which the user marks right or wrong; a double submit within 10 s is ignored.
 - **Stats** — problems and accuracy per dataset on the picker; per subject
   (current level, correct/attempts, accuracy) and per level on the stats page.
+- **Graded difficulty, stored** — `myapps-challenges-prep grade` estimates
+  every problem's difficulty offline with local LLMs (rubric flags, a pairwise
+  judge, a Bradley-Terry ranking; a stronger solver as a check), into grades
+  files committed per dataset. The bundle carries them as tags, which the
+  server stores per problem (`challenges_problem_tags`); nothing reads them yet.
 - **Maths rendering** — KaTeX (vendored) typesets inline, display and
   `align`/`equation`-style environments client-side.
 - **Command bar** — "next problem" (optionally per dataset) and "stats".
@@ -702,8 +707,9 @@ and records whether the user got it right. Design notes and dataset research:
 
 - **Answer checking** — typed answers checked numerically or symbolically
   instead of self-marking.
-- **Graded difficulty** — a one-off grader's per-problem estimates, computed
-  during preparation and shipped in the bundle (see the design notes).
+- **Drawing by graded difficulty** — the selector using the grader's `grade`
+  instead of the dataset's level, once a replay against the staircase says it
+  helps (see the design notes).
 - **Extracted features** — per-dataset tags (concepts, techniques, problem
   type) from a fixed taxonomy, computed during preparation, so stats can show
   where a user fails most.

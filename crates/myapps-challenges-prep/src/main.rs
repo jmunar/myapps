@@ -4,10 +4,14 @@
 //! Everything too heavy for the server happens here; the bundle format, and
 //! the checks the server applies to it, are in `myapps_challenges::bundle`.
 //!
-//! The stages run in order: fetch and map every row, render the Asymptote
-//! diagrams they contain, drop the problems whose own diagram failed, write.
+//! `bundle` runs its stages in order: fetch and map every row, render the
+//! Asymptote diagrams they contain, drop the problems whose own diagram
+//! failed, attach the committed grades, write. `grade` produces those grades
+//! (see `grade`).
 
 mod fetch;
+mod grade;
+mod grades;
 mod render;
 mod source;
 
@@ -17,23 +21,37 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 
-use myapps_challenges::bundle::{self, Diagram, Problem};
+use myapps_challenges::bundle::{self, Diagram, Problem, Tag};
 use myapps_challenges::dataset::Dataset;
 use myapps_challenges::diagram::{self, Segment};
 use source::Skip;
 
 #[derive(Parser)]
-#[command(about = "Prepare a Challenges dataset bundle for `myapps import`")]
+#[command(about = "Prepare Challenges dataset bundles for `myapps import`, and grade them")]
 struct Cli {
+    #[command(subcommand)]
+    command: Command,
+    /// Where fetched pages, rendered diagrams and grader answers are kept
+    /// between runs [default: ~/.cache/myapps-challenges-prep]
+    #[arg(long, global = true)]
+    cache: Option<PathBuf>,
+}
+
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Prepare a dataset's bundle
+    Bundle(BundleArgs),
+    /// Grade a dataset's problems, one stage at a time
+    Grade(grade::Args),
+}
+
+#[derive(clap::Args)]
+struct BundleArgs {
     /// Dataset key (ugphysics, hendrycks-math)
     dataset: String,
     /// Where to write the bundle [default: <dataset>.sqlite]
     #[arg(long, short)]
     out: Option<PathBuf>,
-    /// Where fetched pages and rendered diagrams are kept between runs
-    /// [default: ~/.cache/myapps-challenges-prep]
-    #[arg(long)]
-    cache: Option<PathBuf>,
     /// Fetch every page again instead of reusing the cached ones
     #[arg(long)]
     refetch: bool,
@@ -47,6 +65,10 @@ struct Cli {
     /// Render again the diagrams that failed on an earlier run
     #[arg(long)]
     retry_failed: bool,
+    /// The grader's output for this dataset
+    /// [default: grades/<dataset>-v1.jsonl in this crate, if it exists]
+    #[arg(long)]
+    grades: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -66,19 +88,6 @@ async fn main() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let Some(dataset) = Dataset::from_key(&cli.dataset) else {
-        let valid: Vec<&str> = Dataset::ALL.iter().map(|d| d.key()).collect();
-        bail!(
-            "Unknown dataset '{}'; expected one of: {}",
-            cli.dataset,
-            valid.join(", ")
-        );
-    };
-    let out = cli
-        .out
-        .clone()
-        .unwrap_or_else(|| PathBuf::from(format!("{}.sqlite", dataset.key())));
-
     let cache = match &cli.cache {
         Some(dir) => dir.clone(),
         None => std::env::var_os("XDG_CACHE_HOME")
@@ -87,11 +96,42 @@ async fn main() -> Result<()> {
             .context("no cache directory: set --cache")?
             .join("myapps-challenges-prep"),
     };
+    match &cli.command {
+        Command::Bundle(args) => bundle(args, &cache).await,
+        Command::Grade(args) => {
+            let dataset = parse_dataset(&args.dataset)?;
+            // The same fetch and mapping as `bundle`, so the grader sees, and
+            // hashes, exactly the text the bundle will carry.
+            let rows = fetch::Cache::new(cache.join("rows"), false);
+            let problems = fetch_all(dataset, &rows, &mut Counts::default()).await?;
+            grade::run(args, dataset, &problems, &cache).await
+        }
+    }
+}
+
+fn parse_dataset(key: &str) -> Result<Dataset> {
+    let Some(dataset) = Dataset::from_key(key) else {
+        let valid: Vec<&str> = Dataset::ALL.iter().map(|d| d.key()).collect();
+        bail!(
+            "Unknown dataset '{key}'; expected one of: {}",
+            valid.join(", ")
+        );
+    };
+    Ok(dataset)
+}
+
+async fn bundle(args: &BundleArgs, cache: &Path) -> Result<()> {
+    let dataset = parse_dataset(&args.dataset)?;
+    let out = args
+        .out
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(format!("{}.sqlite", dataset.key())));
 
     let mut counts = Counts::default();
-    let rows = fetch::Cache::new(cache.join("rows"), cli.refetch);
+    let rows = fetch::Cache::new(cache.join("rows"), args.refetch);
     let mut problems = fetch_all(dataset, &rows, &mut counts).await?;
-    let diagrams = render_diagrams(&cli, &cache, &mut problems, &mut counts).await?;
+    let diagrams = render_diagrams(args, cache, &mut problems, &mut counts).await?;
+    let tags = attach_grades(args, dataset, &problems)?;
 
     let writer = bundle::Writer::create(
         &out,
@@ -105,14 +145,16 @@ async fn main() -> Result<()> {
         writer.insert(chunk).await?;
     }
     writer.insert_diagrams(&diagrams).await?;
+    writer.insert_tags(&tags).await?;
     writer.finish().await?;
 
     tracing::info!(
-        "{}: {} problems and {} diagrams written to {}; skipped {} without a level, \
-         {} whose diagram failed to render, {} malformed, {} truncated",
+        "{}: {} problems, {} diagrams and {} tags written to {}; skipped {} without a \
+         level, {} whose diagram failed to render, {} malformed, {} truncated",
         dataset.name(),
         problems.len(),
         diagrams.len(),
+        tags.len(),
         out.display(),
         counts.no_level,
         counts.diagram,
@@ -165,10 +207,50 @@ async fn fetch_all(
     Ok(problems)
 }
 
+/// The tags from the grades file, for the problems it still matches. A missing
+/// default file just means the dataset has not been graded; a missing file
+/// passed with `--grades` is an error.
+fn attach_grades(args: &BundleArgs, dataset: Dataset, problems: &[Problem]) -> Result<Vec<Tag>> {
+    let path = match &args.grades {
+        Some(path) => path.clone(),
+        None => {
+            let path = grades::default_path(dataset);
+            if !path.exists() {
+                tracing::info!(
+                    "{}: not graded ({} not found)",
+                    dataset.name(),
+                    path.display()
+                );
+                return Ok(Vec::new());
+            }
+            path
+        }
+    };
+    let rows = grades::read(&path)?;
+    let m = grades::match_problems(problems, &rows);
+    tracing::info!(
+        "{}: {} of {} problems graded from {}",
+        dataset.name(),
+        m.graded,
+        problems.len(),
+        path.display()
+    );
+    if m.stale > 0 || m.unknown > 0 {
+        tracing::warn!(
+            "{}: {} grades skipped because the problem's text changed since, {} for problems \
+             this preparation does not have; grade them again",
+            dataset.name(),
+            m.stale,
+            m.unknown
+        );
+    }
+    Ok(m.tags)
+}
+
 /// Render every diagram in `problems`, drop the problems that cannot be shown
 /// without one that failed, and return the diagrams the rest use.
 async fn render_diagrams(
-    cli: &Cli,
+    args: &BundleArgs,
     cache: &Path,
     problems: &mut Vec<Problem>,
     counts: &mut Counts,
@@ -187,12 +269,15 @@ async fn render_diagrams(
         return Ok(Vec::new());
     }
 
-    let modules = cli.modules.clone().unwrap_or_else(|| cache.join("modules"));
-    let jobs = cli
+    let modules = args
+        .modules
+        .clone()
+        .unwrap_or_else(|| cache.join("modules"));
+    let jobs = args
         .jobs
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
     let renderer =
-        render::Renderer::new(&cache.join("asy"), &modules, jobs, cli.retry_failed).await?;
+        render::Renderer::new(&cache.join("asy"), &modules, jobs, args.retry_failed).await?;
     let rendered = renderer.render_all(blocks.into_iter().collect()).await?;
 
     let before = problems.len();

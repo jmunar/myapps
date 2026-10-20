@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{app, current, login};
-use myapps_challenges::bundle::{self, Diagram, Problem};
+use myapps_challenges::bundle::{self, Diagram, Problem, Tag};
 use myapps_challenges::dataset::Dataset;
 use myapps_challenges::diagram;
 use myapps_challenges::ops;
@@ -72,6 +72,36 @@ async fn write_with_diagrams(
     writer.insert(problems).await.unwrap();
     writer.insert_diagrams(diagrams).await.unwrap();
     writer.finish().await.unwrap();
+}
+
+async fn write_with_tags(path: &Path, dataset: Dataset, problems: &[Problem], tags: &[Tag]) {
+    let writer = bundle::Writer::create(path, dataset, "https://example.org/ds", "MIT", "test")
+        .await
+        .unwrap();
+    writer.insert(problems).await.unwrap();
+    writer.insert_tags(tags).await.unwrap();
+    writer.finish().await.unwrap();
+}
+
+fn tag(key: &str, kind: &str, value: f64) -> Tag {
+    Tag {
+        source_key: key.into(),
+        kind: kind.into(),
+        value,
+    }
+}
+
+/// (source_key, kind, value) for every tag in `dataset`.
+async fn tags(pool: &SqlitePool, dataset: &str) -> Vec<(String, String, f64)> {
+    sqlx::query_as(
+        "SELECT p.source_key, t.kind, t.value
+         FROM challenges_problem_tags t JOIN challenges_problems p ON p.id = t.problem_id
+         WHERE p.dataset = ? ORDER BY p.source_key, t.kind",
+    )
+    .bind(dataset)
+    .fetch_all(pool)
+    .await
+    .unwrap()
 }
 
 const SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L1 1"/></svg>"#;
@@ -412,7 +442,7 @@ async fn a_problem_without_its_diagram_or_an_active_svg_is_refused() {
     assert_eq!(diagrams, 0);
 }
 
-/// A bundle prepared before diagrams existed: format 1, no `diagrams` table.
+/// A bundle prepared before diagrams existed: format 1, no `diagrams` or `tags`.
 #[tokio::test]
 async fn a_format_1_bundle_loads_as_one_without_diagrams() {
     let app = app().await;
@@ -424,7 +454,7 @@ async fn a_format_1_bundle_loads_as_one_without_diagrams() {
     let file = sqlx::SqlitePool::connect(&format!("sqlite:{}", path.display()))
         .await
         .unwrap();
-    sqlx::raw_sql("DROP TABLE diagrams; UPDATE manifest SET format = 1;")
+    sqlx::raw_sql("DROP TABLE diagrams; DROP TABLE tags; UPDATE manifest SET format = 1;")
         .execute(&file)
         .await
         .unwrap();
@@ -451,4 +481,131 @@ async fn a_format_1_bundle_loads_as_one_without_diagrams() {
     file.close().await;
     let err = load(&app.pool, &older).await.unwrap_err();
     assert!(format!("{err:#}").contains("bundle format 0"), "{err:#}");
+}
+
+#[tokio::test]
+async fn a_bundle_replaces_its_datasets_tags() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let first = scratch.path("first.sqlite");
+    write_with_tags(
+        &first,
+        Dataset::Ugphysics,
+        &[
+            problem("a", "Optics", 1, "A"),
+            problem("b", "Optics", 2, "B"),
+        ],
+        &[
+            tag("a", "grade", 0.5),
+            tag("a", "steps", 2.0),
+            tag("b", "grade", 1.5),
+        ],
+    )
+    .await;
+    load(&app.pool, &first).await.unwrap();
+    let other = scratch.path("other.sqlite");
+    write_with_tags(
+        &other,
+        Dataset::HendrycksMath,
+        &[problem("x", "Algebra", 1, "X")],
+        &[tag("x", "grade", -1.0)],
+    )
+    .await;
+    load(&app.pool, &other).await.unwrap();
+    assert_eq!(
+        tags(&app.pool, "ugphysics").await,
+        [
+            ("a".to_string(), "grade".to_string(), 0.5),
+            ("a".to_string(), "steps".to_string(), 2.0),
+            ("b".to_string(), "grade".to_string(), 1.5),
+        ]
+    );
+
+    // A problem graded again changes; one no longer graded, or retired, loses
+    // its tags; the other dataset is untouched.
+    let second = scratch.path("second.sqlite");
+    write_with_tags(
+        &second,
+        Dataset::Ugphysics,
+        &[
+            problem("a", "Optics", 1, "A"),
+            problem("c", "Optics", 1, "C"),
+        ],
+        &[tag("c", "grade", 0.25)],
+    )
+    .await;
+    load(&app.pool, &second).await.unwrap();
+    assert_eq!(
+        tags(&app.pool, "ugphysics").await,
+        [("c".to_string(), "grade".to_string(), 0.25)]
+    );
+    assert_eq!(tags(&app.pool, "hendrycks-math").await.len(), 1);
+}
+
+#[tokio::test]
+async fn a_tag_for_a_problem_the_bundle_lacks_or_not_a_number_is_refused() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let orphan = scratch.path("orphan.sqlite");
+    write_with_tags(
+        &orphan,
+        Dataset::Ugphysics,
+        &[problem("a", "Optics", 1, "A")],
+        &[tag("a", "grade", 0.5), tag("zz", "grade", 1.0)],
+    )
+    .await;
+    let err = load(&app.pool, &orphan).await.unwrap_err();
+    assert!(
+        format!("{err:#}").contains("which the bundle does not have"),
+        "{err:#}"
+    );
+
+    let infinite = scratch.path("infinite.sqlite");
+    write_with_tags(
+        &infinite,
+        Dataset::Ugphysics,
+        &[problem("a", "Optics", 1, "A")],
+        &[tag("a", "grade", f64::INFINITY)],
+    )
+    .await;
+    let err = load(&app.pool, &infinite).await.unwrap_err();
+    assert!(
+        format!("{err:#}").contains("not a finite number"),
+        "{err:#}"
+    );
+
+    // Neither load changed anything.
+    assert!(rows(&app.pool, "ugphysics").await.is_empty());
+}
+
+/// A bundle prepared before the grader: format 2, no `tags` table. It is still
+/// the whole dataset, so it clears the tags an earlier bundle brought.
+#[tokio::test]
+async fn a_format_2_bundle_loads_as_one_without_tags() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let graded = scratch.path("graded.sqlite");
+    write_with_tags(
+        &graded,
+        Dataset::Ugphysics,
+        &[problem("a", "Optics", 1, "A")],
+        &[tag("a", "grade", 0.5)],
+    )
+    .await;
+    load(&app.pool, &graded).await.unwrap();
+
+    let old = scratch.path("old.sqlite");
+    write(&old, Dataset::Ugphysics, &[problem("a", "Optics", 1, "A")]).await;
+    let file = sqlx::SqlitePool::connect(&format!("sqlite:{}", old.display()))
+        .await
+        .unwrap();
+    sqlx::raw_sql("DROP TABLE tags; UPDATE manifest SET format = 2;")
+        .execute(&file)
+        .await
+        .unwrap();
+    file.close().await;
+
+    load(&app.pool, &old).await.unwrap();
+    assert_eq!(rows(&app.pool, "ugphysics").await.len(), 1);
+    assert!(tags(&app.pool, "ugphysics").await.is_empty());
 }
