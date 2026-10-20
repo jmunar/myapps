@@ -775,7 +775,7 @@ the levels:
 On Hendrycks the judge no longer adds to the prior at full scale; on UGPhysics
 it pulls further from the tiers than on the sample.
 
-**Step 2b: `solve`, the expert-free check** (built, not yet run). A stronger
+**Step 2b: `solve`, the expert-free check** (built; run on 40 UGPhysics problems). A stronger
 model attempts a sample of problems with its thinking on, and `rank` reports
 which of level, prior and grade best predicts where it fails, and how long it
 thought. The solver is **Qwen3.6-35B-A3B** (Q4_K_M, 20.6 GiB), picked on
