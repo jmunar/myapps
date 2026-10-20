@@ -113,7 +113,13 @@ cargo run --release -p myapps-challenges-prep -- grade rank ugphysics --limit 30
 `solve-compare.sh` in this crate does all of that unattended, Qwen3.6 then
 Gemma 4 on the first `LIMIT` (40) problems: it starts and stops each server
 itself, one model at a time, keeps the laptop awake, logs to
-`~/solve-compare.log`, and resumes when run again.
+`~/solve-compare.log`, and resumes when run again. `SOLVERS=qwen` runs
+Qwen3.6 alone, to solve more problems for `rank` (problems already solved are
+skipped):
+
+```sh
+LIMIT=200 SOLVERS=qwen crates/myapps-challenges-prep/solve-compare.sh
+```
 
 `--cache-ram 0` matters: llama-server keeps every finished request's state in
 a RAM prompt cache of up to 8 GiB, which no later problem reuses, and beside

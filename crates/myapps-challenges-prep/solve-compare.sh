@@ -6,6 +6,10 @@
 #
 #   crates/myapps-challenges-prep/solve-compare.sh            # 40 problems
 #   LIMIT=60 crates/myapps-challenges-prep/solve-compare.sh
+#   LIMIT=200 SOLVERS=qwen crates/myapps-challenges-prep/solve-compare.sh
+#
+# SOLVERS=qwen runs Qwen3.6 alone, to solve more problems for `rank` without
+# paying for Gemma 4 on each; the default, "qwen gemma", is the comparison.
 #
 # Logs go to ~/solve-compare.log (stages) and ~/solve-compare-server.log.
 set -euo pipefail
@@ -16,6 +20,7 @@ if [[ -z ${INHIBITED:-} ]] && command -v systemd-inhibit >/dev/null; then
 fi
 
 LIMIT=${LIMIT:-40}
+SOLVERS=${SOLVERS:-qwen gemma}
 DATASET=${DATASET:-ugphysics}
 MODELS=${MODELS:-$HOME/Models}
 PORT=${PORT:-8091}
@@ -84,7 +89,12 @@ if curl -s "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
     echo "Something already answers on port $PORT; stop it first (one model at a time)." >&2
     exit 1
 fi
-for m in "$QWEN" "$GEMMA"; do
+case $SOLVERS in
+    "qwen gemma") NEEDED=("$QWEN" "$GEMMA") ;;
+    qwen) NEEDED=("$QWEN") ;;
+    *) echo "SOLVERS must be \"qwen gemma\" or \"qwen\", not \"$SOLVERS\"" >&2; exit 1 ;;
+esac
+for m in "${NEEDED[@]}"; do
     [[ -f $MODELS/$m ]] || { echo "Missing $MODELS/$m" >&2; exit 1; }
 done
 
@@ -118,15 +128,19 @@ phase() {
 
 run() {
     phase "$QWEN" "${SOLVE_OPTS[@]}" -- solve "$DATASET" --limit "$LIMIT"
-    phase "$GEMMA" "${SOLVE_OPTS[@]}" -- solve "$DATASET" --limit "$LIMIT" --solver "$GEMMA"
-    # Qwen3.6 re-checks Gemma's answers, so both share a checker.
-    phase "$QWEN" "${CHECK_OPTS[@]}" -- check "$DATASET" --solver "$GEMMA"
+    if [[ $SOLVERS == "qwen gemma" ]]; then
+        phase "$GEMMA" "${SOLVE_OPTS[@]}" -- solve "$DATASET" --limit "$LIMIT" --solver "$GEMMA"
+        # Qwen3.6 re-checks Gemma's answers, so both share a checker.
+        phase "$QWEN" "${CHECK_OPTS[@]}" -- check "$DATASET" --solver "$GEMMA"
+    fi
     stop_server
 
     log "=== Qwen3.6 ==="
     prep rank "$DATASET" --limit 300
-    log "=== Gemma 4 ==="
-    prep rank "$DATASET" --limit 300 --solver "$GEMMA"
+    if [[ $SOLVERS == "qwen gemma" ]]; then
+        log "=== Gemma 4 ==="
+        prep rank "$DATASET" --limit 300 --solver "$GEMMA"
+    fi
     log "done"
 }
 
