@@ -716,4 +716,8 @@ and records whether the user got it right. Design notes and dataset research:
 - **Learned difficulty** — Elo/IRT-style ratings updated on every attempt.
 - **More datasets** — U-MATH, PhysUniBench, SciBench; `tabular` tables, which
   KaTeX cannot render.
+- **Data-science deck** — a source-checked 122-item rapid-fire deck in
+  `crates/myapps-challenges-prep/datasets/`, with research in
+  [ideas-04-data-science-challenges.md](ideas-04-data-science-challenges.md).
+  Not yet read by the prep tool or importable by the server.
 - **Subject filter** and a **daily problem** notification.
