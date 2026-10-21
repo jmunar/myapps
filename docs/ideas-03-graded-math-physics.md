@@ -313,6 +313,8 @@ seeded RNG and no database:
 - `fallback_order(target, level, max_level)` — the level order to try when the
   target level has no unseen problems.
 - `advance(progress, correct) -> Progress` — the staircase, including fast start.
+- `percentiles`, `ability`, `graded_target`, `pick_graded` — the graded draw
+  at the top level (see "The real attempts" under the grader).
 
 `ops::draw(pool, user_id, dataset, rng)` wires them to SQL: read the subject
 list (`SELECT DISTINCT subject … WHERE dataset = ?`), read or default the
@@ -902,6 +904,24 @@ top level, where the staircase has nothing left to say. Ranking level-5
 problems by the prior, and drawing harder ones while the user keeps
 succeeding, is the learned-difficulty model with `w` fixed at the grader's
 offline fit and only `ability` moving, which is all 11 failures can support.
+
+**Built (FEAT-112):** draws at a dataset's top level go through
+`ops::draw_graded`. Each graded problem in the subject's top level gets its
+mid-rank percentile on `grade_prior`; the user's ability is replayed from their
+answers there, oldest first, as `a += 0.1 · (right − σ((a − q) / 0.2))` from
+0.5; the target is the percentile where that curve gives 0.7; and the draw
+takes an unseen problem from 0.05 under the target to 0.10 over it, or the
+nearest one. The spread (0.2) and step (0.1) came from simulation, not a fit:
+the real data are too thin to fit both, and the best fit only said the user is
+above most level-5 problems. Simulated users whose true curve is half to one
+and a half times as steep settle at 70–72% right within about 20 answers; one
+above every problem gets the hardest, at ~78%. With the upward lean, a user
+matching the model is served at about 67%. Replayed on the snapshot, the
+targets are the 83rd percentile in Algebra (18 of 18 right at level 5) and
+the 81st in Prealgebra, the 60th in Number Theory, 41st–47th in Geometry,
+Precalculus and Counting & Probability, and the 30th in Intermediate Algebra
+(0 of 2). Nothing is stored, so there is nothing to migrate or undo: the
+ability is recomputed on every draw, from a few hundred rows.
 
 Running more than one model at once on the laptop can exhaust its RAM. With the
 GPU allowed 24 GB of shared memory and no swap, the Q8_0 encoder, a Laya process

@@ -696,7 +696,14 @@ and records whether the user got it right. Design notes and dataset research:
   every problem's difficulty offline with local LLMs (rubric flags, a pairwise
   judge, a Bradley-Terry ranking; a stronger solver as a check), into grades
   files committed per dataset. The bundle carries them as tags, which the
-  server stores per problem (`challenges_problem_tags`); nothing reads them yet.
+  server stores per problem (`challenges_problem_tags`).
+- **Graded draws at the top level** — where the staircase has nowhere higher
+  to go (Hendrycks level 5, UGPhysics' third tier), problems are ranked by the
+  grader's prior: each gets its percentile within the subject's top level, the
+  user's ability there is replayed from their answers (an Elo-style update on
+  a logistic curve), and the draw takes an unseen problem near where they
+  would get about 70% right, leaning harder. Nothing new is stored. A dataset
+  without grades draws at random, as before.
 - **Maths rendering** — KaTeX (vendored) typesets inline, display and
   `align`/`equation`-style environments client-side.
 - **Command bar** — "next problem" (optionally per dataset) and "stats".
@@ -707,9 +714,9 @@ and records whether the user got it right. Design notes and dataset research:
 
 - **Answer checking** — typed answers checked numerically or symbolically
   instead of self-marking.
-- **Drawing by graded difficulty** — the selector using the grader's `grade`
-  instead of the dataset's level, once a replay against the staircase says it
-  helps (see the design notes).
+- **Drawing by graded difficulty below the top level** — the grader's ranking
+  in place of the dataset's levels everywhere, which needs more failures than
+  there are to check it against (see the design notes).
 - **Extracted features** — per-dataset tags (concepts, techniques, problem
   type) from a fixed taxonomy, computed during preparation, so stats can show
   where a user fails most.
