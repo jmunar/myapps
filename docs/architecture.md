@@ -97,12 +97,12 @@ myapps/
 │   │   ├── static/            # style.css + upload.js (drag-and-drop uploader)
 │   │   ├── tests/
 │   │   └── src/
-│   ├── myapps-challenges/     # Challenges graded maths and physics practice
+│   ├── myapps-challenges/     # Challenges graded maths, physics and data-science practice
 │   │   ├── migrations/
 │   │   ├── static/            # style.css + challenges-math.js (KaTeX typesetting)
 │   │   ├── tests/
 │   │   └── src/               # bundle.rs: the prepared-dataset format
-│   ├── myapps-challenges-prep/ # Workstation tool: prepares dataset bundles (never deployed)
+│   ├── myapps-challenges-prep/ # Workstation tool: prepares dataset bundles (never deployed); datasets/ holds the data-science deck
 │   └── myapps-test-harness/ # Shared test utilities (spawn_app, spawn_app_with, Options, TestApp)
 ├── tests/                   # Root integration tests
 │   ├── harness/mod.rs       # Platform spawners over myapps-test-harness (all apps registered)
@@ -267,9 +267,12 @@ After login, the top-level router serves:
   --app challenges --dataset <file>`; problems a newer bundle drops are retired
   (`retired_at`), never deleted. The grader's estimates and rubric answers come
   in the same bundle as tags (`challenges_problem_tags`, one row per problem and
-  kind), replaced on every load; nothing reads them yet.
+  kind), replaced on every load; nothing reads them yet. A problem may carry
+  its own source (`source_url`, `source_title`; the data-science deck cites one
+  per item), else the dataset's; an `answer_type` of `text` is a prose answer,
+  shown as the solution's first line rather than typeset.
   Maths is typeset client-side by KaTeX, vendored under `static/katex/`.
-  - `/challenges/` — Dataset picker (UGPhysics, Hendrycks MATH), minus the
+  - `/challenges/` — Dataset picker (UGPhysics, Hendrycks MATH, Data science), minus the
     datasets the user hid, which are listed below it with a Show button
   - `POST /challenges/datasets/{key}/hidden` — Hide or show a dataset
     (`challenges_hidden_datasets`); returns the picker fragment to htmx
