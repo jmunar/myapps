@@ -9,20 +9,25 @@ to the server. The bundle format is defined in
 ```sh
 cargo run --release -p myapps-challenges-prep -- bundle ugphysics        # → ugphysics.sqlite
 cargo run --release -p myapps-challenges-prep -- bundle hendrycks-math   # → hendrycks-math.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle data-science     # → data-science.sqlite, in seconds
 ```
 
 Use the prep from the same commit as the deployed binary: the server refuses a
 bundle format newer than its own. It still loads older ones it knows how to
-read; each format only added a table (2: diagrams, 3: tags), so an older
-bundle loads as one with that table empty and need not be prepared again.
+read; each format only added to the one before (2: diagrams, 3: tags, 4: a
+source per problem), so an older bundle loads as one with that table empty,
+or those columns null, and need not be prepared again.
 
 ## Local decks
 
 `datasets/` holds hand-authored decks that do not come from the Hugging Face
 datasets-server, such as `data-science.jsonl`. They are source data, not
-bundles; the local JSONL reader is not implemented yet. See
-[`datasets/README.md`](datasets/README.md) for the schema, counts, licence and
-status.
+bundles: `bundle <key>` reads `datasets/<key>.jsonl` (or `--deck <file>`)
+instead of fetching, checks every item against the deck's rules, and writes a
+bundle in which each problem carries its own source and a prose answer
+(`answer_type = 'text'`). A deck sets each item's level by hand, so `grade`
+refuses it. See [`datasets/README.md`](datasets/README.md) for the schema,
+counts, licence and review status.
 
 ## Stages
 

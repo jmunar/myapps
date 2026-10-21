@@ -1,4 +1,4 @@
-//! The two problem datasets, and everything about them that differs.
+//! The problem datasets, and everything about them that differs.
 //!
 //! The selector, routes and stats only ever see a `Dataset`; adding a source
 //! means a variant here and a reader for it in `myapps-challenges-prep`, which
@@ -8,16 +8,22 @@
 pub enum Dataset {
     Ugphysics,
     HendrycksMath,
+    DataScience,
 }
 
 impl Dataset {
-    pub const ALL: [Dataset; 2] = [Dataset::Ugphysics, Dataset::HendrycksMath];
+    pub const ALL: [Dataset; 3] = [
+        Dataset::Ugphysics,
+        Dataset::HendrycksMath,
+        Dataset::DataScience,
+    ];
 
     /// Stored in `challenges_problems.dataset` and used in URLs and forms.
     pub fn key(self) -> &'static str {
         match self {
             Dataset::Ugphysics => "ugphysics",
             Dataset::HendrycksMath => "hendrycks-math",
+            Dataset::DataScience => "data-science",
         }
     }
 
@@ -29,6 +35,7 @@ impl Dataset {
         match self {
             Dataset::Ugphysics => "UGPhysics",
             Dataset::HendrycksMath => "Hendrycks MATH",
+            Dataset::DataScience => "Data science",
         }
     }
 
@@ -37,24 +44,32 @@ impl Dataset {
         match self {
             Dataset::Ugphysics => 3,
             Dataset::HendrycksMath => 5,
+            Dataset::DataScience => 3,
         }
     }
 
-    pub fn hf_id(self) -> &'static str {
+    /// Where the prep tool fetches it from; `None` for a deck kept in the
+    /// repository.
+    pub fn hf_id(self) -> Option<&'static str> {
         match self {
-            Dataset::Ugphysics => "UGPhysics/ugphysics",
-            Dataset::HendrycksMath => "EleutherAI/hendrycks_math",
+            Dataset::Ugphysics => Some("UGPhysics/ugphysics"),
+            Dataset::HendrycksMath => Some("EleutherAI/hendrycks_math"),
+            Dataset::DataScience => None,
         }
     }
 
     pub fn url(self) -> String {
-        format!("https://huggingface.co/datasets/{}", self.hf_id())
+        match self.hf_id() {
+            Some(id) => format!("https://huggingface.co/datasets/{id}"),
+            None => "https://github.com/jmunar/myapps/blob/main/crates/myapps-challenges-prep/datasets/README.md".into(),
+        }
     }
 
     pub fn license(self) -> &'static str {
         match self {
             Dataset::Ugphysics => "CC BY-NC-SA 4.0",
             Dataset::HendrycksMath => "MIT",
+            Dataset::DataScience => "CC BY-SA 4.0",
         }
     }
 
@@ -67,6 +82,11 @@ impl Dataset {
                 _ => "Derivation / Practical".into(),
             },
             Dataset::HendrycksMath => format!("Level {difficulty}"),
+            Dataset::DataScience => match difficulty {
+                1 => "Recall".into(),
+                2 => "Apply".into(),
+                _ => "Judge".into(),
+            },
         }
     }
 }

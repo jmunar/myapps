@@ -117,6 +117,15 @@
     margin-top: 0;
 }
 
+/* A prose answer, said out loud before the reveal: the first line of the
+   solution, ahead of the bullets that explain it. */
+.challenges-answer-line {
+    color: var(--text);  /* core.css greys every <p> */
+    font-weight: 600;
+    line-height: 1.5;
+    margin: 0 0 0.75rem;
+}
+
 .challenges-grade {
     flex-direction: row;
     flex-wrap: wrap;

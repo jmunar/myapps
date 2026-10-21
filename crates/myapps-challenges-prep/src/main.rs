@@ -4,11 +4,12 @@
 //! Everything too heavy for the server happens here; the bundle format, and
 //! the checks the server applies to it, are in `myapps_challenges::bundle`.
 //!
-//! `bundle` runs its stages in order: fetch and map every row, render the
-//! Asymptote diagrams they contain, drop the problems whose own diagram
-//! failed, attach the committed grades, write. `grade` produces those grades
-//! (see `grade`).
+//! `bundle` runs its stages in order: fetch and map every row (or read the
+//! deck, for a dataset kept in this repository), render the Asymptote
+//! diagrams they contain, drop the problems whose own diagram failed, attach
+//! the committed grades, write. `grade` produces those grades (see `grade`).
 
+mod deck;
 mod fetch;
 mod grade;
 mod grades;
@@ -47,7 +48,7 @@ enum Command {
 
 #[derive(clap::Args)]
 struct BundleArgs {
-    /// Dataset key (ugphysics, hendrycks-math)
+    /// Dataset key (ugphysics, hendrycks-math, data-science)
     dataset: String,
     /// Where to write the bundle [default: <dataset>.sqlite]
     #[arg(long, short)]
@@ -69,6 +70,10 @@ struct BundleArgs {
     /// [default: grades/<dataset>-v1.jsonl in this crate, if it exists]
     #[arg(long)]
     grades: Option<PathBuf>,
+    /// The deck, for a dataset kept in the repository rather than fetched
+    /// [default: datasets/<dataset>.jsonl in this crate]
+    #[arg(long)]
+    deck: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -100,6 +105,13 @@ async fn main() -> Result<()> {
         Command::Bundle(args) => bundle(args, &cache).await,
         Command::Grade(args) => {
             let dataset = parse_dataset(&args.dataset)?;
+            if dataset.hf_id().is_none() {
+                bail!(
+                    "{} is a hand-written deck whose items carry their own level; \
+                     there is nothing to grade",
+                    dataset.name()
+                );
+            }
             // The same fetch and mapping as `bundle`, so the grader sees, and
             // hashes, exactly the text the bundle will carry.
             let rows = fetch::Cache::new(cache.join("rows"), false);
@@ -128,8 +140,16 @@ async fn bundle(args: &BundleArgs, cache: &Path) -> Result<()> {
         .unwrap_or_else(|| PathBuf::from(format!("{}.sqlite", dataset.key())));
 
     let mut counts = Counts::default();
-    let rows = fetch::Cache::new(cache.join("rows"), args.refetch);
-    let mut problems = fetch_all(dataset, &rows, &mut counts).await?;
+    let mut problems = if dataset.hf_id().is_some() {
+        let rows = fetch::Cache::new(cache.join("rows"), args.refetch);
+        fetch_all(dataset, &rows, &mut counts).await?
+    } else {
+        let path = args
+            .deck
+            .clone()
+            .unwrap_or_else(|| deck::default_path(dataset));
+        deck::read(dataset, &path)?
+    };
     let diagrams = render_diagrams(args, cache, &mut problems, &mut counts).await?;
     let tags = attach_grades(args, dataset, &problems)?;
 

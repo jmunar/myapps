@@ -93,13 +93,19 @@ async fn page(
     offset: usize,
 ) -> Result<RowsPage> {
     let context = || format!("{config}/{split} @ {offset}");
+    let Some(hf_id) = dataset.hf_id() else {
+        bail!(
+            "{} is kept in the repository, not on Hugging Face",
+            dataset.name()
+        );
+    };
     let mut backoff = Duration::from_secs(5);
     for attempt in 1..=ATTEMPTS {
         tokio::time::sleep(PAUSE).await;
         let response = client
             .get(ROWS_URL)
             .query(&[
-                ("dataset", dataset.hf_id()),
+                ("dataset", hf_id),
                 ("config", config),
                 ("split", split),
                 ("offset", &offset.to_string()),

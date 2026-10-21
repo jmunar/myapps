@@ -49,6 +49,8 @@ fn problem(key: &str, subject: &str, difficulty: i64, text: &str) -> Problem {
         answer: "x".into(),
         answer_type: None,
         unit: None,
+        source_url: None,
+        source_title: None,
     }
 }
 
@@ -608,4 +610,93 @@ async fn a_format_2_bundle_loads_as_one_without_tags() {
     load(&app.pool, &old).await.unwrap();
     assert_eq!(rows(&app.pool, "ugphysics").await.len(), 1);
     assert!(tags(&app.pool, "ugphysics").await.is_empty());
+}
+
+/// (source_key, source_url, source_title) for every problem in `dataset`.
+async fn sources(pool: &SqlitePool, dataset: &str) -> Vec<(String, String, Option<String>)> {
+    sqlx::query_as(
+        "SELECT source_key, source_url, source_title FROM challenges_problems
+         WHERE dataset = ? ORDER BY source_key",
+    )
+    .bind(dataset)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// A deck that cites a source per item keeps it; a problem without one falls
+/// back to the dataset's.
+#[tokio::test]
+async fn a_problem_brings_its_own_source() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let path = scratch.path("deck.sqlite");
+    let mut cited = problem("met-001", "Metrics", 1, "What is a confusion matrix?");
+    cited.source_url = Some("https://example.org/item".into());
+    cited.source_title = Some("Item source".into());
+    let uncited = problem("met-002", "Metrics", 1, "What is accuracy?");
+    write(&path, Dataset::DataScience, &[cited, uncited]).await;
+    load(&app.pool, &path).await.unwrap();
+
+    assert_eq!(
+        sources(&app.pool, "data-science").await,
+        vec![
+            (
+                "met-001".into(),
+                "https://example.org/item".into(),
+                Some("Item source".into())
+            ),
+            ("met-002".into(), "https://example.org/ds".into(), None),
+        ]
+    );
+}
+
+/// The source becomes a link on the problem page.
+#[tokio::test]
+async fn a_source_that_is_not_an_http_link_is_refused() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let path = scratch.path("bad.sqlite");
+    let mut p = problem("a", "Metrics", 1, "A");
+    p.source_url = Some("javascript:alert(1)".into());
+    write(&path, Dataset::DataScience, &[p]).await;
+
+    let err = load(&app.pool, &path).await.unwrap_err();
+    assert!(
+        format!("{err:#}").contains("not an http(s) link"),
+        "{err:#}"
+    );
+    assert!(rows(&app.pool, "data-science").await.is_empty());
+}
+
+/// A bundle prepared before problems carried a source: format 3, without the
+/// two columns. Its problems take the manifest's.
+#[tokio::test]
+async fn a_format_3_bundle_loads_with_the_datasets_source() {
+    let app = app().await;
+    let scratch = Scratch::new();
+    let old = scratch.path("old.sqlite");
+    write(&old, Dataset::Ugphysics, &[problem("a", "Optics", 1, "A")]).await;
+    let file = sqlx::SqlitePool::connect(&format!("sqlite:{}", old.display()))
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "CREATE TABLE old AS
+             SELECT source_key, subject, topic, difficulty, source_level, problem, solution,
+                    answer, answer_type, unit
+             FROM problems;
+         DROP TABLE problems;
+         ALTER TABLE old RENAME TO problems;
+         UPDATE manifest SET format = 3;",
+    )
+    .execute(&file)
+    .await
+    .unwrap();
+    file.close().await;
+
+    load(&app.pool, &old).await.unwrap();
+    assert_eq!(
+        sources(&app.pool, "ugphysics").await,
+        vec![("a".into(), "https://example.org/ds".into(), None)]
+    );
 }

@@ -443,6 +443,8 @@ mod tests {
             answer: "\\boxed{\\frac{1}{2}}".into(),
             answer_type: None,
             unit: None,
+            source_url: None,
+            source_title: None,
         };
         assert_eq!(reference(&p), "\\frac{1}{2}");
         p.answer = "(18, -18)".into();

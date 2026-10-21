@@ -1,5 +1,14 @@
 # Idea 04: Challenges — a data-science rapid-fire deck
 
+> **Status: implemented (integration B), 21 October 2026.** `Dataset::DataScience`
+> (`data-science`); `myapps-challenges-prep bundle data-science` reads the
+> deck from `datasets/data-science.jsonl` and checks every item; bundle
+> format 4 carries a source per problem, which the page links under the
+> problem; a text answer (`answer_type = 'text'`) is shown as the first line
+> of the solution, in plain text, with the bullets under it. All 122 items
+> were reviewed and 38 corrected (see the deck's README). Still open: a human
+> domain review, the pilot, and the quiz UI (C).
+
 ## Summary
 
 Add a third Challenges dataset, key `data-science`: short recall questions
@@ -347,12 +356,15 @@ it.
 
 ## Next steps
 
-1. Review the 122 items with a second person; fix or drop the ambiguous ones.
-2. Add `Dataset::DataScience` and a local JSONL reader in `myapps-challenges-prep`.
-3. Decide between integration A and B. If B, add bundle format 3 with per-item
-   source and text answer rendering.
+1. ~~Review the 122 items~~ — done by a model review (21 October 2026); a
+   second person who teaches the topics should still review a sample.
+2. ~~Add `Dataset::DataScience` and a local JSONL reader~~ — done.
+3. ~~Decide between integration A and B~~ — B, as bundle format 4 (format 3
+   had already gone to the grader's tags). The answer opens the solution
+   rather than sitting above it under its own heading.
 4. Prepare `data-science.sqlite` and load it with
-   `myapps import --app challenges --dataset data-science.sqlite`.
+   `myapps import --app challenges --dataset data-science.sqlite`, after
+   deploying a build that reads format 4.
 5. Pilot the deck, then expand toward 200 items from observed misses.
 6. Add per-topic accuracy and median time to the stats page once there is
    enough data to make them meaningful.

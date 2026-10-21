@@ -21,8 +21,10 @@ The design, and the research behind the dataset choice, is in
 |---|---|---|---|
 | [UGPhysics](https://huggingface.co/datasets/UGPhysics/ugphysics) (English) | 5,314 in 13 subjects | 3, from its skill type: Knowledge Recall → Laws Application → Derivation / Practical | CC BY-NC-SA 4.0 |
 | [Hendrycks MATH](https://huggingface.co/datasets/EleutherAI/hendrycks_math) | 11,372 in 7 subjects | 5, as published | MIT |
+| [Data science](../myapps-challenges-prep/datasets/README.md) | 122 in 4 tracks | 3: Recall → Apply → Judge | CC BY-SA 4.0 |
 
-Neither ships in the binary or the repo. Each is prepared on a workstation by
+None ships in the binary. The first two are not in the repo either; the
+data-science deck is kept there as source JSONL. Each is prepared on a workstation by
 [`myapps-challenges-prep`](../myapps-challenges-prep), which fetches it, maps
 its rows and writes a **bundle**: one SQLite file per dataset, in the format
 defined (and versioned) in [`src/bundle.rs`](src/bundle.rs). The server only

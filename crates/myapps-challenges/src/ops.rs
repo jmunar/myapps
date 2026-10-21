@@ -24,15 +24,17 @@ pub struct Problem {
     pub problem: String,
     pub solution: String,
     pub answer: String,
+    pub answer_type: Option<String>,
     pub unit: Option<String>,
     pub source_url: String,
+    pub source_title: Option<String>,
     pub license: String,
 }
 
 pub async fn get_problem(pool: &SqlitePool, id: i64) -> Result<Option<Problem>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT id, dataset, subject, topic, difficulty, problem, solution, answer, unit,
-                source_url, license
+        "SELECT id, dataset, subject, topic, difficulty, problem, solution, answer, answer_type,
+                unit, source_url, source_title, license
          FROM challenges_problems WHERE id = ?",
     )
     .bind(id)

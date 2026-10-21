@@ -19,11 +19,12 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use crate::dataset::Dataset;
 
 /// The bundle schema version this build writes and reads.
-pub const FORMAT: i64 = 3;
+pub const FORMAT: i64 = 4;
 
-/// The oldest format this build still loads. Each format only adds a table to
-/// the one before (2: `diagrams`, 3: `tags`), so an older bundle loads as one
-/// with that table empty instead of being prepared again.
+/// The oldest format this build still loads. Each format only adds to the one
+/// before (2: `diagrams`, 3: `tags`, 4: a source per problem), so an older
+/// bundle loads as one with that table empty, or those columns null, instead
+/// of being prepared again.
 pub const OLDEST_READABLE: i64 = 1;
 
 /// The first format with a `diagrams` table.
@@ -31,6 +32,9 @@ const DIAGRAMS_SINCE: i64 = 2;
 
 /// The first format with a `tags` table.
 const TAGS_SINCE: i64 = 3;
+
+/// The first format with `source_url` and `source_title` on `problems`.
+const PROBLEM_SOURCE_SINCE: i64 = 4;
 
 const SCHEMA: &str = "
 CREATE TABLE manifest (
@@ -52,8 +56,12 @@ CREATE TABLE problems (
     problem       TEXT    NOT NULL,
     solution      TEXT    NOT NULL,
     answer        TEXT    NOT NULL,
-    answer_type   TEXT,
-    unit          TEXT
+    answer_type   TEXT,                 -- 'text': a prose answer, not LaTeX
+    unit          TEXT,
+    -- Where this problem was checked, for a deck that cites one per item;
+    -- null means the manifest's source_url.
+    source_url    TEXT,
+    source_title  TEXT
 );
 
 -- Rendered [asy] blocks, by crate::diagram::hash of their source. Every
@@ -98,6 +106,8 @@ pub struct Problem {
     pub answer: String,
     pub answer_type: Option<String>,
     pub unit: Option<String>,
+    pub source_url: Option<String>,
+    pub source_title: Option<String>,
 }
 
 /// A rendered diagram.
@@ -180,8 +190,8 @@ impl Writer {
             sqlx::query(
                 "INSERT INTO problems
                      (source_key, subject, topic, difficulty, source_level, problem,
-                      solution, answer, answer_type, unit)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                      solution, answer, answer_type, unit, source_url, source_title)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(&p.source_key)
             .bind(&p.subject)
@@ -193,6 +203,8 @@ impl Writer {
             .bind(&p.answer)
             .bind(&p.answer_type)
             .bind(&p.unit)
+            .bind(&p.source_url)
+            .bind(&p.source_title)
             .execute(&mut *tx)
             .await
             .with_context(|| format!("inserting {}", p.source_key))?;
@@ -297,11 +309,16 @@ impl Reader {
     /// Up to `limit` problems with a key after `after`, in key order: pages
     /// through the bundle without holding all of it in memory.
     pub async fn problems_after(&self, after: &str, limit: i64) -> Result<Vec<Problem>> {
-        Ok(sqlx::query_as(
+        let source = if self.manifest.format < PROBLEM_SOURCE_SINCE {
+            "NULL AS source_url, NULL AS source_title"
+        } else {
+            "source_url, source_title"
+        };
+        Ok(sqlx::query_as(&format!(
             "SELECT source_key, subject, topic, difficulty, source_level, problem, solution,
-                    answer, answer_type, unit
-             FROM problems WHERE source_key > ? ORDER BY source_key LIMIT ?",
-        )
+                    answer, answer_type, unit, {source}
+             FROM problems WHERE source_key > ? ORDER BY source_key LIMIT ?"
+        ))
         .bind(after)
         .bind(limit)
         .fetch_all(&self.pool)
