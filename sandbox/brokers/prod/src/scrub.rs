@@ -84,6 +84,18 @@ const KEEP: &[&str] = &[
     "voice_to_text_jobs",
     "file_clipboard_files",
     "file_clipboard_settings",
+    // A public problem catalogue (with its diagrams, grader tags and import
+    // ledger, whose `prepared_by` is the prep tool's name and version) and
+    // each user's practice record and preferences over it.
+    "challenges_problems",
+    "challenges_diagrams",
+    "challenges_problem_tags",
+    "challenges_imports",
+    "challenges_attempts",
+    "challenges_progress",
+    "challenges_current",
+    "challenges_hidden_datasets",
+    "user_app_order",
     // sqlx's own ledger. Dropping it would make the guest re-run every
     // migration against an already-migrated database.
     "_sqlx_migrations",

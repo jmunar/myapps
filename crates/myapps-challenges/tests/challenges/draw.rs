@@ -2,7 +2,8 @@ use std::collections::HashSet;
 
 use crate::{app, current, insert_problem, login};
 use myapps_challenges::dataset::Dataset;
-use myapps_challenges::ops;
+use myapps_challenges::{ops, selector};
+use myapps_test_harness::TestApp;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
@@ -146,4 +147,94 @@ async fn a_one_problem_subject_hands_over_to_the_others() {
         let id = ops::draw(&app.pool, user_id, Dataset::Ugphysics, Some(only), &mut rng).await;
         assert_eq!(id.unwrap(), Some(other));
     }
+}
+
+/// 40 Algebra problems at Hendrycks' top level, graded 0..40, and the user
+/// already there.
+async fn graded_top_level(app: &TestApp, user_id: i64) -> Vec<i64> {
+    let mut ids = Vec::new();
+    for grade in 0..40 {
+        let id = insert_problem(&app.pool, "hendrycks-math", "Algebra", 5, "top").await;
+        sqlx::query(
+            "INSERT INTO challenges_problem_tags (problem_id, kind, value) VALUES (?, ?, ?)",
+        )
+        .bind(id)
+        .bind(selector::GRADE_TAG)
+        .bind(f64::from(grade))
+        .execute(&app.pool)
+        .await
+        .unwrap();
+        ids.push(id);
+    }
+    sqlx::query(
+        "INSERT INTO challenges_progress (user_id, dataset, subject, level, streak, fast_start)
+         VALUES (?, 'hendrycks-math', 'Algebra', 5, 0, 0)",
+    )
+    .bind(user_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+    ids
+}
+
+/// The grade rank (0..40) of every problem `user_id` draws over 30 draws.
+async fn graded_draws(app: &TestApp, user_id: i64, ids: &[i64]) -> HashSet<usize> {
+    let mut rng = StdRng::seed_from_u64(5);
+    let mut ranks = HashSet::new();
+    for _ in 0..30 {
+        let id = ops::draw(&app.pool, user_id, Dataset::HendrycksMath, None, &mut rng)
+            .await
+            .unwrap()
+            .unwrap();
+        ranks.insert(ids.iter().position(|&x| x == id).unwrap());
+    }
+    ranks
+}
+
+#[tokio::test]
+async fn the_top_level_draws_by_grade_from_your_answers_there() {
+    // The same four middle problems, answered right by one user and wrong by
+    // the other: the first is sent above the middle, the second well below.
+    let mut draws = Vec::new();
+    for right in [true, false] {
+        let app = app().await;
+        let user_id = login(&app).await;
+        let ids = graded_top_level(&app, user_id).await;
+        for &id in &ids[18..22] {
+            ops::record_attempt(&app.pool, user_id, id, right)
+                .await
+                .unwrap();
+        }
+        // Wrong answers drop the staircase below the top; put it back, so
+        // both users draw from the same level and only the ranking differs.
+        sqlx::query("UPDATE challenges_progress SET level = 5 WHERE user_id = ?")
+            .bind(user_id)
+            .execute(&app.pool)
+            .await
+            .unwrap();
+        draws.push(graded_draws(&app, user_id, &ids).await);
+    }
+    let (strong, weak) = (&draws[0], &draws[1]);
+    assert!(strong.iter().all(|&r| r >= 18), "{strong:?}");
+    assert!(weak.iter().all(|&r| r < 12), "{weak:?}");
+    assert!(
+        strong.iter().all(|r| !(18..22).contains(r)),
+        "seen problems come back"
+    );
+}
+
+#[tokio::test]
+async fn ungraded_top_level_problems_are_still_drawn_once_the_graded_run_out() {
+    let app = app().await;
+    let user_id = login(&app).await;
+    let graded = graded_top_level(&app, user_id).await;
+    let ungraded = insert_problem(&app.pool, "hendrycks-math", "Algebra", 5, "ungraded").await;
+    for &id in &graded {
+        ops::record_attempt(&app.pool, user_id, id, true)
+            .await
+            .unwrap();
+    }
+    let mut rng = StdRng::seed_from_u64(6);
+    let id = ops::draw(&app.pool, user_id, Dataset::HendrycksMath, None, &mut rng).await;
+    assert_eq!(id.unwrap(), Some(ungraded));
 }

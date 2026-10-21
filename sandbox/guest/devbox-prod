@@ -54,7 +54,10 @@ cmd_snapshot() {
     headers="$(mktemp)"
     # Downloaded beside the target and moved into place, so a snapshot that
     # fails halfway does not leave a truncated database looking like a real one.
-    trap 'rm -f "$tmp" "$headers"' EXIT
+    # Expanded now: an EXIT trap runs after this function has returned, when
+    # its locals are gone, and under `set -u` naming one is an error.
+    # shellcheck disable=SC2064
+    trap "rm -f $(printf '%q ' "$tmp" "$headers")" EXIT
 
     echo "devbox-prod: asking the broker for a snapshot (dump, rebuild, scrub — this takes a while)" >&2
     curl -sS --fail-with-body -D "$headers" -o "$tmp" \
