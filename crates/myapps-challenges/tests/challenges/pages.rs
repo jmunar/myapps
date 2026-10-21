@@ -36,6 +36,44 @@ async fn seeded_picker_offers_both_datasets() {
 }
 
 #[tokio::test]
+async fn empty_picker_says_how_to_import_the_data_science_deck() {
+    let app = app().await;
+    login(&app).await;
+    let body = app.server.get("/challenges").await.text();
+    assert!(body.contains("<h2>Data science</h2>"));
+    assert!(body.contains("Rapid-fire data-science questions"));
+    assert!(body.contains("myapps-challenges-prep bundle data-science"));
+    assert!(body.contains("myapps import --app challenges --dataset data-science.sqlite"));
+    assert!(!body.contains(r#"href="/challenges/practice/data-science""#));
+}
+
+#[tokio::test]
+async fn seeded_picker_offers_the_data_science_deck() {
+    let app = app().await;
+    app.seed_and_login(&ChallengesApp).await;
+    let body = app.server.get("/challenges").await.text();
+    assert!(!body.contains("myapps-challenges-prep bundle data-science"));
+    assert!(body.contains(
+        r#"href="/challenges/practice/data-science" class="btn btn-primary challenges-start">Start<"#
+    ));
+    assert!(body.contains("2 problems · 2 subjects"));
+}
+
+#[tokio::test]
+async fn data_science_subtitle_renders_in_spanish() {
+    let app = app().await;
+    login(&app).await;
+    app.server
+        .post("/settings/language")
+        .form(&serde_json::json!({ "language": "es", "redirect": "/challenges" }))
+        .expect_failure()
+        .await;
+    let body = app.server.get("/challenges").await.text();
+    assert!(body.contains("Preguntas rápidas de ciencia de datos"));
+    assert!(!body.contains("Rapid-fire data-science questions"));
+}
+
+#[tokio::test]
 async fn picker_says_continue_once_a_problem_is_in_progress() {
     let app = app().await;
     login(&app).await;
@@ -315,6 +353,46 @@ async fn a_text_answer_opens_the_solution_and_the_item_cites_its_source() {
     assert!(body.contains(
         r#"<a href="https://example.org/recall" rel="noopener">MLCC &amp; &lt;recall&gt;</a> · Data science · CC BY-SA 4.0"#
     ));
+}
+
+/// The other decks' answers are LaTeX: they keep their own section above the
+/// solution, typeset, and the footer links the dataset, not a per-item source.
+#[tokio::test]
+async fn a_latex_answer_keeps_its_own_section_and_the_footer_names_the_dataset() {
+    let app = app().await;
+    login(&app).await;
+    insert_problem(&app.pool, "ugphysics", "Optics", 1, "p").await;
+
+    let body = app
+        .server
+        .get("/challenges/practice/ugphysics")
+        .await
+        .text();
+    let answer = body.find("<h3>Answer</h3>").expect("answer heading");
+    let typeset = body.find("\\(\\displaystyle x\\)").expect("typeset answer");
+    let solution = body.find("<h3>Solution</h3>").expect("solution heading");
+    assert!(answer < typeset && typeset < solution);
+    assert!(!body.contains("challenges-answer-line"));
+    assert!(body.contains(
+        r#"Source: <a href="https://example.org" rel="noopener">UGPhysics</a> · MIT</p>"#
+    ));
+}
+
+/// The seed marks its data-science samples as prose, and cites no per-item
+/// source, so the footer falls back to the dataset.
+#[tokio::test]
+async fn seeded_data_science_problem_renders_a_text_answer() {
+    let app = app().await;
+    app.seed_and_login(&ChallengesApp).await;
+    let body = app
+        .server
+        .get("/challenges/practice/data-science")
+        .await
+        .text();
+    assert!(body.contains(r#"<p class="challenges-answer-line">"#));
+    assert!(!body.contains("<h3>Answer</h3>"));
+    assert!(!body.contains("\\displaystyle"));
+    assert!(body.contains(r#"rel="noopener">Data science</a> · sample</p>"#));
 }
 
 #[tokio::test]
