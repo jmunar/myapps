@@ -16,6 +16,14 @@ bundle format newer than its own. It still loads older ones it knows how to
 read; each format only added a table (2: diagrams, 3: tags), so an older
 bundle loads as one with that table empty and need not be prepared again.
 
+## Local decks
+
+`datasets/` holds hand-authored decks that do not come from the Hugging Face
+datasets-server, such as `data-science.jsonl`. They are source data, not
+bundles; the local JSONL reader is not implemented yet. See
+[`datasets/README.md`](datasets/README.md) for the schema, counts, licence and
+status.
+
 ## Stages
 
 1. **Fetch** every row from the Hugging Face datasets-server, paced to stay
