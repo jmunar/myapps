@@ -121,6 +121,11 @@ async fn draw_in_subject(
     let exclude = exclude.unwrap_or(-1);
 
     for difficulty in selector::fallback_order(target, level, dataset.max_level()) {
+        if difficulty == dataset.max_level()
+            && let Some(id) = draw_graded(pool, user_id, dataset, subject, exclude, rng).await?
+        {
+            return Ok(Some(id));
+        }
         let id: Option<i64> = sqlx::query_scalar(
             "SELECT id FROM challenges_problems p
              WHERE dataset = ? AND subject = ? AND difficulty = ? AND id != ?
@@ -154,6 +159,78 @@ async fn draw_in_subject(
     .bind(exclude)
     .fetch_optional(pool)
     .await
+}
+
+/// An unseen problem in `subject`'s top level other than `exclude`, chosen by
+/// the grader's ranking (see `selector`). `None` when the subject's top level
+/// carries no grades, or every graded problem there has been seen; the caller
+/// then draws at random as below the top.
+async fn draw_graded(
+    pool: &SqlitePool,
+    user_id: i64,
+    dataset: Dataset,
+    subject: &str,
+    exclude: i64,
+    rng: &mut (impl Rng + Send),
+) -> Result<Option<i64>, sqlx::Error> {
+    // Every graded problem in the top level, seen or not: percentiles are over
+    // the whole level, so a problem keeps its place as you work through it.
+    let graded: Vec<(i64, f64, bool)> = sqlx::query_as(
+        "SELECT p.id, t.value,
+                EXISTS (SELECT 1 FROM challenges_attempts a
+                        WHERE a.user_id = ? AND a.problem_id = p.id)
+         FROM challenges_problems p
+         JOIN challenges_problem_tags t ON t.problem_id = p.id AND t.kind = ?
+         WHERE p.dataset = ? AND p.subject = ? AND p.difficulty = ?
+           AND p.retired_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(selector::GRADE_TAG)
+    .bind(dataset.key())
+    .bind(subject)
+    .bind(dataset.max_level())
+    .fetch_all(pool)
+    .await?;
+    if graded.is_empty() {
+        return Ok(None);
+    }
+    let grades: Vec<f64> = graded.iter().map(|&(_, g, _)| g).collect();
+    let percentile: HashMap<i64, f64> = graded
+        .iter()
+        .zip(selector::percentiles(&grades))
+        .map(|(&(id, _, _), q)| (id, q))
+        .collect();
+
+    // Your answers in this top level, oldest first. A problem retired or
+    // ungraded since has no percentile and says nothing here.
+    let answers: Vec<(i64, bool)> = sqlx::query_as(
+        "SELECT a.problem_id, a.correct FROM challenges_attempts a
+         JOIN challenges_problems p ON p.id = a.problem_id
+         WHERE a.user_id = ? AND p.dataset = ? AND p.subject = ? AND p.difficulty = ?
+         ORDER BY a.id",
+    )
+    .bind(user_id)
+    .bind(dataset.key())
+    .bind(subject)
+    .bind(dataset.max_level())
+    .fetch_all(pool)
+    .await?;
+    let ability = selector::ability(
+        answers
+            .iter()
+            .filter_map(|(id, right)| percentile.get(id).map(|&q| (q, *right))),
+    );
+
+    let unseen: Vec<(i64, f64)> = graded
+        .iter()
+        .filter(|&&(id, _, seen)| !seen && id != exclude)
+        .map(|&(id, _, _)| (id, percentile[&id]))
+        .collect();
+    Ok(selector::pick_graded(
+        &unseen,
+        selector::graded_target(ability),
+        rng,
+    ))
 }
 
 /// What marking a problem did to your level in its subject.

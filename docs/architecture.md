@@ -267,9 +267,10 @@ After login, the top-level router serves:
   --app challenges --dataset <file>`; problems a newer bundle drops are retired
   (`retired_at`), never deleted. The grader's estimates and rubric answers come
   in the same bundle as tags (`challenges_problem_tags`, one row per problem and
-  kind), replaced on every load; nothing reads them yet. A problem may carry
-  its own source (`source_url`, `source_title`; the data-science deck cites one
-  per item), else the dataset's; an `answer_type` of `text` is a prose answer,
+  kind), replaced on every load; draws at a dataset's top level rank problems
+  by the `grade_prior` tag (see `selector.rs`). A problem may carry its own
+  source (`source_url`, `source_title`; the data-science deck cites one per
+  item), else the dataset's; an `answer_type` of `text` is a prose answer,
   shown as the solution's first line rather than typeset.
   Maths is typeset client-side by KaTeX, vendored under `static/katex/`.
   - `/challenges/` — Dataset picker (UGPhysics, Hendrycks MATH, Data science), minus the

@@ -313,6 +313,8 @@ seeded RNG and no database:
 - `fallback_order(target, level, max_level)` — the level order to try when the
   target level has no unseen problems.
 - `advance(progress, correct) -> Progress` — the staircase, including fast start.
+- `percentiles`, `ability`, `graded_target`, `pick_graded` — the graded draw
+  at the top level (see "The real attempts" under the grader).
 
 `ops::draw(pool, user_id, dataset, rng)` wires them to SQL: read the subject
 list (`SELECT DISTINCT subject … WHERE dataset = ?`), read or default the
@@ -865,6 +867,61 @@ Qwen3.6):**
 **Step 3, later PRs**: *Learned difficulty* above, starting with the replay
 evaluation against the staircase, then the selector. The flags are already its
 features.
+
+**The real attempts (prod snapshot, 2026-10-21).** One user, 129 attempts
+over 16 days (2026-10-05 to 10-20), 127 of them Hendrycks MATH and 118 right
+(91%). The staircase aims for 71% and cannot get there: the user sits at
+level 5 in four of seven subjects and 4 in the rest, and still gets 88% of
+level-5 problems right (53 of 60). The dataset's levels have run out, so
+the draw is now uniform over 3,245 level-5 problems, most of them too easy.
+(The grades were not yet loaded on prod: no tags in the snapshot. They were
+matched to the attempts from the grades file instead.)
+
+How well each ranking puts the 11 failures above the 116 successes (AUC: the
+chance a failed problem ranks above a solved one, 0.5 for a coin):
+
+| | Level | Grade | Prior (flags + lengths) |
+|---|---|---|---|
+| All 127 Hendrycks attempts | 0.60 | 0.76 | 0.80 |
+| The 60 at level 5 (7 failures) | — | 0.71 | 0.87 |
+
+Bootstrapping the attempts, grade minus level is +0.16 (90% interval +0.06
+to +0.28) and prior minus level +0.20 (+0.12 to +0.29). So on the one
+person who uses the app, the grader beats the levels clearly, even with 11
+failures, and the judge adds nothing over the prior, as in the full
+Hendrycks run. The failures sit at the 53rd–99th percentile of grade over all
+of Hendrycks; the successes at level 5 have a median at the 75th.
+
+Two limits. The draws all come from near the user's level, mostly 4–5,
+which flatters any ranking that separates problems *within* a level against
+the level itself; but that is where the draw has to choose. And 11 failures
+are too few to fit or compare log-loss and calibration meaningfully, so the
+replay planned above would mostly report noise; the AUC above is the check
+these data can support.
+
+What it changes: the first selector change worth making is *within* the
+top level, where the staircase has nothing left to say. Ranking level-5
+problems by the prior, and drawing harder ones while the user keeps
+succeeding, is the learned-difficulty model with `w` fixed at the grader's
+offline fit and only `ability` moving, which is all 11 failures can support.
+
+**Built (FEAT-112):** draws at a dataset's top level go through
+`ops::draw_graded`. Each graded problem in the subject's top level gets its
+mid-rank percentile on `grade_prior`; the user's ability is replayed from their
+answers there, oldest first, as `a += 0.1 · (right − σ((a − q) / 0.2))` from
+0.5; the target is the percentile where that curve gives 0.7; and the draw
+takes an unseen problem from 0.05 under the target to 0.10 over it, or the
+nearest one. The spread (0.2) and step (0.1) came from simulation, not a fit:
+the real data are too thin to fit both, and the best fit only said the user is
+above most level-5 problems. Simulated users whose true curve is half to one
+and a half times as steep settle at 70–72% right within about 20 answers; one
+above every problem gets the hardest, at ~78%. With the upward lean, a user
+matching the model is served at about 67%. Replayed on the snapshot, the
+targets are the 83rd percentile in Algebra (18 of 18 right at level 5) and
+the 81st in Prealgebra, the 60th in Number Theory, 41st–47th in Geometry,
+Precalculus and Counting & Probability, and the 30th in Intermediate Algebra
+(0 of 2). Nothing is stored, so there is nothing to migrate or undo: the
+ability is recomputed on every draw, from a few hundred rows.
 
 Running more than one model at once on the laptop can exhaust its RAM. With the
 GPU allowed 24 GB of shared memory and no swap, the Q8_0 encoder, a Laya process
