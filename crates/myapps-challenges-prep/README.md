@@ -7,14 +7,14 @@ to the server. The bundle format is defined in
 [`myapps-challenges/src/bundle.rs`](../myapps-challenges/src/bundle.rs).
 
 ```sh
-cargo run --release -p myapps-challenges-prep -- ugphysics        # → ugphysics.sqlite
-cargo run --release -p myapps-challenges-prep -- hendrycks-math   # → hendrycks-math.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle ugphysics        # → ugphysics.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle hendrycks-math   # → hendrycks-math.sqlite
 ```
 
 Use the prep from the same commit as the deployed binary: the server refuses a
 bundle format newer than its own. It still loads older ones it knows how to
-read; a format-1 bundle, from before diagrams, loads as one with no diagrams,
-so a dataset without any (UGPhysics) need not be prepared again.
+read; each format only added a table (2: diagrams, 3: tags), so an older
+bundle loads as one with that table empty and need not be prepared again.
 
 ## Stages
 
@@ -29,9 +29,112 @@ so a dataset without any (UGPhysics) need not be prepared again.
    `--retry-failed` retries the cached failures.
 3. **Drop** the problems whose own text has a diagram that failed; a solution's
    failed diagram becomes a placeholder on the page instead.
-4. **Write** the bundle, as `<file>.partial` renamed into place at the end.
+4. **Attach grades** from the grader's output for the dataset,
+   `grades/<dataset>-v1.jsonl` in this crate (or `--grades <file>`), as the
+   bundle's tags. A row applies only while the problem's text still has the
+   SHA-256 it was graded with; the rest are counted as stale and logged, so an
+   upstream edit leaves a problem ungraded rather than mis-graded. No file
+   means the dataset is not graded yet, and the bundle has no tags.
+5. **Write** the bundle, as `<file>.partial` renamed into place at the end.
 
-## Rendering setup (Hendrycks MATH only)
+## Grading
+
+`grade` writes the grades file that `bundle` attaches: a difficulty estimate
+per problem, plus the answers to the dataset's rubric questions. The reasoning
+and measurements behind it are in
+[ideas-03, "Grader spike"](../../docs/ideas-03-graded-math-physics.md#grader-spike-2026-10-04).
+It talks to one `llama-server` chat model that you start yourself, alone on the
+GPU (two models at once have set off the OOM killer on the dev laptop):
+
+```sh
+llama-server -m ~/Models/Qwen3-8B-Q4_K_M.gguf -ngl 99 -c 8192 --parallel 1 --port 8091
+```
+
+Then, per dataset, three stages:
+
+```sh
+cargo run --release -p myapps-challenges-prep -- grade flags hendrycks-math   # ~2.4 s a problem
+cargo run --release -p myapps-challenges-prep -- grade judge hendrycks-math   # 0.6–1.1 s a question, 6 per problem
+cargo run --release -p myapps-challenges-prep -- grade rank hendrycks-math    # seconds; writes grades/hendrycks-math-v1.jsonl
+```
+
+1. **`flags`** asks every problem the rubric's seven questions
+   (`src/grade/rubric.rs`), the problem first and the question after it, so the
+   server's prompt cache processes each problem once.
+2. **`judge`** asks "which is harder?" of random pairs within a subject,
+   `--rounds` (6) comparisons per problem, each pair both ways round.
+3. **`rank`** fits a ridge regression from the flags and lengths to the
+   dataset's levels, out-of-fold, as each problem's prior, then Bradley-Terry
+   over the verdicts with the prior as a Gaussian (`--tau`, 1.0). It prints
+   how prior and grade agree with the levels, per subject, and how consistent
+   the judge was, and writes the grades file. Hand-checked pairs in
+   `grades/<dataset>-checks.jsonl` (`{"harder": key, "easier": key}` per line)
+   are scored too.
+
+### Checking the grades against a solver
+
+`solve` is not part of the grades but a check on them that needs no expert: a
+stronger model attempts a sample of the problems, and `rank` then reports
+which of the levels, the prior and the grade best predicts where it failed
+(and how long it had to think). The solver thinks before answering, which
+takes minutes a problem, so give it a sample, and a server of its own (no
+other model on the GPU):
+
+```sh
+llama-server -m ~/Models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf -ngl 99 -c 16384 --cache-ram 0 --parallel 1 --port 8091 \
+  --reasoning-budget 8192 --reasoning-budget-message "Time is up, so I'll give my final answer now."
+cargo run --release -p myapps-challenges-prep -- grade solve ugphysics --limit 200   # ~2–7 min a problem
+cargo run --release -p myapps-challenges-prep -- grade rank ugphysics                # reports "Solved by …"
+```
+
+The solver writes its answer in `\boxed{}`; it counts as right when it matches
+the dataset's answer once spacing and sizing are ignored, or as a number to
+1%, and otherwise the same model, thinking off, is asked whether the two are
+equivalent (one token, as for the flags). Each attempt is kept with its
+answer, verdict, token count and reply in `solve.jsonl` under the solver's
+cache directory. `--solver` names its model file, `--attempts N` samples each
+problem N times with different seeds, for a solve rate rather than right or
+wrong. The first `--limit` problems are the same ones as the flags and judge
+sample runs used.
+
+To compare another solver, run `solve` with its model loaded and `--solver`,
+then reload the server with the checker (Qwen3.6, `--checker`) and run
+`check`, which asks it about every answer the other solver checked itself;
+`rank --solver …` then uses the common checker's verdicts:
+
+```sh
+# server: llama-server -m ~/Models/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf … (same options as above)
+cargo run --release -p myapps-challenges-prep -- grade solve ugphysics --limit 40 --solver gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+# server: back to Qwen3.6
+cargo run --release -p myapps-challenges-prep -- grade check ugphysics --solver gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+cargo run --release -p myapps-challenges-prep -- grade rank ugphysics --limit 300 --solver gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
+```
+
+`solve-compare.sh` in this crate does all of that unattended, Qwen3.6 then
+Gemma 4 on the first `LIMIT` (40) problems: it starts and stops each server
+itself, one model at a time, keeps the laptop awake, logs to
+`~/solve-compare.log`, and resumes when run again.
+
+`--cache-ram 0` matters: llama-server keeps every finished request's state in
+a RAM prompt cache of up to 8 GiB, which no later problem reuses, and beside
+Qwen3.6's 21.7 GB on the 30 GB laptop it grew until the OOM killer stopped the
+first run after 14 problems. The script also starts each server in a systemd
+scope of its own, so an OOM kill stops only the server, and then restarts it
+and resumes the stage (up to `TRIES`, 3); a stage whose server stops answering
+exits rather than skipping the problems left.
+
+Sampling follows each family's model card (Gemma: temperature 1.0, top-k 64;
+otherwise Qwen's 0.6, top-k 20).
+
+Answers are cached under `~/.cache/myapps-challenges-prep/grade/<dataset>/<model>/`
+one line at a time, keyed on the problem text's hash, so a killed run resumes
+where it stopped and an edited problem is asked again. `--limit N` (the same N
+problems every time) and `--subject` make quick runs; `rank` on such a run only
+reports, unless given `--out`. `--model` names the file the server must have
+loaded. Changing a rubric question means bumping `rubric::VERSION`, which
+starts its answers afresh.
+
+
 
 - **Asymptote and TeX**: `sudo pacman -S asymptote` (pulls in `texlive-basic`).
 - **bubblewrap**: every block runs in its own sandbox with no network, a

@@ -29,7 +29,7 @@ defined (and versioned) in [`src/bundle.rs`](src/bundle.rs). The server only
 loads bundles; it never fetches or computes anything itself.
 
 ```sh
-cargo run --release -p myapps-challenges-prep -- hendrycks-math   # → hendrycks-math.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle hendrycks-math   # → hendrycks-math.sqlite
 myapps import --app challenges --dataset hendrycks-math.sqlite    # or: ./deploy.sh prod import-dataset …
 ```
 

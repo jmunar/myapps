@@ -3,8 +3,9 @@
 //!
 //! The bundle is the whole of its dataset: what is in it is upserted, keyed on
 //! `(dataset, source_key)` so problem ids, and the attempt history that points
-//! at them, survive a reload; what is not is retired, never deleted. The load
-//! is one transaction, so a bundle that fails validation changes nothing.
+//! at them, survive a reload; what is not is retired, never deleted. The
+//! dataset's tags are replaced by the bundle's. The load is one transaction, so
+//! a bundle that fails validation changes nothing.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -121,6 +122,9 @@ pub async fn run(pool: &SqlitePool, path: &str) -> Result<()> {
         .await?;
     }
 
+    // After the retiring, so the live problems are exactly the bundle's.
+    let tags = replace_tags(&mut tx, &bundle, path).await?;
+
     sqlx::query(
         "INSERT INTO challenges_imports (dataset, problems, prepared_at, prepared_by)
          VALUES (?, ?, ?, ?)
@@ -139,7 +143,7 @@ pub async fn run(pool: &SqlitePool, path: &str) -> Result<()> {
     tx.commit().await?;
 
     tracing::info!(
-        "{}: {loaded} problems and {diagrams} diagrams loaded, {} retired \
+        "{}: {loaded} problems, {diagrams} diagrams and {tags} tags loaded, {} retired \
          (bundle prepared {} by {})",
         dataset.name(),
         unseen.len(),
@@ -147,6 +151,69 @@ pub async fn run(pool: &SqlitePool, path: &str) -> Result<()> {
         bundle.manifest.prepared_by,
     );
     Ok(())
+}
+
+/// Drop the dataset's tags and load the bundle's, each onto the live problem
+/// with its `source_key`. Returns how many were loaded.
+async fn replace_tags(
+    tx: &mut Transaction<'_, Sqlite>,
+    bundle: &bundle::Reader,
+    path: &str,
+) -> Result<i64> {
+    let dataset = bundle.dataset;
+    sqlx::query(
+        "DELETE FROM challenges_problem_tags
+         WHERE problem_id IN (SELECT id FROM challenges_problems WHERE dataset = ?)",
+    )
+    .bind(dataset.key())
+    .execute(&mut **tx)
+    .await?;
+
+    let expected = bundle.tag_count().await?;
+    let mut loaded = 0;
+    let (mut key, mut kind) = (String::new(), String::new());
+    loop {
+        let page = bundle.tags_after((&key, &kind), PAGE).await?;
+        let Some(last) = page.last() else { break };
+        (key, kind) = (last.source_key.clone(), last.kind.clone());
+        for t in &page {
+            ensure!(
+                !t.kind.trim().is_empty() && t.value.is_finite(),
+                "{path}: tag '{}' of '{}' is empty or not a finite number",
+                t.kind,
+                t.source_key
+            );
+            let id: Option<i64> = sqlx::query_scalar(
+                "SELECT id FROM challenges_problems
+                 WHERE dataset = ? AND source_key = ? AND retired_at IS NULL",
+            )
+            .bind(dataset.key())
+            .bind(&t.source_key)
+            .fetch_optional(&mut **tx)
+            .await?;
+            let Some(id) = id else {
+                bail!(
+                    "{path}: tag '{}' is for '{}', which the bundle does not have",
+                    t.kind,
+                    t.source_key
+                );
+            };
+            sqlx::query(
+                "INSERT INTO challenges_problem_tags (problem_id, kind, value) VALUES (?, ?, ?)",
+            )
+            .bind(id)
+            .bind(&t.kind)
+            .bind(t.value)
+            .execute(&mut **tx)
+            .await?;
+        }
+        loaded += page.len() as i64;
+    }
+    ensure!(
+        loaded == expected,
+        "{path}: read {loaded} of its {expected} tags"
+    );
+    Ok(loaded)
 }
 
 /// What the rest of the app assumes of a problem, checked before any of the
