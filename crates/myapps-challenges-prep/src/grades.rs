@@ -133,6 +133,8 @@ mod tests {
             answer: "a".into(),
             answer_type: None,
             unit: None,
+            source_url: None,
+            source_title: None,
         }
     }
 

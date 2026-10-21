@@ -46,6 +46,7 @@ fn subtitle(dataset: Dataset, t: &Translations) -> &'static str {
     match dataset {
         Dataset::Ugphysics => t.physics,
         Dataset::HendrycksMath => t.maths,
+        Dataset::DataScience => t.data_science,
     }
 }
 
@@ -374,14 +375,42 @@ async fn problem_fragment(
             )
         })
         .unwrap_or_default();
-    let answer = if p.answer.is_empty() {
-        String::new()
-    } else {
-        format!(
-            r#"<h3>{answer_lbl}</h3>{answer}{unit}"#,
-            answer_lbl = t.answer,
-            answer = answer_math(&p.answer),
+    // A LaTeX answer gets its own section above the solution. A prose one
+    // (`answer_type = 'text'`, the data-science deck) is plain text, so it
+    // opens the solution instead, with the explanation under it.
+    let (answer, answer_line) = if p.answer.is_empty() {
+        (String::new(), String::new())
+    } else if p.answer_type.as_deref() == Some("text") {
+        (
+            String::new(),
+            format!(
+                r#"<p class="challenges-answer-line">{}</p>"#,
+                html_escape(&p.answer)
+            ),
         )
+    } else {
+        (
+            format!(
+                r#"<h3>{answer_lbl}</h3>{answer}{unit}"#,
+                answer_lbl = t.answer,
+                answer = answer_math(&p.answer),
+            ),
+            String::new(),
+        )
+    };
+    // A deck that cites a source per problem names it; the others link the
+    // dataset itself.
+    let source_url = html_escape(&p.source_url);
+    let source = match &p.source_title {
+        Some(title) => format!(
+            r#"<a href="{source_url}" rel="noopener">{}</a> · {}"#,
+            html_escape(title),
+            dataset.name()
+        ),
+        None => format!(
+            r#"<a href="{source_url}" rel="noopener">{}</a>"#,
+            dataset.name()
+        ),
     };
     let url = practice_url(base, dataset);
     let mut hashes = diagram::hashes(&p.problem);
@@ -407,6 +436,7 @@ async fn problem_fragment(
             <div class="card-body">
                 {answer}
                 <h3>{solution_lbl}</h3>
+                {answer_line}
                 {solution}
                 <h3>{how}</h3>
                 <form method="POST" action="{url}/attempt" class="challenges-grade"
@@ -422,7 +452,7 @@ async fn problem_fragment(
                 hx-post="{url}/skip" hx-target="{target}" hx-swap="innerHTML show:window:top">
                 <button type="submit" class="btn-secondary">{skip}</button>
             </form>
-            <p class="text-secondary text-sm">{source_lbl}: <a href="{source_url}" rel="noopener">{dataset_name}</a> · {license}</p>
+            <p class="text-secondary text-sm">{source_lbl}: {source} · {license}</p>
         </div>"#,
         id = p.id,
         subject = html_escape(&p.subject),
@@ -442,7 +472,6 @@ async fn problem_fragment(
         target = PRACTICE_TARGET,
         skip = t.skip,
         source_lbl = t.source,
-        source_url = html_escape(&p.source_url),
         license = html_escape(&p.license),
     ))
 }

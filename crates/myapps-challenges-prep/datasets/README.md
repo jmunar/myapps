@@ -1,10 +1,19 @@
 # Challenges datasets kept in the repository
 
 Small, hand-authored decks that do not come from a Hugging Face dataset. They
-are source data for `myapps-challenges-prep`, not bundles: the prep tool is
-meant to turn one into the SQLite bundle the server loads. **The local JSONL
-reader is not implemented yet**; this file is the starter source of truth for
-that work and still needs independent review.
+are source data for `myapps-challenges-prep`, not bundles: the prep tool
+turns one into the SQLite bundle the server loads.
+
+```sh
+cargo run --release -p myapps-challenges-prep -- bundle data-science   # → data-science.sqlite
+myapps import --app challenges --dataset data-science.sqlite
+```
+
+Each track becomes a subject, `difficulty` the level (Recall, Apply, Judge),
+`question` the problem, and the bullets the solution, one `• ` line each. The
+answer is marked as prose, so the page shows it as the solution's first line
+rather than typesetting it as maths, and the item's `source` is the link under
+the problem. `tags` are not carried yet.
 
 ## `data-science.jsonl`
 
@@ -51,24 +60,46 @@ One JSON object per line:
 - `answer` is the short answer to say out loud; `bullets` explain it and must
   not just repeat it.
 - `source` is the primary reference the item was checked against, not a copied
-  passage.
+  passage. Its `url` must be `https://`.
 
-### Validation
+The prep tool refuses the whole deck if an item breaks a rule it can check
+(unknown track, difficulty outside 1–3, an empty field, other than 2–4
+bullets, a duplicate id, a non-https source), and its tests read the committed
+file, so `make check` catches a bad edit.
 
-```sh
-python3 - <<'PY'
-import json
-rows = [json.loads(line) for line in open("data-science.jsonl")]
-assert len({r["id"] for r in rows}) == len(rows)
-for r in rows:
-    assert r["track"] in {"ml-fundamentals", "metrics", "statistics", "llm"}
-    assert r["difficulty"] in (1, 2, 3)
-    assert r["question"].strip() and r["answer"].strip()
-    assert 2 <= len(r["bullets"]) <= 4
-    assert r["source"]["url"].startswith("https://")
-print(len(rows), "items")
-PY
-```
+### Review
+
+All 122 items were reviewed on 21 October 2026 (a model review, item by
+item, with every number recomputed and every source URL fetched). 38 items
+changed:
+
+- **Wrong or misleading, fixed:** logistic-regression coefficients are a
+  change in log-odds per unit, not log-odds (ml-014); a random forest samples
+  features at every split, not once per tree (ml-018); "MSE can describe
+  either level" contradicted the loss/cost distinction (ml-027); average
+  precision is not literally the area under the PR curve (met-015); DPO also
+  drops the reward model, not only the RL loop (llm-014); SentencePiece is a
+  library, not a third algorithm next to BPE and WordPiece (llm-002); attention
+  is order-blind rather than "permutation-invariant" (llm-006).
+- **Unhedged convention:** "precision improves with a stricter threshold" now
+  says "usually" (met-003); the confusion-matrix axes are named as a library
+  choice (met-001).
+- **Bullets that restated the answer or another bullet**, replaced with a
+  mechanism or contrast: ml-024, met-018, met-020, sta-002, sta-011, sta-018,
+  llm-009, llm-015, llm-016, llm-033.
+- **Duplicate fact:** met-011 taught the same 99%-accuracy trap as met-022; it
+  is now balanced accuracy.
+- **Source mismatch:** L1 was cited to Google's L2 page (ml-009), peeking to an
+  OpenIntro chapter that does not cover it (sta-024), the KV cache to the
+  generation-strategies page (llm-018), and llm-029's source title did not
+  match its page.
+- **Missing assumption:** the bias–variance split holds for squared error
+  (ml-008); the CLT needs independence (sta-005); the combined-variance item
+  now says how it differs from the t-test's pooled variance (sta-030);
+  llm-024 asked about one benchmark question rather than a benchmark score.
+
+A human domain review of a sample (every difficulty-3 item and at least 10%
+of the rest) is still the next step before the deck grows.
 
 ### Licence
 

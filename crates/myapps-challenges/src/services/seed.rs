@@ -91,6 +91,22 @@ const SAMPLES: &[Sample] = &[
         "It is $\\boxed{1}$ for every angle.",
         "1",
     ),
+    (
+        Dataset::DataScience,
+        "Metrics",
+        1,
+        "What does precision measure?",
+        "• TP/(TP+FP).\n• Penalises false positives.",
+        "Of the items flagged positive, the fraction that really are positive.",
+    ),
+    (
+        Dataset::DataScience,
+        "Statistics",
+        2,
+        "What is a p-value?",
+        "• It is not the probability that the null is true.\n• A small p means the data are unusual under the null.",
+        "The probability of a result at least as extreme as observed, if the null hypothesis is true.",
+    ),
 ];
 
 pub async fn run(
@@ -115,8 +131,8 @@ pub async fn run(
             sqlx::query(
                 "INSERT INTO challenges_problems
                      (dataset, source_key, subject, difficulty, source_level, problem,
-                      solution, answer, source_url, license)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                      solution, answer, answer_type, source_url, license)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(dataset.key())
             .bind(format!("sample/{i}"))
@@ -126,6 +142,8 @@ pub async fn run(
             .bind(problem)
             .bind(solution)
             .bind(answer)
+            // The deck's answers are prose, as its prepared bundle marks them.
+            .bind((dataset == Dataset::DataScience).then_some("text"))
             .bind(dataset.url())
             .bind("sample")
             .execute(pool)

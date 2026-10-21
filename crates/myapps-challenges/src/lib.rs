@@ -46,8 +46,10 @@ impl App for ChallengesApp {
 
     fn description(&self, lang: Lang) -> &'static str {
         match lang {
-            Lang::En => "Daily maths and physics problems, graded to your level",
-            Lang::Es => "Problemas diarios de matemáticas y física, adaptados a tu nivel",
+            Lang::En => "Daily maths, physics and data-science problems, graded to your level",
+            Lang::Es => {
+                "Problemas diarios de matemáticas, física y ciencia de datos, adaptados a tu nivel"
+            }
         }
     }
 

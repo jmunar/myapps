@@ -557,6 +557,7 @@ workstation; see
 ```bash
 cargo run --release -p myapps-challenges-prep -- bundle ugphysics        # writes ugphysics.sqlite
 cargo run --release -p myapps-challenges-prep -- bundle hendrycks-math   # writes hendrycks-math.sqlite
+cargo run --release -p myapps-challenges-prep -- bundle data-science     # writes data-science.sqlite, from the repo's deck
 ```
 
 Then upload and load it:
@@ -564,6 +565,7 @@ Then upload and load it:
 ```bash
 ./deploy.sh prod import-dataset ugphysics.sqlite
 ./deploy.sh prod import-dataset hendrycks-math.sqlite
+./deploy.sh prod import-dataset data-science.sqlite
 ```
 
 which copies the file to `/tmp` on the server, runs `myapps import --app
@@ -581,10 +583,11 @@ The load is one transaction, and changes nothing if any row fails validation (a
 difficulty outside the dataset's levels, an empty subject or text), if the
 bundle is empty, if a problem's text names a diagram the bundle does not have
 or a diagram is not a plain SVG drawing, if a grader tag is for a problem the
-bundle does not have or is not a finite number, or if its format is one this
+bundle does not have or is not a finite number, if a problem's own source is
+not an http(s) link, or if its format is one this
 build cannot read. A build reads its own format and the older ones listed in
-`bundle.rs` (format 1 has no diagrams, format 2 no tags; they load with those
-empty); a newer one means preparing again with the `myapps-challenges-prep`
+`bundle.rs` (format 1 has no diagrams, format 2 no tags, format 3 no source
+per problem; they load with those empty, or with the dataset's source); a newer one means preparing again with the `myapps-challenges-prep`
 from the same commit as the deployed binary. So deploy first, then load. The
 last bundle loaded per dataset, with when and by what it was prepared, is in
 `challenges_imports`.

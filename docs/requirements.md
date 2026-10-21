@@ -656,17 +656,27 @@ uploading user and deleted automatically after a configurable period.
 
 ### Challenges (seventh sub-application)
 
-Challenges is graded practice for undergraduate maths and physics: it draws one
-problem at a time near the user's level, shows the worked solution on request,
-and records whether the user got it right. Design notes and dataset research:
-[ideas-03-graded-math-physics.md](ideas-03-graded-math-physics.md).
+Challenges is graded practice for undergraduate maths and physics, plus a
+rapid-fire data-science deck: it draws one problem at a time near the user's
+level, shows the worked solution on request, and records whether the user got
+it right. Design notes and dataset research:
+[ideas-03-graded-math-physics.md](ideas-03-graded-math-physics.md) and
+[ideas-04-data-science-challenges.md](ideas-04-data-science-challenges.md).
 
 #### Implemented
 
-- **Two datasets** — UGPhysics (13 subjects, its `level` mapped to three tiers:
-  knowledge recall, laws application, derivation/practical) and Hendrycks MATH
-  (7 subjects, levels 1–5). Problems with no level are dropped during
+- **Three datasets** — UGPhysics (13 subjects, its `level` mapped to three
+  tiers: knowledge recall, laws application, derivation/practical), Hendrycks
+  MATH (7 subjects, levels 1–5), and a hand-written data-science deck (122
+  items in 4 tracks: ML fundamentals, metrics, statistics, LLMs; levels
+  recall, apply, judge). Problems with no level are dropped during
   preparation.
+- **Data-science deck** — kept in the repository as JSONL
+  (`crates/myapps-challenges-prep/datasets/`), checked item by item against
+  the deck's rules when it is prepared. Each item has a one-line answer, shown
+  as the first line of the solution with two to four explanatory bullets
+  under it, and cites its own source, which the page links under the problem
+  (bundle format 4).
 - **Diagrams** — Hendrycks MATH's Asymptote (`[asy]`) figures are rendered to
   SVG during preparation, in a sandbox, and shipped in the bundle by the hash
   of their source; the page shows them as images (a placeholder where a
@@ -716,8 +726,7 @@ and records whether the user got it right. Design notes and dataset research:
 - **Learned difficulty** — Elo/IRT-style ratings updated on every attempt.
 - **More datasets** — U-MATH, PhysUniBench, SciBench; `tabular` tables, which
   KaTeX cannot render.
-- **Data-science deck** — a source-checked 122-item rapid-fire deck in
-  `crates/myapps-challenges-prep/datasets/`, with research in
-  [ideas-04-data-science-challenges.md](ideas-04-data-science-challenges.md).
-  Not yet read by the prep tool or importable by the server.
+- **Quiz features for the data-science deck** — a timer, keyboard shortcuts
+  and a "missed this" list; and a human domain review of the deck before it
+  grows.
 - **Subject filter** and a **daily problem** notification.

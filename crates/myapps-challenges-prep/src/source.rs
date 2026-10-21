@@ -1,5 +1,6 @@
 //! What each dataset looks like upstream, and how a row of it becomes a
-//! bundle problem.
+//! bundle problem. A deck kept in the repository has no upstream: `deck`
+//! reads it instead.
 
 use myapps_challenges::bundle::Problem;
 use myapps_challenges::dataset::Dataset;
@@ -44,6 +45,7 @@ pub fn sources(dataset: Dataset) -> Vec<(&'static str, &'static str)> {
         .into_iter()
         .flat_map(|c| [(c, "train"), (c, "test")])
         .collect(),
+        Dataset::DataScience => Vec::new(),
     }
 }
 
@@ -51,7 +53,8 @@ pub fn sources(dataset: Dataset) -> Vec<(&'static str, &'static str)> {
 /// leave the problem out.
 ///
 /// UGPhysics' `level` is a skill type, not a difficulty; it is read as a
-/// three-step ladder. Hendrycks MATH's is "Level 1".."Level 5".
+/// three-step ladder. Hendrycks MATH's is "Level 1".."Level 5". The
+/// data-science deck's is the name `Dataset::level_name` gives it.
 pub fn difficulty(dataset: Dataset, source_level: &str) -> Option<i64> {
     match dataset {
         Dataset::Ugphysics => match source_level.trim() {
@@ -65,6 +68,12 @@ pub fn difficulty(dataset: Dataset, source_level: &str) -> Option<i64> {
             .strip_prefix("Level ")
             .and_then(|n| n.parse().ok())
             .filter(|n| (1..=5).contains(n)),
+        Dataset::DataScience => match source_level.trim() {
+            "Recall" => Some(1),
+            "Apply" => Some(2),
+            "Judge" => Some(3),
+            _ => None,
+        },
     }
 }
 
@@ -101,6 +110,8 @@ pub fn map_row(
                 answer_type: non_empty("answer_type")
                     .map(|s| s.lines().next().unwrap_or("").trim().to_string()),
                 unit: non_empty("unit"),
+                source_url: None,
+                source_title: None,
             })
         }
         Dataset::HendrycksMath => {
@@ -117,8 +128,12 @@ pub fn map_row(
                 solution,
                 answer_type: None,
                 unit: None,
+                source_url: None,
+                source_title: None,
             })
         }
+        // `sources` is empty for it, so no row of it is ever fetched.
+        Dataset::DataScience => Err(Skip::Malformed),
     }
 }
 
@@ -161,6 +176,14 @@ mod tests {
     }
 
     #[test]
+    fn data_science_levels_round_trip_through_their_names() {
+        let d = Dataset::DataScience;
+        for n in 1..=d.max_level() {
+            assert_eq!(difficulty(d, &d.level_name(n)), Some(n));
+        }
+    }
+
+    #[test]
     fn hendrycks_level_parses_one_to_five() {
         let d = Dataset::HendrycksMath;
         assert_eq!(difficulty(d, "Level 1"), Some(1));
@@ -183,6 +206,9 @@ mod tests {
             "Level 3",
             "Level 4",
             "Level 5",
+            "Recall",
+            "Apply",
+            "Judge",
         ];
         for d in Dataset::ALL {
             for level in levels {
@@ -197,6 +223,7 @@ mod tests {
     fn sources_cover_every_subject_and_split() {
         assert_eq!(sources(Dataset::Ugphysics).len(), 13);
         assert_eq!(sources(Dataset::HendrycksMath).len(), 14);
+        assert!(sources(Dataset::DataScience).is_empty());
     }
 
     #[test]

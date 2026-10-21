@@ -36,6 +36,7 @@ pub fn questions(dataset: Dataset) -> [Question; 7] {
             "combining several laws or principles",
             "a derivation that needs advanced mathematics such as calculus, differential equations or linear algebra",
         ],
+        Dataset::DataScience => unreachable!("main refuses to grade a hand-levelled deck"),
     };
     [
         Question {
@@ -93,6 +94,7 @@ pub fn field(dataset: Dataset) -> &'static str {
     match dataset {
         Dataset::HendrycksMath => "maths",
         Dataset::Ugphysics => "physics",
+        Dataset::DataScience => unreachable!("main refuses to grade a hand-levelled deck"),
     }
 }
 
@@ -134,7 +136,8 @@ mod tests {
 
     #[test]
     fn every_question_fits_the_letters() {
-        for dataset in Dataset::ALL {
+        // Only the fetched datasets are graded.
+        for dataset in Dataset::ALL.into_iter().filter(|d| d.hf_id().is_some()) {
             for q in questions(dataset) {
                 assert!((2..=LETTERS.len()).contains(&q.options.len()), "{}", q.kind);
                 assert_eq!(q.scale, q.options != YES_NO, "{}", q.kind);

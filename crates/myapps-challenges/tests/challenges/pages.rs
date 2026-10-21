@@ -94,7 +94,7 @@ async fn hiding_a_dataset_moves_it_to_the_hidden_list() {
 async fn hiding_every_dataset_says_so() {
     let app = app().await;
     login(&app).await;
-    for key in ["ugphysics", "hendrycks-math"] {
+    for key in ["ugphysics", "hendrycks-math", "data-science"] {
         app.server
             .post(&format!("/challenges/datasets/{key}/hidden"))
             .form(&serde_json::json!({ "hidden": "1" }))
@@ -219,11 +219,13 @@ async fn picker_labels_render_in_spanish() {
     assert!(fragment.contains(">Mostrar<"));
     assert!(!fragment.contains("Hidden datasets"));
 
-    app.server
-        .post("/challenges/datasets/ugphysics/hidden")
-        .form(&serde_json::json!({ "hidden": "1" }))
-        .expect_failure()
-        .await;
+    for key in ["ugphysics", "data-science"] {
+        app.server
+            .post(&format!("/challenges/datasets/{key}/hidden"))
+            .form(&serde_json::json!({ "hidden": "1" }))
+            .expect_failure()
+            .await;
+    }
     let body = app.server.get("/challenges").await.text();
     assert!(body.contains("Todos los conjuntos están ocultos"));
 }
@@ -275,6 +277,44 @@ async fn practice_page_renders_what_the_math_script_looks_for() {
     assert!(body.contains("/static/katex/katex.min.js"));
     assert!(body.contains("/static/katex/auto-render.min.js"));
     assert!(body.contains("/static/katex/katex.min.css"));
+}
+
+/// The data-science deck's answers are prose: the answer opens the solution
+/// as plain text, rather than sitting above it typeset as a formula, and each
+/// item links the source it was checked against.
+#[tokio::test]
+async fn a_text_answer_opens_the_solution_and_the_item_cites_its_source() {
+    let app = app().await;
+    login(&app).await;
+    let id = insert_problem(&app.pool, "data-science", "Metrics", 1, "What is recall?").await;
+    sqlx::query(
+        "UPDATE challenges_problems
+         SET answer = 'Of all actual positives, the fraction <found>.', answer_type = 'text',
+             solution = '• TP/(TP+FN).', source_url = 'https://example.org/recall',
+             source_title = 'MLCC & <recall>', license = 'CC BY-SA 4.0'
+         WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let body = app
+        .server
+        .get("/challenges/practice/data-science")
+        .await
+        .text();
+    assert!(body.contains("Level 1 of 3 (Recall)"));
+    let line = r#"<p class="challenges-answer-line">Of all actual positives, the fraction &lt;found&gt;.</p>"#;
+    let solution = body.find("<h3>Solution</h3>").expect("solution heading");
+    let answer = body.find(line).expect("answer line");
+    let bullets = body.find("• TP/(TP+FN).").expect("bullets");
+    assert!(solution < answer && answer < bullets);
+    assert!(!body.contains("<h3>Answer</h3>"));
+    assert!(!body.contains("\\displaystyle"));
+    assert!(body.contains(
+        r#"<a href="https://example.org/recall" rel="noopener">MLCC &amp; &lt;recall&gt;</a> · Data science · CC BY-SA 4.0"#
+    ));
 }
 
 #[tokio::test]

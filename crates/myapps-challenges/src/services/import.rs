@@ -226,6 +226,12 @@ fn validate(dataset: Dataset, p: &bundle::Problem) -> Result<()> {
             dataset.max_level()
         );
     }
+    // It becomes a link on the problem page, where `javascript:` would run.
+    if let Some(url) = &p.source_url
+        && !(url.starts_with("https://") || url.starts_with("http://"))
+    {
+        bail!("source_url '{url}' is not an http(s) link");
+    }
     for (field, value) in [
         ("source_key", &p.source_key),
         ("subject", &p.subject),
@@ -248,15 +254,15 @@ async fn upsert(
     sqlx::query(
         "INSERT INTO challenges_problems
              (dataset, source_key, subject, topic, difficulty, source_level, problem,
-              solution, answer, answer_type, unit, source_url, license)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              solution, answer, answer_type, unit, source_url, source_title, license)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (dataset, source_key) DO UPDATE SET
              subject = excluded.subject, topic = excluded.topic,
              difficulty = excluded.difficulty, source_level = excluded.source_level,
              problem = excluded.problem, solution = excluded.solution,
              answer = excluded.answer, answer_type = excluded.answer_type,
              unit = excluded.unit, source_url = excluded.source_url,
-             license = excluded.license, imported_at = datetime('now'),
+             source_title = excluded.source_title, license = excluded.license, imported_at = datetime('now'),
              retired_at = NULL",
     )
     .bind(dataset.key())
@@ -270,7 +276,8 @@ async fn upsert(
     .bind(&p.answer)
     .bind(&p.answer_type)
     .bind(&p.unit)
-    .bind(&manifest.source_url)
+    .bind(p.source_url.as_ref().unwrap_or(&manifest.source_url))
+    .bind(&p.source_title)
     .bind(&manifest.license)
     .execute(&mut **tx)
     .await?;
