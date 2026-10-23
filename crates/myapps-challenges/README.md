@@ -65,6 +65,11 @@ render (18 of them).
   levels by distance from yours; once a subject is exhausted, the problem seen
   longest ago comes back.
 
+Replays in the Review tab are recorded as attempts but marked as reviews:
+they count toward clearing a mistake and nothing else, so none of the above
+sees them. See
+[docs/ideas-05-challenges-replay-mistakes.md](../../docs/ideas-05-challenges-replay-mistakes.md).
+
 Once drawn, a problem stays yours until you mark it or skip it: each dataset
 has one practice URL that always shows its problem in progress, across reloads
 and server restarts. Marking and *Skip* swap the next problem into the page
@@ -81,5 +86,8 @@ you just finished hands over to another subject rather than repeating it.
   buttons behind *Show solution*; LaTeX typeset by KaTeX
 - A level-change notice above the next problem when an answer moves you up or down
 - Stats: accuracy and current level per subject, and accuracy per level
+- Review: problems you got wrong come back after a cooling-off you pick
+  (now, 1, 3 or 7 days) until you get them right twice in a row; the Review
+  tab shows how many are due
 - Command bar: `next_problem` (opens the problem in progress, optionally per
-  dataset), `stats`
+  dataset), `review_mistakes`, `stats`
