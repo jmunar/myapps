@@ -102,7 +102,7 @@ myapps/
 │   │   ├── static/            # style.css + challenges-math.js (KaTeX typesetting)
 │   │   ├── tests/
 │   │   └── src/               # bundle.rs: the prepared-dataset format
-│   ├── myapps-challenges-prep/ # Workstation tool: prepares dataset bundles (never deployed); datasets/ holds the data-science deck
+│   ├── myapps-challenges-prep/ # Workstation tool: prepares dataset bundles (never deployed); datasets/ holds the data-science deck, solves/ the kept solver runs
 │   └── myapps-test-harness/ # Shared test utilities (spawn_app, spawn_app_with, Options, TestApp)
 ├── tests/                   # Root integration tests
 │   ├── harness/mod.rs       # Platform spawners over myapps-test-harness (all apps registered)
