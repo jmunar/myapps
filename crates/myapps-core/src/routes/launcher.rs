@@ -295,6 +295,7 @@ async fn index(
         label: t.log_out.to_string(),
         active: false,
         right: true,
+        badge: None,
     }];
 
     let visibility = user_app_visibility::get_visibility(&state.pool, user_id).await;

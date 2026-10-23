@@ -133,6 +133,27 @@ nav .nav-right {
     margin-left: auto;
 }
 
+/* A count after a tab's label (`layout::nav_badge`). Kept in the DOM at zero
+   for out-of-band swaps; this class rule would beat the UA's `[hidden]`. */
+.nav-badge {
+    display: inline-block;
+    min-width: 1.15rem;
+    margin-left: 0.35rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.15rem;
+    text-align: center;
+    vertical-align: 0.05rem;
+}
+
+.nav-badge[hidden] {
+    display: none;
+}
+
 /* ── Layout ─────────────────────────────────────────────────── */
 main {
     max-width: 56rem;
