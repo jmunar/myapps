@@ -12,6 +12,7 @@ The design, and the research behind the dataset choice, is in
 <p align="center">
   <img src="../../docs/screenshots/challenges-picker.png" width="270" alt="Dataset picker" />
   <img src="../../docs/screenshots/challenges-problem.png" width="270" alt="Problem with solution" />
+  <img src="../../docs/screenshots/challenges-review.png" width="270" alt="Review mistakes" />
   <img src="../../docs/screenshots/challenges-stats.png" width="270" alt="Stats" />
 </p>
 
