@@ -153,6 +153,21 @@ reports, unless given `--out`. `--model` names the file the server must have
 loaded. Changing a rubric question means bumping `rubric::VERSION`, which
 starts its answers afresh.
 
+The solver runs cost a day of GPU each, so a copy of them is kept in this
+crate under `solves/<dataset>/<model>/`, laid out like the cache: Qwen3.6 on
+the first 200 UGPhysics problems, and Gemma 4 on the first 40 with Qwen3.6's
+checks of its answers. The tool still reads only the cache; to reuse a run on
+another machine, or after the cache is cleared, copy it back first:
+
+```sh
+mkdir -p ~/.cache/myapps-challenges-prep/grade
+cp -r crates/myapps-challenges-prep/solves/. ~/.cache/myapps-challenges-prep/grade/
+```
+
+After a new or longer run, copy the solver's folder from the cache back here
+and commit it. The grader's own answers (flags, judge) are not kept: they
+are larger, and what they produce is already in `grades/`.
+
 
 
 - **Asymptote and TeX**: `sudo pacman -S asymptote` (pulls in `texlive-basic`).
