@@ -4,12 +4,13 @@ pub mod diagram;
 pub mod i18n;
 pub mod ops;
 mod pages;
+mod review;
 pub mod selector;
 pub mod services;
 
 use axum::Router;
 use myapps_core::i18n::Lang;
-use myapps_core::layout::NavItem;
+use myapps_core::layout::{NavBadge, NavItem};
 use myapps_core::registry::{App, AppInfo};
 use myapps_core::routes::AppState;
 
@@ -17,9 +18,14 @@ use myapps_core::routes::AppState;
 /// datasets and MUST go through this before reaching a `format!` template.
 pub(crate) use myapps_core::components::html_escape;
 
-pub fn challenges_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
+/// The id of the Review tab's badge, which marking swaps out of band.
+pub const REVIEW_BADGE_ID: &str = "challenges-review-badge";
+
+/// The app's nav; `due` is the number of mistakes due for review, shown on
+/// the Review tab.
+pub fn challenges_nav(base: &str, active: &str, lang: Lang, due: i64) -> Vec<NavItem> {
     let t = i18n::t(lang);
-    myapps_core::layout::app_nav(
+    let mut nav = myapps_core::layout::app_nav(
         base,
         "/challenges",
         "Challenges",
@@ -27,9 +33,16 @@ pub fn challenges_nav(base: &str, active: &str, lang: Lang) -> Vec<NavItem> {
         lang,
         &[
             ("", t.nav_practice, "practice"),
+            ("/review", t.nav_review, "review"),
             ("/stats", t.nav_stats, "stats"),
         ],
-    )
+    );
+    // Brand, Practice, then Review.
+    nav[2].badge = Some(NavBadge {
+        id: REVIEW_BADGE_ID,
+        count: due,
+    });
+    nav
 }
 
 pub struct ChallengesApp;

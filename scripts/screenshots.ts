@@ -171,6 +171,13 @@ test.describe("README screenshots", () => {
     await expect(page.locator(".challenges-problem .katex").first()).toBeVisible();
     await snap(page, "challenges-problem");
 
+    // The seed's wrong answer is still cooling off; "Now" makes it due, so
+    // the landing shows a Start button and the tab its badge.
+    await page.goto(`${BASE_URL}/challenges/review`);
+    await page.locator('.challenges-review-delay button[value="0"]').click();
+    await expect(page.locator("#challenges-review-badge")).toBeVisible();
+    await snap(page, "challenges-review");
+
     await page.goto(`${BASE_URL}/challenges/stats`);
     await snap(page, "challenges-stats");
 

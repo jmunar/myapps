@@ -30,6 +30,31 @@ pub struct NavItem {
     pub active: bool,
     /// If true, this item is rendered right-aligned (e.g. "Log out").
     pub right: bool,
+    /// A count shown after the label, such as items waiting for attention.
+    pub badge: Option<NavBadge>,
+}
+
+/// A nav item's count. `id` lets an htmx response replace it out of band (see
+/// `nav_badge`), so a count changed by an action never lags the page.
+pub struct NavBadge {
+    pub id: &'static str,
+    pub count: i64,
+}
+
+/// A nav badge's markup: hidden at zero rather than left out, so an
+/// out-of-band swap always finds it, and capped at 99+. `oob` marks it for
+/// htmx to swap into the nav from a fragment response.
+pub fn nav_badge(id: &str, count: i64, oob: bool) -> String {
+    let text = if count > 99 {
+        "99+".to_string()
+    } else {
+        count.to_string()
+    };
+    format!(
+        r#"<span id="{id}" class="nav-badge"{hidden}{oob}>{text}</span>"#,
+        hidden = if count > 0 { "" } else { " hidden" },
+        oob = if oob { r#" hx-swap-oob="true""# } else { "" },
+    )
 }
 
 /// Build the nav for a page inside an app.
@@ -51,18 +76,21 @@ pub fn app_nav(
         label: brand.to_string(),
         active: false,
         right: false,
+        badge: None,
     }];
     items.extend(tabs.iter().map(|(suffix, label, key)| NavItem {
         href: format!("{base}{root}{suffix}"),
         label: (*label).to_string(),
         active: active == *key,
         right: false,
+        badge: None,
     }));
     items.push(NavItem {
         href: format!("{base}/logout"),
         label: i18n::t(lang).log_out.to_string(),
         active: false,
         right: true,
+        badge: None,
     });
     items
 }
@@ -90,8 +118,13 @@ pub fn render_page(
                 label = item.label,
             ));
         } else {
+            let badge = item
+                .badge
+                .as_ref()
+                .map(|b| nav_badge(b.id, b.count, false))
+                .unwrap_or_default();
             nav_html.push_str(&format!(
-                r#"<a href="{href}"{active}>{label}</a>"#,
+                r#"<a href="{href}"{active}>{label}{badge}</a>"#,
                 href = item.href,
                 label = item.label,
             ));
@@ -169,4 +202,25 @@ pub fn render_page(
 </body>
 </html>"##
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::nav_badge;
+
+    #[test]
+    fn nav_badge_hides_zero_and_caps_at_99() {
+        assert_eq!(
+            nav_badge("b", 0, false),
+            r#"<span id="b" class="nav-badge" hidden>0</span>"#
+        );
+        assert_eq!(
+            nav_badge("b", 99, false),
+            r#"<span id="b" class="nav-badge">99</span>"#
+        );
+        assert_eq!(
+            nav_badge("b", 100, true),
+            r#"<span id="b" class="nav-badge" hx-swap-oob="true">99+</span>"#
+        );
+    }
 }

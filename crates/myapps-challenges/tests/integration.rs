@@ -3,6 +3,7 @@ mod challenges {
     pub mod draw;
     pub mod import;
     pub mod pages;
+    pub mod review;
     pub mod stats;
 }
 

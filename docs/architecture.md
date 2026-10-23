@@ -290,7 +290,27 @@ After login, the top-level router serves:
     without recording anything; swapped in the same way
   - `/challenges/problems/{id}` — Old per-problem links: redirect to the
     problem's practice page
-  - `/challenges/stats` — Accuracy and current level per subject and per level
+  - `/challenges/review` — Mistakes per dataset (due, waiting, cleared) and
+    the cooling-off control. A mistake is a problem whose latest wrong attempt
+    has fewer than two right ones after it; it is due once its last attempt is
+    older than the user's cooling-off (`challenges_settings`, default 3 days).
+    Derived from `challenges_attempts` on every read, never stored. The nav's
+    Review tab carries the due count across visible datasets
+    (`layout::NavBadge`)
+  - `POST /challenges/review/delay` — Set the cooling-off to 0, 1, 3 or 7
+    days (anything else is a 400); returns the landing fragment and the badge
+    out of band
+  - `/challenges/review/{key}` — The mistake being replayed in that dataset
+    (`challenges_review_current`), taking the oldest due one if there is none,
+    or a done panel. `Cache-Control: no-store`, like practice
+  - `POST /challenges/review/{key}/attempt` — Record a replay
+    (`is_review = 1`: never moves the level, the graded ability or the stats)
+    and move to the next due mistake, never straight back to this one; swaps
+    a one-line result, the next mistake and the badge
+  - `POST /challenges/review/{key}/skip` — Not now: the next due mistake,
+    recording nothing; the only one due stays
+  - `/challenges/stats` — Accuracy and current level per subject and per level,
+    over practice answers, plus each dataset's mistakes
   - `/challenges/diagrams/{hash}` — A rendered Asymptote diagram
     (`challenges_diagrams`, keyed by the SHA-256 of its source), served as
     `image/svg+xml` with a sandboxing CSP and cached as immutable

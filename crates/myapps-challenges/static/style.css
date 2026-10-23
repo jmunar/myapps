@@ -221,6 +221,112 @@
     margin-bottom: 0.5rem;
 }
 
+.challenges-stats .challenges-levels + h3 {
+    margin-top: 1.25rem;
+}
+
+/* ── Review ─────────────────────────────────────────────────── */
+
+/* The quiet link under a dataset's Start button on the picker. */
+.challenges-review-link {
+    display: inline-block;
+    margin-left: 1rem;
+    font-size: 0.875rem;
+}
+
+.challenges-review-context {
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+}
+
+/* The one-line result of a replay, above the next mistake. */
+.challenges-review-result {
+    margin-bottom: 1rem;
+    padding: 0.6rem 1rem;
+    border-left: 3px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-input);
+    color: var(--text);
+    font-weight: 600;
+}
+
+.challenges-review-result.challenges-review-cleared,
+.challenges-review-result.challenges-review-once {
+    border-left-color: var(--positive);
+    background: var(--positive-bg);
+}
+
+.challenges-review-result.challenges-review-open {
+    border-left-color: var(--negative);
+    background: var(--negative-bg);
+}
+
+.challenges-review-done h2 {
+    margin-bottom: 0.5rem;
+}
+
+.challenges-review-counts {
+    margin-bottom: 0.75rem;
+}
+
+.challenges-review-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+/* The cooling-off control: four submit buttons in one segmented row. */
+.challenges-review-delay {
+    margin-top: 2rem;
+    gap: 0.5rem;
+}
+
+.challenges-review-delay-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+}
+
+.challenges-review-delay-options {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    align-self: flex-start;
+    max-width: 100%;
+}
+
+/* Two classes and an element to outrank core.css's `button[type="submit"]`
+   accent fill. */
+.challenges-review-delay .challenges-review-delay-options button {
+    flex: 1 1 auto;
+    padding: 0.5rem 0.9rem;
+    border-radius: 0;
+    background: var(--bg-input);
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.challenges-review-delay .challenges-review-delay-options button + button {
+    border-left: 1px solid var(--border);
+}
+
+/* Three classes: core.css's `button[type="submit"]:hover` outranks two. */
+.challenges-review-delay .challenges-review-delay-options button:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+}
+
+.challenges-review-delay .challenges-review-delay-options button[aria-pressed="true"],
+.challenges-review-delay .challenges-review-delay-options button[aria-pressed="true"]:hover {
+    background: var(--accent);
+    color: #fff;
+}
+
 @media (max-width: 640px) {
     .challenges-stats .table-cards {
         padding: 0 0.75rem;

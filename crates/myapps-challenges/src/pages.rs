@@ -10,17 +10,18 @@ use rand::rngs::StdRng;
 use serde::Deserialize;
 use std::collections::HashSet;
 
-use super::{challenges_nav, html_escape};
+use super::{REVIEW_BADGE_ID, challenges_nav, html_escape};
 use crate::dataset::Dataset;
 use crate::diagram::{self, Segment};
 use crate::i18n::{self, Translations};
-use crate::ops::{self, Outcome, Tally};
+use crate::ops::{self, Mode, Outcome, Tally};
+use crate::review;
 use myapps_core::auth::UserId;
 use myapps_core::i18n::Lang;
-use myapps_core::layout::render_page;
+use myapps_core::layout::{NavItem, nav_badge, render_page};
 use myapps_core::routes::AppState;
 
-const MATH_JS: &str = include_str!("../static/challenges-math.js");
+pub(crate) const MATH_JS: &str = include_str!("../static/challenges-math.js");
 
 /// What the marking and skip forms swap. The practice page keeps one URL per
 /// dataset and moves between problems by swapping this in place, so the
@@ -38,11 +39,16 @@ pub fn routes() -> Router<AppState> {
         .route("/practice/{key}/skip", post(skip))
         .route("/practice/{key}/attempt", post(attempt))
         .route("/problems/{id}", get(problem))
+        .route("/review", get(review::landing))
+        .route("/review/delay", post(review::set_delay))
+        .route("/review/{key}", get(review::page))
+        .route("/review/{key}/skip", post(review::skip))
+        .route("/review/{key}/attempt", post(review::attempt))
         .route("/stats", get(stats))
         .route("/diagrams/{hash}", get(diagram_svg))
 }
 
-fn subtitle(dataset: Dataset, t: &Translations) -> &'static str {
+pub(crate) fn subtitle(dataset: Dataset, t: &Translations) -> &'static str {
     match dataset {
         Dataset::Ugphysics => t.physics,
         Dataset::HendrycksMath => t.maths,
@@ -61,14 +67,14 @@ fn accuracy(tally: &Tally) -> String {
     }
 }
 
-fn is_htmx(headers: &HeaderMap) -> bool {
+pub(crate) fn is_htmx(headers: &HeaderMap) -> bool {
     headers.contains_key("hx-request")
 }
 
 /// Send the browser to `url`: a 303 for a plain form post, `HX-Redirect` for
 /// htmx, which would otherwise follow the 303 itself and swap a whole page
 /// into the target.
-fn go_to(url: &str, htmx: bool) -> Response {
+pub(crate) fn go_to(url: &str, htmx: bool) -> Response {
     if htmx {
         ([("hx-redirect", url)], StatusCode::OK).into_response()
     } else {
@@ -78,6 +84,42 @@ fn go_to(url: &str, htmx: bool) -> Response {
 
 fn practice_url(base: &str, dataset: Dataset) -> String {
     format!("{base}/challenges/practice/{}", dataset.key())
+}
+
+pub(crate) fn review_url(base: &str, dataset: Dataset) -> String {
+    format!("{base}/challenges/review/{}", dataset.key())
+}
+
+/// Mistakes due for review, for the nav badge; 0 if the query fails.
+pub(crate) async fn due_count(state: &AppState, user_id: i64) -> i64 {
+    ops::due_count(&state.pool, user_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Challenges due count query failed: {e:#}");
+            0
+        })
+}
+
+/// The app's nav with the Review badge filled in.
+pub(crate) async fn nav(state: &AppState, user_id: i64, active: &str, lang: Lang) -> Vec<NavItem> {
+    let due = due_count(state, user_id).await;
+    challenges_nav(&state.config.base_path, active, lang, due)
+}
+
+/// The Review badge, for htmx to swap into the nav from a fragment response:
+/// marking either way can change how many mistakes are due.
+pub(crate) async fn badge_oob(state: &AppState, user_id: i64) -> String {
+    nav_badge(REVIEW_BADGE_ID, due_count(state, user_id).await, true)
+}
+
+/// `YYYY-MM-DD` as "24 Oct".
+pub(crate) fn day(date: &str, t: &Translations) -> String {
+    let month: usize = date.get(5..7).and_then(|m| m.parse().ok()).unwrap_or(0);
+    let day: u32 = date.get(8..10).and_then(|d| d.parse().ok()).unwrap_or(0);
+    match t.months.get(month.wrapping_sub(1)) {
+        Some(name) => format!("{day} {name}"),
+        None => date.to_string(),
+    }
 }
 
 // ── Dataset picker ──────────────────────────────────────────
@@ -105,6 +147,13 @@ async fn picker(state: &AppState, user_id: i64, lang: Lang) -> String {
         .unwrap_or_else(|e| {
             tracing::error!("Challenges hidden datasets query failed: {e:#}");
             vec![]
+        });
+
+    let delay = ops::review_delay(&state.pool, user_id)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Challenges review delay query failed: {e:#}");
+            ops::DEFAULT_REVIEW_DELAY
         });
 
     let mut cards = String::new();
@@ -149,8 +198,24 @@ async fn picker(state: &AppState, user_id: i64, lang: Lang) -> String {
                     None
                 })
                 .is_some();
+            let due = ops::mistake_counts(&state.pool, user_id, dataset, delay)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!("Challenges mistake counts query failed: {e:#}");
+                    ops::MistakeCounts::default()
+                })
+                .due;
+            let review = if due > 0 {
+                format!(
+                    r#"<a href="{url}" class="challenges-review-link">{label} ({due})</a>"#,
+                    url = review_url(base, dataset),
+                    label = t.review_link,
+                )
+            } else {
+                String::new()
+            };
             format!(
-                r#"<a href="{url}" class="btn btn-primary challenges-start">{label}</a>"#,
+                r#"<a href="{url}" class="btn btn-primary challenges-start">{label}</a>{review}"#,
                 url = practice_url(base, dataset),
                 label = if in_progress { t.resume } else { t.start },
             )
@@ -213,7 +278,6 @@ async fn index(
     Extension(user_id): Extension<UserId>,
     Extension(lang): Extension<Lang>,
 ) -> impl IntoResponse {
-    let base = &state.config.base_path;
     let t = i18n::t(lang);
 
     let body = format!(
@@ -232,7 +296,7 @@ async fn index(
         [(header::CACHE_CONTROL, "no-store")],
         Html(render_page(
             t.picker_title,
-            &challenges_nav(base, "practice", lang),
+            &nav(&state, user_id.0, "practice", lang).await,
             &body,
             &state.config,
             lang,
@@ -342,12 +406,16 @@ fn level_change(outcome: &Outcome, t: &Translations) -> String {
 }
 
 /// The problem, its hidden solution and the marking and skip forms: what
-/// `PRACTICE_TARGET` holds. `None` if the problem does not exist.
-async fn problem_fragment(
+/// `PRACTICE_TARGET` holds. In review the forms post to the review routes,
+/// Skip becomes Not now, and a line says when you got it wrong. `None` if the
+/// problem does not exist.
+pub(crate) async fn problem_fragment(
     state: &AppState,
     lang: Lang,
+    user_id: i64,
     problem_id: i64,
     notice: &str,
+    mode: Mode,
 ) -> Option<String> {
     let base = &state.config.base_path;
     let t = i18n::t(lang);
@@ -412,7 +480,14 @@ async fn problem_fragment(
             dataset.name()
         ),
     };
-    let url = practice_url(base, dataset);
+    let (url, skip) = match mode {
+        Mode::Practice => (practice_url(base, dataset), t.skip),
+        Mode::Review => (review_url(base, dataset), t.not_now),
+    };
+    let context = match mode {
+        Mode::Practice => String::new(),
+        Mode::Review => review_context(state, user_id, problem_id, t).await,
+    };
     let mut hashes = diagram::hashes(&p.problem);
     hashes.extend(diagram::hashes(&p.solution));
     let rendered = ops::rendered_diagrams(&state.pool, &hashes)
@@ -427,6 +502,7 @@ async fn problem_fragment(
         <div class="page-header">
             <h1>{subject}</h1>
             <p>{dataset_name}{topic} · {level_lbl} {difficulty} {of} {max} ({level_name})</p>
+            {context}
         </div>
         <div class="card challenges-problem">
             <div class="card-body">{problem}</div>
@@ -470,10 +546,40 @@ async fn problem_fragment(
         right = t.got_it_right,
         wrong = t.got_it_wrong,
         target = PRACTICE_TARGET,
-        skip = t.skip,
         source_lbl = t.source,
         license = html_escape(&p.license),
     ))
+}
+
+/// "Marked wrong on 14 Oct · right once since", under a replayed problem.
+async fn review_context(
+    state: &AppState,
+    user_id: i64,
+    problem_id: i64,
+    t: &Translations,
+) -> String {
+    let found = async {
+        let delay = ops::review_delay(&state.pool, user_id).await?;
+        ops::mistake_state(&state.pool, user_id, problem_id, delay).await
+    }
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("Challenges mistake query failed: {e:#}");
+        None
+    });
+    let Some(m) = found else {
+        return String::new();
+    };
+    let since = if m.rights > 0 {
+        format!(" · {}", t.right_once_since)
+    } else {
+        String::new()
+    };
+    format!(
+        r#"<p class="challenges-review-context">{} {}{since}</p>"#,
+        t.marked_wrong_on,
+        day(&m.wrong_on, t),
+    )
 }
 
 /// The practice page for `dataset`: always the problem in progress there,
@@ -501,7 +607,8 @@ async fn practice(
             return Redirect::to(&picker_url).into_response();
         }
     };
-    let Some(fragment) = problem_fragment(&state, lang, id, "").await else {
+    let Some(fragment) = problem_fragment(&state, lang, user_id.0, id, "", Mode::Practice).await
+    else {
         return Redirect::to(&picker_url).into_response();
     };
 
@@ -519,7 +626,7 @@ async fn practice(
         [(header::CACHE_CONTROL, "no-store")],
         Html(render_page(
             &format!("{} — {}", t.picker_title, dataset.name()),
-            &challenges_nav(base, "practice", lang),
+            &nav(&state, user_id.0, "practice", lang).await,
             &body,
             &state.config,
             lang,
@@ -549,10 +656,12 @@ async fn after_change(
             None
         });
     match current {
-        Some(id) => match problem_fragment(state, lang, id, notice).await {
-            Some(fragment) => Html(fragment).into_response(),
-            None => go_to(&format!("{base}/challenges"), true),
-        },
+        Some(id) => {
+            match problem_fragment(state, lang, user_id, id, notice, Mode::Practice).await {
+                Some(fragment) => Html(fragment + &badge_oob(state, user_id).await).into_response(),
+                None => go_to(&format!("{base}/challenges"), true),
+            }
+        }
         None => go_to(&practice_url(base, dataset), true),
     }
 }
@@ -623,6 +732,7 @@ async fn attempt(
 /// rather than the one linked.
 async fn problem(
     State(state): State<AppState>,
+    Extension(user_id): Extension<UserId>,
     Extension(lang): Extension<Lang>,
     Path(id): Path<i64>,
 ) -> Response {
@@ -641,7 +751,7 @@ async fn problem(
                 StatusCode::NOT_FOUND,
                 Html(render_page(
                     t.picker_title,
-                    &challenges_nav(base, "practice", lang),
+                    &nav(&state, user_id.0, "practice", lang).await,
                     &body,
                     &state.config,
                     lang,
@@ -659,8 +769,14 @@ async fn stats(
     Extension(user_id): Extension<UserId>,
     Extension(lang): Extension<Lang>,
 ) -> Html<String> {
-    let base = &state.config.base_path;
     let t = i18n::t(lang);
+
+    let delay = ops::review_delay(&state.pool, user_id.0)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Challenges review delay query failed: {e:#}");
+            ops::DEFAULT_REVIEW_DELAY
+        });
 
     let mut sections = String::new();
     for dataset in Dataset::ALL {
@@ -708,6 +824,22 @@ async fn stats(
             })
             .collect();
 
+        let counts = ops::mistake_counts(&state.pool, user_id.0, dataset, delay)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::error!("Challenges mistake counts query failed: {e:#}");
+                ops::MistakeCounts::default()
+            });
+        let mistakes = if counts == ops::MistakeCounts::default() {
+            String::new()
+        } else {
+            format!(
+                r#"<h3>{title}</h3><p class="challenges-stats-mistakes">{line}</p>"#,
+                title = t.mistakes,
+                line = review::counts_line(&counts, t),
+            )
+        };
+
         sections.push_str(&format!(
             r#"<div class="card challenges-stats mt-2">
                 <div class="card-header"><h2>{name}</h2><span class="text-sm">{total_lbl}: <strong>{total_acc}</strong> ({total_correct}/{total_attempts})</span></div>
@@ -720,6 +852,7 @@ async fn stats(
                 <div class="card-body">
                     <h3>{by_level}</h3>
                     <ul class="challenges-levels">{levels}</ul>
+                    {mistakes}
                 </div>
             </div>"#,
             name = dataset.name(),
@@ -751,7 +884,7 @@ async fn stats(
 
     Html(render_page(
         &format!("{} — {}", t.picker_title, t.stats_title),
-        &challenges_nav(base, "stats", lang),
+        &nav(&state, user_id.0, "stats", lang).await,
         &body,
         &state.config,
         lang,

@@ -701,7 +701,17 @@ it right. Design notes and dataset research:
 - **Self-marking** — the answer and worked solution sit behind a reveal, under
   which the user marks right or wrong; a double submit within 10 s is ignored.
 - **Stats** — problems and accuracy per dataset on the picker; per subject
-  (current level, correct/attempts, accuracy) and per level on the stats page.
+  (current level, correct/attempts, accuracy) and per level on the stats page,
+  over practice answers only; due, waiting and cleared mistakes per dataset.
+- **Review mistakes** — a Review tab replays problems you got wrong, per
+  dataset, oldest first, once a cooling-off you choose (now, 1, 3 or 7 days)
+  has passed since their last attempt. Two right answers in a row, each after
+  its own wait, clear a mistake; a wrong one resets the count, and right
+  answers in practice count too. Replays never move the level, the graded
+  draw's ability or the practice stats. Nothing about mistakes is stored: the
+  queue is derived from the attempt history. The tab carries a badge with the
+  number due across visible datasets, and the picker links to each dataset's.
+  Design: [ideas-05-challenges-replay-mistakes.md](ideas-05-challenges-replay-mistakes.md).
 - **Graded difficulty, stored** — `myapps-challenges-prep grade` estimates
   every problem's difficulty offline with local LLMs (rubric flags, a pairwise
   judge, a Bradley-Terry ranking; a stronger solver as a check), into grades
@@ -716,9 +726,11 @@ it right. Design notes and dataset research:
   without grades draws at random, as before.
 - **Maths rendering** — KaTeX (vendored) typesets inline, display and
   `align`/`equation`-style environments client-side.
-- **Command bar** — "next problem" (optionally per dataset) and "stats".
+- **Command bar** — "next problem" (optionally per dataset), "review
+  mistakes" (optionally per dataset) and "stats".
 - **Integration tests** — auth, picker, problem rendering and escaping, level
-  changes, double submit, draw order and fallbacks, skip, stats.
+  changes, double submit, draw order and fallbacks, skip, stats, review
+  (cooling-off, clearing, resets, Not now, badge).
 
 #### Not yet implemented
 
@@ -733,7 +745,7 @@ it right. Design notes and dataset research:
 - **Learned difficulty** — Elo/IRT-style ratings updated on every attempt.
 - **More datasets** — U-MATH, PhysUniBench, SciBench; `tabular` tables, which
   KaTeX cannot render.
-- **Quiz features for the data-science deck** — a timer, keyboard shortcuts
-  and a "missed this" list; and a human domain review of the deck before it
-  grows.
+- **Quiz features for the data-science deck** — a timer and keyboard
+  shortcuts (Review covers the "missed this" list); and a human domain review
+  of the deck before it grows.
 - **Subject filter** and a **daily problem** notification.
