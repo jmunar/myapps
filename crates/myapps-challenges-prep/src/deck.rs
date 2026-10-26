@@ -195,11 +195,19 @@ mod tests {
     fn the_committed_data_science_deck_reads() {
         let dataset = Dataset::DataScience;
         let problems = read(dataset, &default_path(dataset)).unwrap();
-        assert_eq!(problems.len(), 122);
+        assert_eq!(problems.len(), 162);
         let subjects: HashSet<&str> = problems.iter().map(|p| p.subject.as_str()).collect();
         assert_eq!(subjects.len(), 4);
         for level in 1..=dataset.max_level() {
             assert!(problems.iter().any(|p| p.difficulty == level), "{level}");
+        }
+        let mut questions = HashSet::new();
+        for problem in &problems {
+            assert!(
+                questions.insert(problem.problem.trim().to_lowercase()),
+                "duplicate question: {}",
+                problem.problem
+            );
         }
     }
 }
