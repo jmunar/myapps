@@ -667,7 +667,7 @@ it right. Design notes and dataset research:
 
 - **Three datasets** — UGPhysics (13 subjects, its `level` mapped to three
   tiers: knowledge recall, laws application, derivation/practical), Hendrycks
-  MATH (7 subjects, levels 1–5), and a hand-written data-science deck (122
+  MATH (7 subjects, levels 1–5), and a hand-written data-science deck (162
   items in 4 tracks: ML fundamentals, metrics, statistics, LLMs; levels
   recall, apply, judge). Problems with no level are dropped during
   preparation.
@@ -676,7 +676,9 @@ it right. Design notes and dataset research:
   the deck's rules when it is prepared. Each item has a one-line answer, shown
   as the first line of the solution with two to four explanatory bullets
   under it, and cites its own source, which the page links under the problem
-  (bundle format 4).
+  (bundle format 4). The 122-item starter deck was extended on 25 October 2026
+  with 40 difficulty-3 items across the same four tracks; a test rejects
+  duplicate questions.
 - **Diagrams** — Hendrycks MATH's Asymptote (`[asy]`) figures are rendered to
   SVG during preparation, in a sandbox, and shipped in the bundle by the hash
   of their source; the page shows them as images (a placeholder where a
@@ -747,5 +749,6 @@ it right. Design notes and dataset research:
   KaTeX cannot render.
 - **Quiz features for the data-science deck** — a timer and keyboard
   shortcuts (Review covers the "missed this" list); and a human domain review
-  of the deck before it grows.
+  of the deck, including the 40 items added on 25 October 2026, before it
+  grows further.
 - **Subject filter** and a **daily problem** notification.

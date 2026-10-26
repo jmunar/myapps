@@ -17,17 +17,23 @@ the problem. `tags` are not carried yet.
 
 ## `data-science.jsonl`
 
-A starter deck for a `data-science` Challenges dataset: **122 rapid-fire
+A starter deck for a `data-science` Challenges dataset: **162 rapid-fire
 items**, each with a one-line answer, two to four answer bullets, a difficulty,
-tags and a source. Sources were checked on 20 October 2026.
+tags and a source. Sources were checked on 20 October 2026; the 40 harder
+items added later were checked on 25 October 2026.
 
 | Track | Items | Topics | Difficulty 1 / 2 / 3 |
 |---|---|---|---|
-| `ml-fundamentals` | 29 | framing, splits, overfitting, regularisation, CV, leakage, algorithms, ensembles, diagnosis, baselines, loss/cost, active learning, drift | 7 / 19 / 3 |
-| `metrics` | 27 | confusion matrix, accuracy, precision, recall, specificity, F1, ROC, PR, calibration, regression metrics, imbalance handling, multi-label metrics | 8 / 15 / 4 |
-| `statistics` | 32 | descriptive statistics, distributions, sampling, hypothesis testing, power, CIs, tests, causality, probability, bias, ARIMA, pooled SD, CI vs prediction interval, skewness | 10 / 17 / 5 |
-| `llm` | 34 | tokenisation, embeddings, transformer, attention, pretraining, fine-tuning, alignment, generation, prompting, RAG, evaluation, security | 13 / 16 / 5 |
-| **Total** | **122** | | **38 / 67 / 17** |
+| `ml-fundamentals` | 39 | framing, splits, overfitting, regularisation, CV, leakage, algorithms, ensembles, diagnosis, baselines, loss/cost, active learning, drift, model selection, imbalance, monitoring, feature engineering, reproducibility, optimisation | 7 / 19 / 13 |
+| `metrics` | 37 | confusion matrix, accuracy, precision, recall, specificity, F1, ROC, PR, calibration, regression metrics, imbalance handling, multi-label metrics, ranking, uncertainty, fairness | 8 / 15 / 14 |
+| `statistics` | 42 | descriptive statistics, distributions, sampling, hypothesis testing, power, CIs, tests, causality, probability, bias, ARIMA, pooled SD, CI vs prediction interval, skewness, effect size, missing data, regression diagnostics, bootstrap, Bayesian, nonparametric | 10 / 17 / 15 |
+| `llm` | 44 | tokenisation, embeddings, transformer, attention, pretraining, fine-tuning, alignment, generation, prompting, RAG, evaluation, security, inference, context, quantisation, agents | 13 / 16 / 15 |
+| **Total** | **162** | | **38 / 67 / 57** |
+
+The extension is deliberately concentrated at difficulty 3 and adds new topics
+to every track. It asks for a judgement or a design choice rather than a
+definition, but every item is still meant to be answered out loud in under 90
+seconds.
 
 ### Schema
 
@@ -69,8 +75,8 @@ file, so `make check` catches a bad edit.
 
 ### Review
 
-All 122 items were reviewed on 21 October 2026 (a model review, item by
-item, with every number recomputed and every source URL fetched). 38 items
+All 122 original items were reviewed on 21 October 2026 (a model review, item
+by item, with every number recomputed and every source URL fetched). 38 items
 changed:
 
 - **Wrong or misleading, fixed:** logistic-regression coefficients are a
@@ -98,8 +104,10 @@ changed:
   now says how it differs from the t-test's pooled variance (sta-030);
   llm-024 asked about one benchmark question rather than a benchmark score.
 
-A human domain review of a sample (every difficulty-3 item and at least 10%
-of the rest) is still the next step before the deck grows.
+The 40 items added on 25 October 2026 were written as a difficulty-3
+extension and their source URLs were fetched, but they have not yet had the
+same item-by-item review. A human domain review of a sample (every
+difficulty-3 item and at least 10% of the rest) is still the next step.
 
 ### Licence
 

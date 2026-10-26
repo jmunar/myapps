@@ -5,9 +5,11 @@
 > deck from `datasets/data-science.jsonl` and checks every item; bundle
 > format 4 carries a source per problem, which the page links under the
 > problem; a text answer (`answer_type = 'text'`) is shown as the first line
-> of the solution, in plain text, with the bullets under it. All 122 items
-> were reviewed and 38 corrected (see the deck's README). Still open: a human
-> domain review, the pilot, and the quiz UI (C).
+> of the solution, in plain text, with the bullets under it. All 122 starter
+> items were reviewed and 38 corrected (see the deck's README); a 40-item
+> difficulty-3 extension on 25 October 2026 brought the deck to 162 items.
+> Still open: a human domain review (including the added items), the pilot,
+> and the quiz UI (C).
 
 ## Summary
 
@@ -184,7 +186,10 @@ provenance with NIST/public-domain sources and re-check the wording.
 
 ## Coverage of the starter deck
 
-The file has 122 items, 38 at difficulty 1, 67 at 2 and 17 at 3.
+The original starter deck had 122 items, 38 at difficulty 1, 67 at 2 and 17
+at 3. A 40-item difficulty-3 extension on 25 October 2026 brought it to 162
+items (38 / 67 / 57); the current per-track breakdown is in the deck's README.
+The tables below describe the original 122 items.
 
 | Track | Items | What it covers |
 |---|---|---|
@@ -346,7 +351,7 @@ it.
 - **Licensing is a choice, not a detail.** CC BY-SA 4.0 keeps the statistics
   sources simple; a permissive-only deck would need the OpenIntro-derived items
   rewritten from public-domain sources.
-- **Coverage vs depth.** 122 items is enough for a demo and a first release,
+- **Coverage vs depth.** 162 items is enough for a demo and a first release,
   not for "data science" as a whole. SQL, pandas, visualisation and deeper
   experiment-design methods are deliberately out of scope for this deck; they
   would be their own tracks or a second dataset.
