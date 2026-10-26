@@ -23,7 +23,7 @@ hex = "0.4"
 dotenvy = "0.15"
 web-push = "0.11"
 base64 = "0.22"
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 thiserror = "2"
 url = "2"
 clap = { version = "4", features = ["derive"] }
