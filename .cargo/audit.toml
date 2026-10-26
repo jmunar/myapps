@@ -8,4 +8,10 @@ ignore = [
     # `smallstr` is unmaintained. Transitive dep via yrs (Notes CRDT); unmaintained only,
     # no vulnerability. No action possible until yrs drops it.
     "RUSTSEC-2026-0215",
+    # Timing variability in crypto-bigint 0.5.5, reached via web-push -> jwt-simple 0.12
+    # -> elliptic-curve 0.13. The fix needs crypto-bigint >=0.7.6, which needs
+    # jwt-simple 0.13; no released web-push accepts that yet. Low practical risk: only
+    # VAPID ES256 signing with our own push key uses it, not an attacker-facing signing
+    # oracle. Remove this ignore once web-push bumps jwt-simple.
+    "RUSTSEC-2026-0387",
 ]
