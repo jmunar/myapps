@@ -30,6 +30,7 @@ pub fn routes() -> Router<AppState> {
         .route("/inputs/{id}/cell", post(update_cell))
         .route("/inputs/{id}/rows", post(add_row))
         .route("/inputs/{id}/rows/delete", post(delete_row))
+        .route("/inputs/{id}/rows/move", post(move_row))
         .route("/inputs/{id}/delete", post(delete))
 }
 
@@ -538,6 +539,10 @@ async fn view(
     // mirroring the new-input page's layout. Editable cells get data-row/data-col/data-type
     // so the JS double-click handler knows which control to spawn.
     let mut table_html = String::from(r#"<table class="ci-input-table"><thead><tr>"#);
+    // Leading header cell above the per-row drag handles.
+    if rows_editable {
+        table_html.push_str(r#"<th class="ci-row-handle-th"></th>"#);
+    }
     if let Some(header) = lines.first() {
         for (i, col) in header.iter().enumerate() {
             let (col_type, multiline) = csv_col_meta(&ft_columns, highlight_first_col, i);
@@ -577,7 +582,7 @@ async fn view(
     if rows_editable {
         table_html.push_str(&format!(
             r#"<tfoot><tr class="ci-add-row"><td colspan="{span}"><button type="button" id="ci-add-row-btn" class="ci-add-row-btn">{add}</button></td></tr></tfoot>"#,
-            span = visible_col_count + 1,
+            span = visible_col_count + 2,
             add = html_escape(t.inp_add_row),
         ));
     }
@@ -610,11 +615,14 @@ async fn view(
             "linkDefault": t.link_default_text,
             "deleteRow": t.inp_delete_row_confirm,
             "rowOpFailed": t.inp_row_op_failed,
+            "moveRow": t.inp_move_row,
+            "moveRowOff": t.inp_move_row_off,
         },
         "urls": {
             "save": format!("{base}/forms/inputs/{}/cell", inp.id),
             "addRow": format!("{base}/forms/inputs/{}/rows", inp.id),
             "delRow": format!("{base}/forms/inputs/{}/rows/delete", inp.id),
+            "moveRow": format!("{base}/forms/inputs/{}/rows/move", inp.id),
         },
     }));
     let search_placeholder = t.inp_search_placeholder;
@@ -701,7 +709,7 @@ struct RowRenderCtx<'a> {
     highlight_first_col: bool,
     /// Non-multiline column count; drives the colspan of the follow-up `<tr>`.
     visible_col_count: usize,
-    /// Dynamic inputs get a trailing per-row delete button.
+    /// Dynamic inputs get a leading drag handle and a trailing delete button.
     show_actions: bool,
     t: &'a super::i18n::Translations,
 }
@@ -720,6 +728,12 @@ impl RowRenderCtx<'_> {
         let mut out = format!(
             r#"<tr class="ci-main-row" data-row="{r}" data-original-index="{original_index}">"#
         );
+        if self.show_actions {
+            out.push_str(&format!(
+                r#"<td class="ci-row-handle-cell"><button type="button" class="ci-row-handle" title="{title}" aria-label="{title}">⠿</button></td>"#,
+                title = html_escape(t.inp_move_row),
+            ));
+        }
 
         for (c, field) in line.iter().enumerate() {
             let (col_type, multiline) = self.col_meta(c);
@@ -788,9 +802,9 @@ impl RowRenderCtx<'_> {
             })
             .collect();
         if !multiline_cells.is_empty() {
-            // The main row gains a trailing actions cell, so the expanded row
-            // has to span one more column to stay aligned.
-            let span = self.visible_col_count + usize::from(self.show_actions);
+            // The main row gains a leading handle cell and a trailing actions
+            // cell, so the expanded row has to span both to stay aligned.
+            let span = self.visible_col_count + 2 * usize::from(self.show_actions);
             out.push_str(&format!(
                 r#"<tr class="ci-multiline-row" data-row="{r}"><td colspan="{span}">"#
             ));
@@ -972,6 +986,21 @@ fn delete_csv_row(csv_data: &str, row: usize) -> Result<String, &'static str> {
         return Err("row out of range");
     }
     lines.remove(row);
+    Ok(serialize_csv(&lines))
+}
+
+/// Move CSV line `from` so it ends up at line `to`, shifting the rows in
+/// between by one. Both are data-row indices; the header (line 0) is fixed.
+fn move_csv_row(csv_data: &str, from: usize, to: usize) -> Result<String, &'static str> {
+    if from == 0 || to == 0 {
+        return Err("header row is not movable");
+    }
+    let mut lines: Vec<Vec<String>> = parse_csv(csv_data);
+    if from >= lines.len() || to >= lines.len() {
+        return Err("row out of range");
+    }
+    let line = lines.remove(from);
+    lines.insert(to, line);
     Ok(serialize_csv(&lines))
 }
 
@@ -1168,6 +1197,36 @@ async fn delete_row(
         Ok(s) => s,
         Err(_) => return StatusCode::BAD_REQUEST,
     };
+    match save_csv(&state.pool, id, user_id.0, &updated).await {
+        Ok(()) => StatusCode::NO_CONTENT,
+        Err(code) => code,
+    }
+}
+
+#[derive(Deserialize)]
+struct MoveRowForm {
+    from: usize,
+    to: usize,
+}
+
+/// Permanently reorder a dynamic input's rows: CSV line `from` moves to `to`.
+async fn move_row(
+    state: axum::extract::State<AppState>,
+    Extension(user_id): Extension<UserId>,
+    Path(id): Path<i64>,
+    Form(form): Form<MoveRowForm>,
+) -> StatusCode {
+    let (csv_data, _) = match load_editable_input(&state.pool, id, user_id.0).await {
+        Ok(v) => v,
+        Err(code) => return code,
+    };
+    let updated = match move_csv_row(&csv_data, form.from, form.to) {
+        Ok(s) => s,
+        Err(_) => return StatusCode::BAD_REQUEST,
+    };
+    if updated == csv_data {
+        return StatusCode::NO_CONTENT;
+    }
     match save_csv(&state.pool, id, user_id.0, &updated).await {
         Ok(()) => StatusCode::NO_CONTENT,
         Err(code) => code,

@@ -461,6 +461,14 @@ form type's mode), then fills in a spreadsheet-like grid that saves data as CSV.
   the row set. Because cells address rows by CSV line index, a delete
   renumbers the remaining rows client-side so later cell saves still land on
   the right record, including while a sort is active.
+- **Moving rows on a saved input** — dynamic inputs get a drag handle in a
+  leading column, frozen left so it stays reachable while the grid scrolls
+  sideways on a phone. Dragging it with a finger or the mouse (or arrow keys on
+  the focused handle) moves the row, and the new position is stored in the
+  CSV (`POST /forms/inputs/{id}/rows/move`), so it survives a reload. Moving is
+  disabled while a sort or search is active, since the visible order is not the
+  stored one then. Fixed-row inputs keep their row set's order and get no
+  handles.
 - **Sort and global search on the view** — every column header carries
   small sort buttons (A→Z, Z→A); sort is exclusive across columns. Numeric
   columns sort by parsed value with empty cells last. A single search input

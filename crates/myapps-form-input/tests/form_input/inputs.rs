@@ -1289,7 +1289,7 @@ async fn add_row_survives_reload_on_single_column_form_type() {
 }
 
 #[tokio::test]
-async fn multiline_row_colspan_accounts_for_the_actions_column() {
+async fn multiline_row_colspan_accounts_for_the_row_control_columns() {
     // The main row of a dynamic input gains a trailing delete cell, so the
     // follow-up row holding multiline values has to span one column more.
     let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
@@ -1323,13 +1323,13 @@ async fn multiline_row_colspan_accounts_for_the_actions_column() {
     .await
     .unwrap();
 
-    // 1 visible column (Title) + 1 actions column.
+    // Drag-handle column + 1 visible column (Title) + actions column.
     let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
     assert!(
-        body.contains(r#"<tr class="ci-multiline-row" data-row="1"><td colspan="2">"#),
-        "multiline row should span the visible column plus the actions column"
+        body.contains(r#"<tr class="ci-multiline-row" data-row="1"><td colspan="3">"#),
+        "multiline row should span the handle, visible and actions columns"
     );
-    assert!(body.contains(r#"<td colspan="2"><button type="button" id="ci-add-row-btn""#));
+    assert!(body.contains(r#"<td colspan="3"><button type="button" id="ci-add-row-btn""#));
 
     // The appended row's fragment must use the same colspan.
     let fragment = app
@@ -1338,7 +1338,7 @@ async fn multiline_row_colspan_accounts_for_the_actions_column() {
         .await
         .text();
     assert!(
-        fragment.contains(r#"<tr class="ci-multiline-row" data-row="2"><td colspan="2">"#),
+        fragment.contains(r#"<tr class="ci-multiline-row" data-row="2"><td colspan="3">"#),
         "appended row markup should match the full-page render, got {fragment}"
     );
     // ...and carry an empty, editable multiline cell for the new row.
@@ -1853,4 +1853,232 @@ async fn each_page_ships_only_its_own_script() {
     let view_page = app.server.get(&format!("/forms/inputs/{id}")).await.text();
     assert_eq!(view_page.matches(view_marker).count(), 1);
     assert!(!view_page.contains(entry_marker));
+}
+
+// ── Row move ────────────────────────────────────────────────
+
+fn move_row(
+    app: &myapps_test_harness::TestApp,
+    id: i64,
+    from: usize,
+    to: usize,
+) -> axum_test::TestRequest {
+    app.server
+        .post(&format!("/forms/inputs/{id}/rows/move"))
+        .form(&serde_json::json!({ "from": from, "to": to }))
+}
+
+#[tokio::test]
+async fn view_page_dynamic_input_renders_move_handles_and_endpoint() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    // input-view.js finds the handles by this class and posts to this URL.
+    assert_eq!(body.matches(r#"class="ci-row-handle""#).count(), 4);
+    assert!(body.contains(r#"class="ci-row-handle-th""#));
+    assert!(body.contains(&format!(r#""moveRow":"/forms/inputs/{id}/rows/move""#)));
+    assert!(body.contains(r#""moveRowOff":"#));
+}
+
+#[tokio::test]
+async fn view_page_fixed_row_input_hides_move_handles() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "Week 10 quiz").await;
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert_eq!(body.matches(r#"class="ci-row-handle""#).count(), 0);
+}
+
+#[tokio::test]
+async fn add_row_fragment_carries_a_move_handle() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let fragment = app
+        .server
+        .post(&format!("/forms/inputs/{id}/rows"))
+        .await
+        .text();
+    assert!(fragment.contains(r#"class="ci-row-handle""#));
+}
+
+#[tokio::test]
+async fn move_row_down_persists_new_order() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let before = csv_of(&app, id).await;
+    let b: Vec<&str> = before.lines().collect();
+
+    let response = move_row(&app, id, 1, 3).await;
+    assert_eq!(response.status_code(), 204);
+
+    let after = csv_of(&app, id).await;
+    let a: Vec<&str> = after.lines().collect();
+    assert_eq!(a, vec![b[0], b[2], b[3], b[1], b[4]]);
+}
+
+#[tokio::test]
+async fn move_row_up_persists_new_order() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let before = csv_of(&app, id).await;
+    let b: Vec<&str> = before.lines().collect();
+
+    assert_eq!(move_row(&app, id, 4, 1).await.status_code(), 204);
+
+    let after = csv_of(&app, id).await;
+    let a: Vec<&str> = after.lines().collect();
+    assert_eq!(a, vec![b[0], b[4], b[1], b[2], b[3]]);
+
+    // The page renders the stored order.
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    let first_cell = b[4].split(',').next().unwrap();
+    let second_cell = b[1].split(',').next().unwrap();
+    assert!(body.find(first_cell).unwrap() < body.find(second_cell).unwrap());
+}
+
+#[tokio::test]
+async fn move_row_keeps_multiline_values_intact() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    app.server
+        .post(&format!("/forms/inputs/{id}/cell"))
+        .form(&serde_json::json!({ "row": 2, "col": 0, "value": "line one\nline, \"two\"" }))
+        .await;
+    assert_eq!(move_row(&app, id, 2, 4).await.status_code(), 204);
+
+    let csv = csv_of(&app, id).await;
+    assert!(
+        csv.ends_with("\"line one\nline, \"\"two\"\"\",3.20,No,"),
+        "moved row should be last and still quoted, got {csv:?}"
+    );
+}
+
+#[tokio::test]
+async fn move_row_rejects_header_and_out_of_range() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+    let before = csv_of(&app, id).await;
+
+    for (from, to) in [(0, 2), (2, 0), (1, 9999), (9999, 1)] {
+        assert_eq!(
+            move_row(&app, id, from, to)
+                .expect_failure()
+                .await
+                .status_code(),
+            400,
+            "from={from} to={to}"
+        );
+    }
+    assert_eq!(csv_of(&app, id).await, before);
+}
+
+#[tokio::test]
+async fn move_row_rejects_fixed_row_inputs() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "Week 10 quiz").await;
+    let before = csv_of(&app, id).await;
+
+    assert_eq!(
+        move_row(&app, id, 1, 2)
+            .expect_failure()
+            .await
+            .status_code(),
+        400
+    );
+    assert_eq!(csv_of(&app, id).await, before);
+}
+
+#[tokio::test]
+async fn move_row_rejects_other_users_input() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    let owner_uid = myapps_core::auth::create_user(&app.pool, "owner", "owner")
+        .await
+        .unwrap();
+    myapps_form_input::services::seed::run(&app.pool, owner_uid, &myapps_form_input::FormInputApp)
+        .await
+        .unwrap();
+    app.login_as("test", "pass").await;
+
+    let id = input_id(&app, "March expenses").await;
+    let before = csv_of(&app, id).await;
+
+    assert_eq!(
+        move_row(&app, id, 1, 2)
+            .expect_failure()
+            .await
+            .status_code(),
+        404
+    );
+    assert_eq!(csv_of(&app, id).await, before);
+}
+
+#[tokio::test]
+async fn move_row_requires_authentication() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    let res = move_row(&app, 1, 1, 2).expect_failure().await;
+    assert!(res.status_code().is_redirection() || res.status_code() == 401);
+}
+
+#[tokio::test]
+async fn view_page_move_labels_follow_the_language() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+
+    let en = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(en.contains(
+        r#"class="ci-row-handle" title="Drag to move row" aria-label="Drag to move row">"#
+    ));
+    assert!(en.contains(r#""moveRow":"Drag to move row""#));
+    assert!(en.contains(r#""moveRowOff":"Clear the sort and search to move rows""#));
+
+    app.server
+        .post("/settings/language")
+        .form(&serde_json::json!({ "language": "es", "redirect": format!("/forms/inputs/{id}") }))
+        .expect_failure()
+        .await;
+    let es = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(es.contains(
+        r#"class="ci-row-handle" title="Arrastra para mover la fila" aria-label="Arrastra para mover la fila">"#
+    ));
+    assert!(es.contains(r#""moveRow":"Arrastra para mover la fila""#));
+    assert!(es.contains(r#""moveRowOff":"Quita la ordenación y la búsqueda para mover filas""#));
+    assert!(!es.contains("Drag to move row"));
+}
+
+#[tokio::test]
+async fn view_page_fixed_row_input_has_no_handle_column() {
+    // A stray header cell without matching row cells would shift every column.
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "Week 10 quiz").await;
+
+    let body = app.server.get(&format!("/forms/inputs/{id}")).await.text();
+    assert!(body.contains(r#"<table class="ci-input-table">"#));
+    assert!(!body.contains("ci-row-handle-th"));
+    assert!(!body.contains("ci-row-handle-cell"));
+}
+
+#[tokio::test]
+async fn move_row_onto_itself_is_a_no_op() {
+    let app = myapps_test_harness::spawn_app(vec![Box::new(myapps_form_input::FormInputApp)]).await;
+    app.seed_and_login(&myapps_form_input::FormInputApp).await;
+    let id = input_id(&app, "March expenses").await;
+    let before = csv_of(&app, id).await;
+
+    assert_eq!(move_row(&app, id, 2, 2).await.status_code(), 204);
+    assert_eq!(csv_of(&app, id).await, before);
 }

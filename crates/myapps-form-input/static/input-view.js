@@ -1,4 +1,4 @@
-// Saved-input table: inline cell editing, sort, search, and add/delete row.
+// Saved-input table: inline cell editing, sort, search, and add/delete/move row.
 //
 // Labels and endpoint URLs arrive as one JSON blob in #view-config, so nothing
 // is interpolated into this file.
@@ -12,6 +12,9 @@
     var saveUrl = cfg.urls.save;
     var addRowUrl = cfg.urls.addRow;
     var delRowUrl = cfg.urls.delRow;
+    var moveRowUrl = cfg.urls.moveRow;
+    var lblMoveRow = cfg.labels.moveRow;
+    var lblMoveRowOff = cfg.labels.moveRowOff;
 
     // ── Sort & search ──────────────────────────────────────────
     // Operates purely on the DOM. Cells keep their original
@@ -100,6 +103,7 @@
             }
             refreshSortBtnStates();
             applySort();
+            refreshReorderState();
         });
     });
 
@@ -108,6 +112,7 @@
         searchInput.addEventListener('input', function() {
             activeSearch = searchInput.value.trim().toLowerCase();
             applySearch();
+            refreshReorderState();
         });
     }
 
@@ -343,18 +348,22 @@
         var g = rowGroups[idx];
         if (!rowIsEmpty(g) && !confirm(lblDeleteRow)) return;
         btn.disabled = true;
-        fetch(delRowUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'row=' + encodeURIComponent(main.dataset.row),
-            credentials: 'same-origin',
+        // Queued behind any pending move, so the row index it sends is the
+        // one the server holds by then.
+        moving.then(function() {
+            return fetch(delRowUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'row=' + encodeURIComponent(main.dataset.row),
+                credentials: 'same-origin',
+            });
         }).then(function(res) {
             if (!res.ok) {
                 btn.disabled = false;
                 alert(lblRowOpFailed + ' (' + res.status + ')');
                 return;
             }
-            rowGroups.splice(idx, 1);
+            rowGroups = rowGroups.filter(function(o) { return o !== g; });
             main.remove();
             if (g.follow) g.follow.remove();
             reindexRows();
@@ -387,8 +396,171 @@
                 var main = mains[mains.length - 1];
                 var follow = tbody.querySelector('tr.ci-multiline-row[data-row="' + main.dataset.row + '"]');
                 rowGroups.push({ main: main, follow: follow });
+                refreshReorderState();
                 // Deliberately not re-sorted or re-filtered: a new blank
                 // row must stay visible so it can be filled in.
             });
     });
+
+    // ── Move rows (dynamic inputs only) ────────────────────────
+    // A row is dragged by its handle: it jumps between slots as the
+    // pointer passes the other rows, and on release the move is posted as
+    // (from, to) CSV line indices, then every data-row is renumbered from
+    // the new order. Arrow keys on a focused handle move it one place.
+    // The handle is a <button>, so the tab swipe leaves it alone, and has
+    // `touch-action: none` so a vertical drag is not taken for a scroll.
+    //
+    // Reordering is the stored order, so it is off while a sort or a search
+    // shows the rows in some other order or with gaps.
+    var EDGE = 56;  // px from the viewport edge where a drag scrolls the page
+    var STEP = 12;  // px scrolled per pointermove there
+    var drag = null;  // { g, from, pointerId, handle }
+    // Moves go out one after another: each is computed against the order
+    // the previous one leaves on the server.
+    var moving = Promise.resolve();
+
+    function reorderOff() {
+        return !!activeSort || !!activeSearch;
+    }
+
+    function refreshReorderState() {
+        if (!tableEl) return;
+        var off = reorderOff();
+        tableEl.classList.toggle('ci-reorder-off', off);
+        tableEl.querySelectorAll('.ci-row-handle').forEach(function(h) {
+            h.title = off ? lblMoveRowOff : lblMoveRow;
+        });
+    }
+
+    function groupOf(main) {
+        for (var i = 0; i < rowGroups.length; i++) {
+            if (rowGroups[i].main === main) return rowGroups[i];
+        }
+        return null;
+    }
+
+    // Row groups in their current on-screen order.
+    function domOrder() {
+        return Array.prototype.slice.call(tbody.querySelectorAll('tr.ci-main-row'))
+            .map(groupOf).filter(Boolean);
+    }
+
+    function placeBefore(g, ref) {
+        tbody.insertBefore(g.main, ref);
+        if (g.follow) tbody.insertBefore(g.follow, ref);
+    }
+
+    function lastRowOf(g) {
+        return g.follow || g.main;
+    }
+
+    // Put group `g` at position `to` of the on-screen order.
+    function placeAt(g, to) {
+        var others = domOrder().filter(function(o) { return o !== g; });
+        placeBefore(g, to < others.length ? others[to].main : null);
+    }
+
+    function commitMove(g, from, to) {
+        if (from === to) return;
+        // The DOM already shows the new order; make it the stored order.
+        domOrder().forEach(function(o, i) { o.main.dataset.originalIndex = i; });
+        rowGroups = domOrder();
+        reindexRows();
+        var body = 'from=' + (from + 1) + '&to=' + (to + 1);  // CSV line 0 is the header
+        moving = moving.then(function() {
+            return fetch(moveRowUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body,
+                credentials: 'same-origin',
+            }).then(function(res) {
+                if (!res.ok) throw new Error(res.status);
+            });
+        }).catch(function() {
+            // The page no longer matches what is stored, and any queued
+            // move was computed against it: reload to the stored order.
+            alert(lblRowOpFailed);
+            location.reload();
+            return new Promise(function() {});  // drop everything queued after
+        });
+    }
+
+    function handleOf(target) {
+        return target && target.closest ? target.closest('.ci-row-handle') : null;
+    }
+
+    if (tableEl && tbody) {
+        refreshReorderState();
+
+        tableEl.addEventListener('pointerdown', function(e) {
+            var handle = handleOf(e.target);
+            if (!handle || e.button !== 0 || drag || reorderOff()) return;
+            var g = groupOf(handle.closest('tr.ci-main-row'));
+            if (!g) return;
+            e.preventDefault();
+            handle.setPointerCapture(e.pointerId);
+            drag = { g: g, from: domOrder().indexOf(g), pointerId: e.pointerId, handle: handle };
+            g.main.classList.add('ci-row-dragging');
+            if (g.follow) g.follow.classList.add('ci-row-dragging');
+        });
+
+        tableEl.addEventListener('pointermove', function(e) {
+            if (!drag || e.pointerId !== drag.pointerId) return;
+            e.preventDefault();
+            if (e.clientY < EDGE) window.scrollBy(0, -STEP);
+            else if (e.clientY > window.innerHeight - EDGE) window.scrollBy(0, STEP);
+
+            var g = drag.g;
+            var order = domOrder();
+            var i = order.indexOf(g);
+            // Swap with a neighbour once the pointer is past its middle,
+            // repeatedly, so a fast flick still lands in the right slot.
+            while (i > 0) {
+                var up = order[i - 1];
+                var top = up.main.getBoundingClientRect().top;
+                var bottom = lastRowOf(up).getBoundingClientRect().bottom;
+                if (e.clientY >= (top + bottom) / 2) break;
+                placeBefore(g, up.main);
+                order.splice(i, 1); order.splice(i - 1, 0, g); i--;
+            }
+            while (i < order.length - 1) {
+                var down = order[i + 1];
+                var dTop = down.main.getBoundingClientRect().top;
+                var dBottom = lastRowOf(down).getBoundingClientRect().bottom;
+                if (e.clientY <= (dTop + dBottom) / 2) break;
+                placeBefore(g, lastRowOf(down).nextSibling);
+                order.splice(i, 1); order.splice(i + 1, 0, g); i++;
+            }
+        });
+
+        function endDrag(e) {
+            if (!drag || e.pointerId !== drag.pointerId) return;
+            var d = drag;
+            drag = null;
+            d.g.main.classList.remove('ci-row-dragging');
+            if (d.g.follow) d.g.follow.classList.remove('ci-row-dragging');
+            if (e.type === 'pointercancel') {
+                placeAt(d.g, d.from);
+                return;
+            }
+            commitMove(d.g, d.from, domOrder().indexOf(d.g));
+        }
+        tableEl.addEventListener('pointerup', endDrag);
+        tableEl.addEventListener('pointercancel', endDrag);
+
+        tableEl.addEventListener('keydown', function(e) {
+            var handle = handleOf(e.target);
+            if (!handle || drag || reorderOff()) return;
+            if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+            var g = groupOf(handle.closest('tr.ci-main-row'));
+            if (!g) return;
+            e.preventDefault();
+            var from = domOrder().indexOf(g);
+            var to = e.key === 'ArrowUp' ? from - 1 : from + 1;
+            if (to < 0 || to >= rowGroups.length) return;
+            placeAt(g, to);
+            handle.focus();
+            commitMove(g, from, to);
+        });
+    }
 })();

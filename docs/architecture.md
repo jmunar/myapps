@@ -220,6 +220,9 @@ After login, the top-level router serves:
   - `POST /forms/inputs/{id}/rows/delete` — Delete row `row`; dynamic inputs
     only. Deleting renumbers the stored CSV, so the client re-indexes the
     remaining rows to keep later cell saves addressing the right record.
+  - `POST /forms/inputs/{id}/rows/move` — Move CSV line `from` to line `to`,
+    shifting the rows between; dynamic inputs only. The client sends moves one
+    at a time and re-indexes its rows from the new order.
   - `POST /forms/inputs/{id}/delete` — Delete input
   - `/forms/row-sets` — Row set list + create form
   - `POST /forms/row-sets/create` — Create row set
