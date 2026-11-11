@@ -263,6 +263,62 @@
     .ci-row-del { opacity: 1; }
 }
 
+/* ── Row move (dynamic inputs) ────────────────────────────────── */
+/* Drag handle in a leading column, frozen left so it stays under the thumb
+   while the grid scrolls sideways; input-view.js does the dragging.
+   touch-action keeps a vertical drag from being taken for a page scroll. */
+.ci-row-handle-th,
+.ci-input-table .ci-row-handle-cell {
+    width: 1.9rem;
+    padding: 0;
+    text-align: center;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--bg-card);
+}
+.ci-row-handle-th { z-index: 3; background: var(--bg); }
+.ci-input-table tbody tr:nth-child(even) .ci-row-handle-cell { background: var(--bg); }
+
+.ci-input-table .ci-row-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 2.2rem;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.ci-input-table .ci-row-handle:hover { background: none; color: var(--text); }
+.ci-input-table .ci-row-handle:active { transform: none; }
+
+.ci-input-table tbody tr.ci-row-dragging > td,
+.ci-input-table tbody tr.ci-row-dragging > .ci-row-handle-cell {
+    background: var(--accent-light);
+}
+.ci-input-table tr.ci-row-dragging .ci-row-handle { cursor: grabbing; color: var(--accent); }
+
+/* Reordering is the stored order; a sort or search hides that order. */
+.ci-input-table.ci-reorder-off .ci-row-handle {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* Out of the accent focus fill data cells get; it is !important there. */
+.ci-input-table .ci-row-handle-cell:focus-within {
+    background: var(--bg-card) !important;
+    box-shadow: none;
+}
+
 /* ── Header sort & filter controls ────────────────────────────── */
 .ci-th-content {
     display: flex;
