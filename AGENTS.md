@@ -150,6 +150,15 @@ retimestamped after it shipped will not fail a deployed database, and will also
 not be re-applied to it. So a migration that has reached any environment is
 frozen: correct it with a *new* migration, never by editing the old one.
 
+**Production logs go to journald, not to the `fmt` subscriber.** With no TTY,
+`cli::init` installs `tracing-journald`, which turns span fields into separate
+`F_*` journal fields and puts only the event message in `MESSAGE`. Grafito
+renders `MESSAGE` alone, so a value that lives only on a span or in an event
+field is invisible there even though `tracing_subscriber::fmt` would print it
+inline. The request log therefore spells the method, route template and user id
+out in the message itself, and `tests/logging_tests.rs` asserts on the event's
+`message` field rather than on formatted output.
+
 **Memory is the binding constraint** — 4 GB shared with whisper.cpp and
 llama.cpp. Prefer borrowing over cloning, and weigh any new dependency.
 
