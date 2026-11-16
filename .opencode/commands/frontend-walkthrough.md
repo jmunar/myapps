@@ -1,12 +1,16 @@
+---
+description: Drive a real Chromium browser through the MyApps UI to find bugs tests cannot see
+---
+
 Drive a real Chromium browser through the MyApps UI to find bugs the test suite cannot see.
 
 That means XSS, broken HTMX swaps, console errors, 4xx/5xx responses, dead
 links and broken layouts.
 
-- `/frontend-walkthrough` — **branch mode**: every page the branch touches
-  (vs `main`). Use before opening a PR.
-- `/frontend-walkthrough <target>` — **on-demand mode**: an app key, a route
-  path, or a description of a feature.
+The optional target is `$ARGUMENTS`. With no target it is **branch mode**:
+every page the branch touches (vs `main`), which is the mode to use before
+opening a PR. With a target it is **on-demand mode**: an app key, a route path,
+or a description of a feature.
 
 It runs against an isolated server on port 3198 with a throwaway DB and a
 seeded `demo` user, so production data is never involved. Don't run it on every

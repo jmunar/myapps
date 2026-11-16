@@ -166,29 +166,23 @@ release job if the version is not higher than the latest tag.
 
 ## Workflows
 
-- `./devbox.sh create <branch>` — develop in a bubblewrap sandbox with no
-  credentials in it: a clone plus the host's own toolchain, read-only, in
-  namespaces with no network, every secret brokered from the host. It lives
-  only as long as the command running in it — there is nothing to start or
-  stop. `sandbox/README.md`; `./devbox.sh doctor` first, and
-  `./devbox.sh selftest <branch>` after touching what it mounts.
-  `./devbox.sh grant <branch> prod-readonly` then gives the sandbox
-  `devbox-prod snapshot|logs|status` — the real database, scrubbed of every
-  credential, and prod's journal, through a host broker that holds the SSH key
-  and answers three read verbs.
+OpenCode commands live in `.opencode/commands/` and the subagent prompt in
+`.opencode/agents/`.
+
 - `/add-app <AppName>` — scaffold a new app crate and wire it into the workspace.
 - `/finish-development` — version bump, docs, PR.
-- **frontend-tester** agent (`.claude/agents/frontend-tester.md`) — write or
+- **frontend-tester** agent (`.opencode/agents/frontend-tester.md`) — write or
   update `axum-test` integration tests after a frontend change. App tests live
   in each crate's `tests/`; platform auth/launcher tests in the root `tests/`;
   helpers in `crates/myapps-test-harness/`.
 - `/frontend-walkthrough` — drive a real browser over the routes the branch
   touched, for what tests can't see (XSS, broken swaps, console errors, layout).
+- `make hooks` — install the repo's git hooks. The pre-push hook audits
+  dependencies; CI repeats the audit when the manifests change.
 
 ## Docs
 
 [Requirements](docs/requirements.md) ·
 [Architecture](docs/architecture.md) ·
 [Deployment](docs/deployment.md) ·
-[Worktrees](docs/worktree-workflow.md) ·
-[Sandboxed development](sandbox/README.md)
+[Worktrees](docs/worktree-workflow.md)

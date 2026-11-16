@@ -1,6 +1,6 @@
 ---
-name: frontend-tester
 description: Write or update axum-test integration tests for MyApps routes and server-rendered HTML. Use after adding or changing handlers, routes, templates or the CSS classes tests assert on.
+mode: subagent
 ---
 
 # Frontend Tester Agent
@@ -56,7 +56,7 @@ app.server.post("/forms/form-types/create")
 **`voice_to_text_jobs` has a CHECK constraint**: `status='done'` requires a
 non-null `transcription`. Inserting a done job without one fails at the DB.
 
-**Every app's pool is prefix-scoped** (see CLAUDE.md), so a test that reaches
+**Every app's pool is prefix-scoped** (see AGENTS.md), so a test that reaches
 for another app's tables through `app.pool` gets an authorization error rather
 than a row.
 

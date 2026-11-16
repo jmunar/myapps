@@ -1,3 +1,7 @@
+---
+description: Finish the current feature branch and open a PR
+---
+
 Finish development on the current feature branch and open a PR.
 
 Work through these in order. Stop and report if a step fails in a way you
@@ -10,19 +14,18 @@ say so.
 
 ## 2. Commit what's outstanding
 
-Commit any uncommitted work belonging to the feature, with the co-author
-trailer.
+Commit any uncommitted work belonging to the feature.
 
 ## 3. Update the docs
 
-Read `docs/` and `CLAUDE.md` against what the branch actually changed, and
+Read `docs/` and `AGENTS.md` against what the branch actually changed, and
 update only what is now wrong or missing. Do not invent features.
 
 - `docs/architecture.md` — layout, routing, schema, diagrams.
 - `docs/requirements.md` — move roadmap items to "Implemented" when they are.
 - `docs/deployment.md` — any new env var, deploy step or server-side
-  requirement. A new env var means five files; CLAUDE.md lists them.
-- `CLAUDE.md` — only when the branch adds or invalidates a *gotcha*. It is a
+  requirement. A new env var means five files; AGENTS.md lists them.
+- `AGENTS.md` — only when the branch adds or invalidates a *gotcha*. It is a
   list of traps, not an inventory: a new route, app or command does not belong
   there on its own.
 
@@ -57,7 +60,7 @@ unrelated dependency bumps into the PR, which is Dependabot's job.
 
 If the branch touched routes, handlers, templates or CSS:
 
-- Run the **frontend-tester agent** (`.claude/agents/frontend-tester.md`) for
+- Run the **frontend-tester agent** (`.opencode/agents/frontend-tester.md`) for
   the changed routes.
 - Screenshots: a new app needs a section in `scripts/screenshots.ts` and
   `<img>` tags in the root and app `README.md`; significant page changes need
@@ -81,8 +84,6 @@ followed by a summary of the whole branch. Body:
 
 ## Test plan
 <how to verify it>
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
 Report the PR URL.

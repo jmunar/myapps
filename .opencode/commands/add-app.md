@@ -1,6 +1,11 @@
+---
+description: Scaffold a new MyApps app crate and wire it into the workspace
+---
+
 Scaffold a new app in the MyApps workspace.
 
-Usage: `/add-app <AppName>` — PascalCase, e.g. `BudgetPlanner`.
+The app name is `$ARGUMENTS` — PascalCase, e.g. `BudgetPlanner`. If it is empty,
+ask for it before doing anything.
 
 Everything derives from that name: crate `myapps-budget-planner`, module
 `myapps_budget_planner`, app key and table prefix `budget_planner`, route
@@ -51,7 +56,7 @@ Four edits, none of them discoverable from the new crate:
 - `README.md` and `docs/architecture.md`: add a row to the apps table and a
   line to the crate tree.
 
-CLAUDE.md needs nothing unless the app introduces a gotcha worth warning the
+AGENTS.md needs nothing unless the app introduces a gotcha worth warning the
 next person about — it documents traps, not an inventory of apps.
 
 Run `cargo check` here.
@@ -68,7 +73,7 @@ async fn app() -> myapps_test_harness::TestApp {
 }
 ```
 
-See `.claude/agents/frontend-tester.md` for the harness API and its gotchas —
+See `.opencode/agents/frontend-tester.md` for the harness API and its gotchas —
 notably that a 303 needs `.expect_failure()`.
 
 ## 4. Finish

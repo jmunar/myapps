@@ -119,16 +119,14 @@ nothing above lists:
 deploy ALL=(myapps) NOPASSWD: /usr/bin/sqlite3
 ```
 
-Both the manual backup below and the sandbox's
-[prod broker](../sandbox/README.md#the-prod-broker) need it; without it they
-fail with `sudo: a password is required`, never a SQLite error. It grants
-nothing the `sudo -u myapps *` rule above did not already imply.
+The manual backup below needs it; without it it fails with `sudo: a password
+is required`, never a SQLite error. It grants nothing the `sudo -u myapps *`
+rule above did not already imply.
 
 Note that these rules are exact command lines rather than prefixes, so flags
-matter: the prod broker asks for `systemctl --no-pager --full -n 0 status
-<unit>`, which the `systemctl` entries above do not match either. Where Ansible
-manages the machine — the ODROID — the `myapps` role's sudoers is what actually
-decides this, and the list above is the hand-installed equivalent.
+matter. Where Ansible manages the machine — the ODROID — the `myapps` role's
+sudoers is what actually decides this, and the list above is the hand-installed
+equivalent.
 
 Note what each group is for, so the list can be trimmed knowingly:
 
@@ -138,7 +136,7 @@ Note what each group is for, so the list can be trimmed knowingly:
 | `journalctl` | `logs` |
 | `cp`, `mv`, `chmod`, `rsync` | installing the binary and `static/` |
 | `sudo -u myapps` | running CLI subcommands (`invite`, `create-user`, `cron`, `import`) as the service user |
-| `sqlite3` as `myapps` | the manual backup, and the sandbox prod broker's snapshot — both read-only |
+| `sqlite3` as `myapps` | the manual backup — read-only |
 
 Nothing here writes to `/etc/systemd/system`, and that is deliberate: a deploy
 installs a binary and restarts a service, it does not redefine the unit. The
@@ -611,11 +609,6 @@ scp deploy@odroid.local:/tmp/myapps-*.db ./backups/
 
 Copying `myapps.db` with `cp`/`rsync` while the service runs is not safe — the
 `-wal` and `-shm` files hold committed data that the main file does not.
-
-For a copy to *develop* against rather than to keep, the sandbox's
-[prod broker](../sandbox/README.md#the-prod-broker) does the same read and
-strips the credentials on the way past — `devbox-prod snapshot`, with no SSH
-key inside the VM.
 
 **Rolling back the binary** means redeploying an earlier release tarball:
 

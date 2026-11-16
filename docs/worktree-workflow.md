@@ -16,14 +16,13 @@ a full working copy on its own branch, sharing the same git history.
 ./worktree.sh remove <branch-name>
 ```
 
-## Starting a Claude Session per Ticket
+## Starting an OpenCode Session per Ticket
 
-After `worktree.sh create`, open a terminal in the worktree and start Claude
-Code manually:
+After `worktree.sh create`, open a terminal in the worktree and start OpenCode:
 
 ```bash
 cd ../myapps-<ticket>
-claude
+opencode
 ```
 
 Each session is fully isolated — changes in one worktree don't affect others.

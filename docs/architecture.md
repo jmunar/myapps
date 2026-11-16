@@ -112,15 +112,14 @@ myapps/
 │                            # shared page scripts (nav-swipe, command-bar, push, sw-register), PWA assets
 ├── tools/
 │   └── notes-vendor/        # npm + esbuild setup that produces static/notes-vendor.bundle.js
-├── .claude/agents/          # Claude Code agent prompts
+├── .opencode/               # OpenCode commands and subagent prompts
+├── .githooks/               # Git hooks installed by `make hooks`
 ├── .github/
 │   ├── workflows/           # CI, CD, audit
 │   └── dependabot.yml
 ├── Makefile                 # Dev shortcuts (workspace-wide: fmt, lint, test, check)
 ├── deploy.sh                # Deploy script (release-deploy for CI, build/install for local)
-├── devbox.sh                # Sandboxed development: one bwrap sandbox per branch
-├── sandbox/                 # Capability fragments, host-side brokers (model access, egress, prod reads)
-└── scripts/                 # Screenshot automation
+└── scripts/                 # Screenshot automation and git-hook scripts
 ```
 
 ## Routing Structure

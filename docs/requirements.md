@@ -267,7 +267,7 @@ visibility into spending patterns.
 - **Integration test infrastructure** — HTTP-level tests using axum-test with
   in-memory SQLite, covering all apps: auth flows, launcher, settings, invite
   registration, and per-app route/CRUD testing for LeanFin, MindFlow,
-  VoiceToText, and FormInput. A Claude Code agent automates test
+  VoiceToText, and FormInput. An OpenCode subagent automates test
   generation for new features. The `/finish-development` command includes a
   frontend test generation step.
 - **Account balances** — fetch and display account balances from Enable Banking
