@@ -186,7 +186,7 @@ async fn categories_page_shows_thought_count() {
 
 // Category names are user-supplied and reach two `<option>` bodies (the mind
 // map's capture form and the inbox's recategorise dropdown). Both interpolated
-// them raw until this was fixed; CLAUDE.md singles `<option>` bodies out
+// them raw until this was fixed; AGENTS.md singles `<option>` bodies out
 // because the browser decodes entities there.
 #[tokio::test]
 async fn category_names_are_escaped_in_the_option_dropdowns() {

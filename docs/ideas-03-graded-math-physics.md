@@ -368,7 +368,7 @@ UGPhysics uses `\begin{aligned}` and `\mathrm`; Hendrycks uses `\boxed`, `\frac`
 - `crates/myapps-challenges/static/challenges-math.js`: on load, run
   `renderMathInElement` over every `[data-challenges-math]`, with
   `throwOnError: false` so one bad formula shows as red source rather than
-  killing the page. Per CLAUDE.md: no interpolation in the script, the base path
+  killing the page. Per AGENTS.md: no interpolation in the script, the base path
   from `<html data-base>`, and a test asserting `data-challenges-math` is still
   rendered.
 - Wide display maths scrolls sideways inside its block (`overflow-x: auto`),

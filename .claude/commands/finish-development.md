@@ -15,14 +15,14 @@ trailer.
 
 ## 3. Update the docs
 
-Read `docs/` and `CLAUDE.md` against what the branch actually changed, and
+Read `docs/` and `AGENTS.md` against what the branch actually changed, and
 update only what is now wrong or missing. Do not invent features.
 
 - `docs/architecture.md` — layout, routing, schema, diagrams.
 - `docs/requirements.md` — move roadmap items to "Implemented" when they are.
 - `docs/deployment.md` — any new env var, deploy step or server-side
-  requirement. A new env var means five files; CLAUDE.md lists them.
-- `CLAUDE.md` — only when the branch adds or invalidates a *gotcha*. It is a
+  requirement. A new env var means five files; AGENTS.md lists them.
+- `AGENTS.md` — only when the branch adds or invalidates a *gotcha*. It is a
   list of traps, not an inventory: a new route, app or command does not belong
   there on its own.
 

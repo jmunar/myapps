@@ -51,7 +51,7 @@ Four edits, none of them discoverable from the new crate:
 - `README.md` and `docs/architecture.md`: add a row to the apps table and a
   line to the crate tree.
 
-CLAUDE.md needs nothing unless the app introduces a gotcha worth warning the
+AGENTS.md needs nothing unless the app introduces a gotcha worth warning the
 next person about — it documents traps, not an inventory of apps.
 
 Run `cargo check` here.
