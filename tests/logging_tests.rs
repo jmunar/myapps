@@ -7,28 +7,40 @@
 #[allow(dead_code)]
 mod harness;
 
-use std::io::Write;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 
-/// An `io::Write` sink shared with the test, so the formatted log can be read
-/// back once the request has finished.
+use tracing::field::{Field, Visit};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+
+/// Collects the `message` field of every event, and nothing else.
+///
+/// That is exactly what journald stores as `MESSAGE` and therefore what grafito
+/// renders in its log list. A value that only lives on the span or in an event
+/// field would pass a `fmt`-formatted test and still be invisible in grafito,
+/// so this test looks at the same thing the production log viewer does.
 #[derive(Clone, Default)]
-struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+struct MessageBuffer(Arc<Mutex<Vec<String>>>);
 
-impl Write for LogBuffer {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
-    }
+impl<S: tracing::Subscriber> Layer<S> for MessageBuffer {
+    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
+        struct MessageVisitor<'a>(&'a mut Vec<String>);
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        impl Visit for MessageVisitor<'_> {
+            fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+                if field.name() == "message" {
+                    self.0.push(format!("{value:?}"));
+                }
+            }
+        }
+
+        event.record(&mut MessageVisitor(&mut self.0.lock().unwrap()));
     }
 }
 
-impl LogBuffer {
+impl MessageBuffer {
     fn contents(&self) -> String {
-        String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+        self.0.lock().unwrap().join("\n")
     }
 }
 
@@ -37,16 +49,11 @@ async fn request_log_names_route_template_and_user_id() {
     let app = harness::spawn_app().await;
     app.login_as("test", "pass").await;
 
-    let log = LogBuffer::default();
-    let writer = log.clone();
+    let messages = MessageBuffer::default();
     // `set_default` is thread-local and `#[tokio::test]` uses a current-thread
     // runtime, so this captures the request without touching the global
     // subscriber that tests running in parallel might use.
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(move || writer.clone())
-        .with_max_level(tracing::Level::INFO)
-        .with_ansi(false)
-        .finish();
+    let subscriber = tracing_subscriber::registry().with(messages.clone());
 
     {
         let _guard = tracing::subscriber::set_default(subscriber);
@@ -60,9 +67,9 @@ async fn request_log_names_route_template_and_user_id() {
             .await;
     }
 
-    let log = log.contents();
+    let log = messages.contents();
     for template in [
-        "path=/launcher/edit",
+        "method=GET path=/launcher/edit",
         "path=/file_clipboard/files/{file_id}/download",
     ] {
         assert!(

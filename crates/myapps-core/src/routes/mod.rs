@@ -17,8 +17,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_cookies::CookieManagerLayer;
 use tower_http::services::ServeDir;
-use tower_http::trace::{DefaultOnResponse, TraceLayer};
-use tracing::Level;
+use tower_http::trace::TraceLayer;
 
 /// Shared application state available to all route handlers.
 #[derive(Clone)]
@@ -32,7 +31,18 @@ pub struct AppState {
     pub apps: Arc<Vec<Box<dyn App>>>,
 }
 
-/// Record the matched route template on the current request span.
+/// The route template matched for a request, left on the response by
+/// `record_request_path` for the response log line.
+#[derive(Clone)]
+struct MatchedRoute(String);
+
+/// The request method, left on the response by `record_request_path` because
+/// the request itself is consumed by the time the response line is written.
+#[derive(Clone)]
+struct RequestMethod(axum::http::Method);
+
+/// Record the matched route template on the current request span and leave it
+/// (and the method) on the response for the log line.
 ///
 /// The span is built by `TraceLayer` before the request is routed, so for the
 /// app routers (nested with `nest_service`, i.e. matched one level deeper) the
@@ -40,10 +50,26 @@ pub struct AppState {
 /// `Router::layer` runs after its router has matched, so it can fill the field
 /// in. Core routes get the same treatment from the top-level layer.
 async fn record_request_path(request: Request<Body>, next: middleware::Next) -> Response {
-    if let Some(path) = request.extensions().get::<MatchedPath>() {
-        tracing::Span::current().record("path", tracing::field::display(path.as_str()));
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|path| MatchedRoute(path.as_str().to_owned()));
+    if let Some(route) = &route {
+        tracing::Span::current().record("path", tracing::field::display(&route.0));
     }
-    next.run(request).await
+    let method = RequestMethod(request.method().clone());
+
+    let mut response = next.run(request).await;
+    // The response is what survives to the log line, so carry the values there.
+    // For a nested router the inner layer has already stored the template by
+    // now; never replace it with the outer one.
+    if let Some(route) = route
+        && response.extensions().get::<MatchedRoute>().is_none()
+    {
+        response.extensions_mut().insert(route);
+    }
+    response.extensions_mut().insert(method);
+    response
 }
 
 /// Build the application router without binding to a port.
@@ -121,7 +147,8 @@ pub fn build_router(
         .layer(middleware::from_fn(record_request_path))
         // Per-request tracing: one INFO line per completed request, carrying
         // the method, the matched route template and the numeric user id.
-        // Suppress with `RUST_LOG=tower_http=warn` if a deployment is too chatty.
+        // Suppress with `RUST_LOG=myapps::request=warn` if a deployment is too
+        // chatty.
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<Body>| {
@@ -138,11 +165,38 @@ pub fn build_router(
                         user_id = tracing::field::Empty,
                     )
                 })
-                // `on_request` keeps its DEBUG default, so at the standard
-                // `info` filter one request produces exactly one line. (At
-                // DEBUG the opening event is emitted before routing and auth
-                // have filled `path` and `user_id` in.)
-                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+                // journald keeps only the event message in `MESSAGE`, and
+                // grafito renders `MESSAGE` alone, so the span alone is not
+                // enough: the message itself has to spell the request out.
+                // `record_request_path` and `auth::require_auth` leave what
+                // they resolved on the response for this to read. `on_request`
+                // keeps its DEBUG default, so at the standard `info` filter one
+                // request still produces exactly one line.
+                .on_response(
+                    |response: &Response<Body>, latency: std::time::Duration, _span: &tracing::Span| {
+                        let method = response
+                            .extensions()
+                            .get::<RequestMethod>()
+                            .map_or("-", |method| method.0.as_str());
+                        let path = response
+                            .extensions()
+                            .get::<MatchedRoute>()
+                            .map_or("-", |route| route.0.as_str());
+                        let status = response.status().as_u16();
+                        let latency = latency.as_millis();
+                        match response.extensions().get::<crate::auth::UserId>() {
+                            Some(user) => tracing::info!(
+                                target: "myapps::request",
+                                "finished processing request method={method} path={path} user_id={} status={status} latency={latency} ms",
+                                user.0,
+                            ),
+                            None => tracing::info!(
+                                target: "myapps::request",
+                                "finished processing request method={method} path={path} status={status} latency={latency} ms"
+                            ),
+                        }
+                    },
+                ),
         )
         .with_state(state)
 }
