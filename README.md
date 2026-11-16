@@ -179,6 +179,7 @@ Leave it blank to deploy all apps.
 
 ```bash
 make check                  # fmt-check + clippy + test (same as CI)
+make hooks                  # Install the repo's git hooks (dependency audit on push)
 make screenshots            # Regenerate README screenshots (needs Node.js)
 cargo run -- cron           # Run scheduled tasks (e.g. bank sync)
 cargo run -- delete-user --username <name>

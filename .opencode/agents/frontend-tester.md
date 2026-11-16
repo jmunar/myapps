@@ -1,6 +1,6 @@
 ---
-name: frontend-tester
 description: Write or update axum-test integration tests for MyApps routes and server-rendered HTML. Use after adding or changing handlers, routes, templates or the CSS classes tests assert on.
+mode: subagent
 ---
 
 # Frontend Tester Agent

@@ -112,7 +112,7 @@ myapps/
 │                            # shared page scripts (nav-swipe, command-bar, push, sw-register), PWA assets
 ├── tools/
 │   └── notes-vendor/        # npm + esbuild setup that produces static/notes-vendor.bundle.js
-├── .claude/agents/          # Claude Code agent prompts
+├── .opencode/               # OpenCode commands and subagent prompts
 ├── .github/
 │   ├── workflows/           # CI, CD, audit
 │   └── dependabot.yml

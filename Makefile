@@ -1,7 +1,7 @@
 # Use bash so version-bump targets can rely on `<<<` herestrings.
 SHELL := /bin/bash
 
-.PHONY: fmt lint test check audit upgrade build build-arm64 package-arm64 deploy-stage deploy-prod run screenshots gh-env bump-patch bump-minor bump-major
+.PHONY: fmt lint test check hooks audit upgrade build build-arm64 package-arm64 deploy-stage deploy-prod run screenshots gh-env bump-patch bump-minor bump-major
 
 # Development
 fmt:
@@ -12,6 +12,11 @@ lint:
 
 test:
 	cargo test --workspace
+
+# Install the repo's git hooks (dependency audit on push).
+hooks:
+	git config core.hooksPath .githooks
+	chmod +x .githooks/pre-push scripts/hooks/cargo-audit.sh
 
 # CI: runs everything that the GitHub Actions workflow checks
 check: fmt-check lint test

@@ -166,14 +166,19 @@ release job if the version is not higher than the latest tag.
 
 ## Workflows
 
+OpenCode commands live in `.opencode/commands/` and the subagent prompt in
+`.opencode/agents/`.
+
 - `/add-app <AppName>` — scaffold a new app crate and wire it into the workspace.
 - `/finish-development` — version bump, docs, PR.
-- **frontend-tester** agent (`.claude/agents/frontend-tester.md`) — write or
+- **frontend-tester** agent (`.opencode/agents/frontend-tester.md`) — write or
   update `axum-test` integration tests after a frontend change. App tests live
   in each crate's `tests/`; platform auth/launcher tests in the root `tests/`;
   helpers in `crates/myapps-test-harness/`.
 - `/frontend-walkthrough` — drive a real browser over the routes the branch
   touched, for what tests can't see (XSS, broken swaps, console errors, layout).
+- `make hooks` — install the repo's git hooks. The pre-push hook audits
+  dependencies; CI repeats the audit when the manifests change.
 
 ## Docs
 

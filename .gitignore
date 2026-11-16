@@ -12,3 +12,6 @@ package-lock.json
 !tools/notes-vendor/package.json
 !tools/notes-vendor/package-lock.json
 test-results/
+
+# Local agent state, never committed.
+.claude/settings.local.json
