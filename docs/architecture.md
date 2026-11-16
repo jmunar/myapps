@@ -113,12 +113,13 @@ myapps/
 ├── tools/
 │   └── notes-vendor/        # npm + esbuild setup that produces static/notes-vendor.bundle.js
 ├── .opencode/               # OpenCode commands and subagent prompts
+├── .githooks/               # Git hooks installed by `make hooks`
 ├── .github/
 │   ├── workflows/           # CI, CD, audit
 │   └── dependabot.yml
 ├── Makefile                 # Dev shortcuts (workspace-wide: fmt, lint, test, check)
 ├── deploy.sh                # Deploy script (release-deploy for CI, build/install for local)
-└── scripts/                 # Screenshot automation
+└── scripts/                 # Screenshot automation and git-hook scripts
 ```
 
 ## Routing Structure
