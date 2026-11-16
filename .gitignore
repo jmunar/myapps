@@ -12,8 +12,3 @@ package-lock.json
 !tools/notes-vendor/package.json
 !tools/notes-vendor/package-lock.json
 test-results/
-
-# Sandboxed development (devbox.sh)
-/.devbox/
-# Every broker carries its own workspace, so each has its own target/.
-/sandbox/brokers/*/target/

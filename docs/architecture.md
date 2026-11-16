@@ -118,8 +118,6 @@ myapps/
 │   └── dependabot.yml
 ├── Makefile                 # Dev shortcuts (workspace-wide: fmt, lint, test, check)
 ├── deploy.sh                # Deploy script (release-deploy for CI, build/install for local)
-├── devbox.sh                # Sandboxed development: one bwrap sandbox per branch
-├── sandbox/                 # Capability fragments, host-side brokers (model access, egress, prod reads)
 └── scripts/                 # Screenshot automation
 ```
 

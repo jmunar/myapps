@@ -166,16 +166,6 @@ release job if the version is not higher than the latest tag.
 
 ## Workflows
 
-- `./devbox.sh create <branch>` — develop in a bubblewrap sandbox with no
-  credentials in it: a clone plus the host's own toolchain, read-only, in
-  namespaces with no network, every secret brokered from the host. It lives
-  only as long as the command running in it — there is nothing to start or
-  stop. `sandbox/README.md`; `./devbox.sh doctor` first, and
-  `./devbox.sh selftest <branch>` after touching what it mounts.
-  `./devbox.sh grant <branch> prod-readonly` then gives the sandbox
-  `devbox-prod snapshot|logs|status` — the real database, scrubbed of every
-  credential, and prod's journal, through a host broker that holds the SSH key
-  and answers three read verbs.
 - `/add-app <AppName>` — scaffold a new app crate and wire it into the workspace.
 - `/finish-development` — version bump, docs, PR.
 - **frontend-tester** agent (`.claude/agents/frontend-tester.md`) — write or
@@ -190,5 +180,4 @@ release job if the version is not higher than the latest tag.
 [Requirements](docs/requirements.md) ·
 [Architecture](docs/architecture.md) ·
 [Deployment](docs/deployment.md) ·
-[Worktrees](docs/worktree-workflow.md) ·
-[Sandboxed development](sandbox/README.md)
+[Worktrees](docs/worktree-workflow.md)
