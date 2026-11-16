@@ -116,6 +116,7 @@ pub async fn require_auth(
                 let lang = user_settings::get_language(&state.pool, user_id).await;
                 request.extensions_mut().insert(UserId(user_id));
                 request.extensions_mut().insert(lang);
+                record_user_in_span(user_id);
                 return next.run(request).await;
             }
             Err(e) => {
@@ -142,24 +143,27 @@ pub async fn require_auth(
             let lang = user_settings::get_language(&state.pool, user_id).await;
             request.extensions_mut().insert(UserId(user_id));
             request.extensions_mut().insert(lang);
+            record_user_in_span(user_id);
             next.run(request).await
         }
         None => {
             if has_cookie {
-                tracing::warn!(
-                    "Auth failed for {} (expired/invalid session)",
-                    request.uri()
-                );
+                tracing::warn!("Auth failed: session cookie is expired or invalid");
             } else {
-                tracing::debug!(
-                    "Unauthenticated request to {}, redirecting to login",
-                    request.uri()
-                );
+                tracing::debug!("Unauthenticated request, redirecting to login");
             }
             let login_url = format!("{}/login", state.config.base_path);
             Redirect::to(&login_url).into_response()
         }
     }
+}
+
+/// Attach the authenticated user to the per-request trace span created by
+/// `routes::build_router`. Only the numeric id is recorded: usernames (which may
+/// be email addresses) stay out of the logs, and the id still ties every request
+/// line of one session together.
+fn record_user_in_span(user_id: i64) {
+    tracing::Span::current().record("user_id", user_id);
 }
 
 /// Look up a user by username, creating them if they don't exist.
