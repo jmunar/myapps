@@ -117,7 +117,10 @@ pub async fn require_auth(
                 request.extensions_mut().insert(UserId(user_id));
                 request.extensions_mut().insert(lang);
                 record_user_in_span(user_id);
-                return next.run(request).await;
+                let mut response = next.run(request).await;
+                // The request is gone by the time the response line is written.
+                response.extensions_mut().insert(UserId(user_id));
+                return response;
             }
             Err(e) => {
                 tracing::error!("SSO user lookup/create failed for {username:?}: {e}");
@@ -144,7 +147,10 @@ pub async fn require_auth(
             request.extensions_mut().insert(UserId(user_id));
             request.extensions_mut().insert(lang);
             record_user_in_span(user_id);
-            next.run(request).await
+            let mut response = next.run(request).await;
+            // The request is gone by the time the response line is written.
+            response.extensions_mut().insert(UserId(user_id));
+            response
         }
         None => {
             if has_cookie {

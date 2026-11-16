@@ -320,13 +320,17 @@ After login, the top-level router serves:
 ## Request Logging
 
 Every completed request emits one INFO line carrying the method, the matched
-route template and the numeric user id (`tower-http` adds `status` and
-`latency`):
+route template, the numeric user id, the status and the latency:
 
 ```
 INFO request{method=GET path=/file_clipboard/files/{file_id}/download user_id=1}:
-  finished processing request status=404 latency=0 ms
+  finished processing request method=GET path=/file_clipboard/files/{file_id}/download user_id=1 status=404 latency=0 ms
 ```
+
+The values are in the message itself, not only on the `request` span, because
+journald stores just the event message as `MESSAGE` and grafito renders
+`MESSAGE` alone: a span-only field would be invisible in the log viewer. The
+span still carries them for grouping and for the structured journal fields.
 
 The template is logged, never the concrete path, so ids in the URL stay out;
 neither is the query string (a search term, a file token) nor the username
