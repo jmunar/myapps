@@ -6,7 +6,9 @@ mod settings;
 
 use crate::config::Config;
 use crate::registry::App;
-use axum::http::header;
+use axum::body::Body;
+use axum::extract::MatchedPath;
+use axum::http::{Request, header};
 use axum::response::Response;
 use axum::{Router, middleware, routing::get};
 use sqlx::SqlitePool;
@@ -15,7 +17,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_cookies::CookieManagerLayer;
 use tower_http::services::ServeDir;
-use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
 /// Shared application state available to all route handlers.
@@ -28,6 +30,20 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub llm_lock: Arc<Mutex<()>>,
     pub apps: Arc<Vec<Box<dyn App>>>,
+}
+
+/// Record the matched route template on the current request span.
+///
+/// The span is built by `TraceLayer` before the request is routed, so for the
+/// app routers (nested with `nest_service`, i.e. matched one level deeper) the
+/// template does not exist yet at that point. Middleware added with
+/// `Router::layer` runs after its router has matched, so it can fill the field
+/// in. Core routes get the same treatment from the top-level layer.
+async fn record_request_path(request: Request<Body>, next: middleware::Next) -> Response {
+    if let Some(path) = request.extensions().get::<MatchedPath>() {
+        tracing::Span::current().record("path", tracing::field::display(path.as_str()));
+    }
+    next.run(request).await
 }
 
 /// Build the application router without binding to a port.
@@ -66,7 +82,10 @@ pub fn build_router(
                 .unwrap_or_else(|| state.pool.clone()),
             ..state.clone()
         };
-        let resolved = app.router().with_state(app_state);
+        let resolved = app
+            .router()
+            .layer(middleware::from_fn(record_request_path))
+            .with_state(app_state);
         protected = protected.nest_service(info.path, resolved);
     }
 
@@ -99,14 +118,30 @@ pub fn build_router(
         .route("/static/apps.css", get(apps_css))
         .nest_service("/static", ServeDir::new("static"))
         .layer(CookieManagerLayer::new())
-        // Per-request tracing. Defaults emit at DEBUG so they vanish under the
-        // standard `info` filter; bump everything to INFO so request/response
-        // pairs are visible by default. Suppress with `RUST_LOG=tower_http=warn`
-        // if a particular deployment is too chatty.
+        .layer(middleware::from_fn(record_request_path))
+        // Per-request tracing: one INFO line per completed request, carrying
+        // the method, the matched route template and the numeric user id.
+        // Suppress with `RUST_LOG=tower_http=warn` if a deployment is too chatty.
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
-                .on_request(DefaultOnRequest::new().level(Level::INFO))
+                .make_span_with(|request: &Request<Body>| {
+                    // The route template (`/notes/{id}/edit`) is recorded by
+                    // `record_request_path` once routing has happened, and the
+                    // user by `auth::require_auth`. Both are left empty here so
+                    // the span never holds a concrete path or query string: both
+                    // can carry user data (a note id, a search term, a token).
+                    tracing::info_span!(
+                        "request",
+                        method = %request.method(),
+                        path = tracing::field::Empty,
+                        // The numeric id, not the username: no PII in the logs.
+                        user_id = tracing::field::Empty,
+                    )
+                })
+                // `on_request` keeps its DEBUG default, so at the standard
+                // `info` filter one request produces exactly one line. (At
+                // DEBUG the opening event is emitted before routing and auth
+                // have filled `path` and `user_id` in.)
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
         .with_state(state)

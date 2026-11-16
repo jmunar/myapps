@@ -317,6 +317,23 @@ After login, the top-level router serves:
     (`challenges_diagrams`, keyed by the SHA-256 of its source), served as
     `image/svg+xml` with a sandboxing CSP and cached as immutable
 
+## Request Logging
+
+Every completed request emits one INFO line carrying the method, the matched
+route template and the numeric user id (`tower-http` adds `status` and
+`latency`):
+
+```
+INFO request{method=GET path=/file_clipboard/files/{file_id}/download user_id=1}:
+  finished processing request status=404 latency=0 ms
+```
+
+The template is logged, never the concrete path, so ids in the URL stay out;
+neither is the query string (a search term, a file token) nor the username
+(which may be an email address). The id still ties one session's requests
+together. A request rejected before its router matches — an app sub-route
+whose session expired — logs without a `path`.
+
 ## Database Schema
 
 ### users
